@@ -25,68 +25,83 @@ class FogManager {
   #updated = false;
 
   /**
-   * Texture extractor
-   * @type {TextureExtractor}
+   * A pool of RenderTexture objects which can be cycled through to save fog exploration progress.
+   * @type {PIXI.RenderTexture[]}
+   * @private
    */
-  #extractor;
+  #textures = [];
 
   /**
-   * The fog refresh count.
-   * If > to the refresh threshold, the fog texture is saved to database. It is then reinitialized to 0.
+   * The maximum allowable fog of war texture size.
    * @type {number}
    */
-  #refreshCount = 0;
+  static #MAXIMUM_FOW_TEXTURE_SIZE = 4096;
 
   /**
-   * Matrix used for fog rendering transformation.
-   * @type {PIXI.Matrix}
-   */
-  #renderTransform = new PIXI.Matrix();
-
-  /**
-   * Define the number of fog refresh needed before the fog texture is extracted and pushed to the server.
+   * Define the number of positions that are explored before a set of fog updates are pushed to the server.
    * @type {number}
    */
-  static COMMIT_THRESHOLD = 70;
+  static COMMIT_THRESHOLD = 10;
 
   /**
    * A debounced function to save fog of war exploration once a continuous stream of updates has concluded.
    * @type {Function}
    */
-  #debouncedSave = foundry.utils.debounce(this.save.bind(this), 2000);
-
-  /**
-   * Handling of the concurrency for fog loading, saving and reset.
-   * @type {Semaphore}
-   */
-  #queue = new foundry.utils.Semaphore();
+  #debouncedSave = foundry.utils.debounce(this.save.bind(this), 3000);
 
   /* -------------------------------------------- */
   /*  Fog Manager Properties                      */
   /* -------------------------------------------- */
 
   /**
-   * The exploration SpriteMesh which holds the fog exploration texture.
-   * @type {SpriteMesh}
+   * Vision containers for explored positions which have not yet been committed to the saved texture.
+   * @type {PIXI.Container}
    */
-  get sprite() {
-    return this.#explorationSprite || (this.#explorationSprite = new SpriteMesh(Canvas.getRenderTexture({
-      clearColor: [0, 0, 0, 1],
-      textureConfiguration: this.textureConfiguration
-    }), FogSamplerShader));
+  get pending() {
+    return this.#pending;
   }
 
-  #explorationSprite;
+  /** @private */
+  #pending = new PIXI.Container();
 
   /* -------------------------------------------- */
 
   /**
-   * The configured options used for the saved fog-of-war texture.
-   * @type {FogTextureConfiguration}
+   * The container of previously revealed exploration.
+   * @type {PIXI.Container}
    */
-  get textureConfiguration() {
-    return canvas.effects.visibility.textureConfiguration;
+  get revealed() {
+    return this.#revealed;
   }
+
+  /** @private */
+  #revealed = new PIXI.Container();
+
+  /* -------------------------------------------- */
+
+  /**
+   * A sprite containing the saved fog exploration texture.
+   * @type {PIXI.Sprite}
+   */
+  get sprite() {
+    return this.#sprite;
+  }
+
+  /** @private */
+  #sprite = new SpriteMesh(PIXI.Texture.EMPTY, FogSamplerShader);
+
+  /* -------------------------------------------- */
+
+  /**
+   * The configured resolution used for the saved fog-of-war texture
+   * @type {FogResolution}
+   */
+  get resolution() {
+    return this.#resolution;
+  }
+
+  /** @private */
+  #resolution;
 
   /* -------------------------------------------- */
 
@@ -118,20 +133,8 @@ class FogManager {
    */
   async initialize() {
     this.#initialized = false;
-    if ( this.#extractor === undefined ) {
-      try {
-        this.#extractor = new TextureExtractor(canvas.app.renderer, {
-          callerName: "FogExtractor",
-          controlHash: true,
-          format: PIXI.FORMATS.RED
-        });
-      } catch(e) {
-        this.#extractor = null;
-        console.error(e);
-      }
-    }
-    this.#extractor?.reset();
-    await this.load();
+    this.configureResolution();
+    if ( this.tokenVision && !this.exploration ) await this.load();
     this.#initialized = true;
   }
 
@@ -142,12 +145,12 @@ class FogManager {
    * @returns {Promise<void>}
    */
   async clear() {
+
     // Save any pending exploration
-    try {
-      await this.save();
-    } catch(e) {
-      ui.notifications.error("Failed to save fog exploration");
-      console.error(e);
+    const wasDeleted = !game.scenes.has(canvas.scene?.id);
+    if ( !wasDeleted ) {
+      this.commit();
+      if ( this.#updated ) await this.save();
     }
 
     // Deactivate current fog exploration
@@ -158,52 +161,33 @@ class FogManager {
   /* -------------------------------------------- */
 
   /**
-   * Once a new Fog of War location is explored, composite the explored container with the current staging sprite.
-   * Once the number of refresh is > to the commit threshold, save the fog texture to the database.
+   * Once a new Fog of War location is explored, composite the explored container with the current staging sprite
+   * Save that staging Sprite as the rendered fog exploration and swap it out for a fresh staging texture
+   * Do all this asynchronously, so it doesn't block token movement animation since this takes some extra time
    */
   commit() {
-    const vision = canvas.effects.visibility.vision;
-    if ( !vision?.children.length || !this.fogExploration || !this.tokenVision ) return;
-    if ( !this.#explorationSprite?.texture.valid ) return;
+    if ( !this.#pending.children.length ) return;
+    if ( CONFIG.debug.fog ) console.debug("SightLayer | Committing fog exploration to render texture.");
 
-    // Get a staging texture or clear and render into the sprite if its texture is a RT
-    // and render the entire fog container to it
+    // Create a staging texture and render the entire fog container to it
     const dims = canvas.dimensions;
-    const isRenderTex = this.#explorationSprite.texture instanceof PIXI.RenderTexture;
-    const tex = isRenderTex ? this.#explorationSprite.texture : Canvas.getRenderTexture({
-      clearColor: [0, 0, 0, 1],
-      textureConfiguration: this.textureConfiguration
-    });
-    this.#renderTransform.tx = -dims.sceneX;
-    this.#renderTransform.ty = -dims.sceneY;
+    const tex = this.#getTexture();
+    const transform = new PIXI.Matrix(1, 0, 0, 1, -dims.sceneX, -dims.sceneY);
 
-    // Base vision not committed
-    vision.base.visible = false;
-    vision.los.preview.visible = false;
     // Render the currently revealed vision to the texture
-    canvas.app.renderer.render(isRenderTex ? vision : this.#explorationSprite, {
-      renderTexture: tex,
-      clear: false,
-      transform: this.#renderTransform
-    });
-    vision.base.visible = true;
-    vision.los.preview.visible = true;
+    canvas.app.renderer.render(this.#revealed, tex, undefined, transform);
 
-    if ( !isRenderTex ) this.#explorationSprite.texture.destroy(true);
-    this.#explorationSprite.texture = tex;
-    this.#updated = true;
+    // Return reusable RenderTexture to the pool, destroy past exploration textures
+    if ( this.#sprite.texture instanceof PIXI.RenderTexture ) this.#textures.push(this.#sprite.texture);
+    else this.#sprite.texture?.destroy(true);
+    this.#sprite.texture = tex;
 
-    if ( !this.exploration ) {
-      const fogExplorationCls = getDocumentClass("FogExploration");
-      this.exploration = new fogExplorationCls();
-    }
+    // Clear the pending container
+    Canvas.clearContainer(this.#pending);
 
     // Schedule saving the texture to the database
-    if ( this.#refreshCount > FogManager.COMMIT_THRESHOLD ) {
-      this.#debouncedSave();
-      this.#refreshCount = 0;
-    }
-    else this.#refreshCount++;
+    this.#updated = true;
+    this.#debouncedSave();
   }
 
   /* -------------------------------------------- */
@@ -213,19 +197,13 @@ class FogManager {
    * @returns {Promise<(PIXI.Texture|void)>}
    */
   async load() {
-    return await this.#queue.add(this.#load.bind(this));
-  }
+    if ( CONFIG.debug.fog ) console.debug("SightLayer | Loading saved FogExploration for Scene.");
 
-  /* -------------------------------------------- */
-
-  /**
-   * Load existing fog of war data from local storage and populate the initial exploration sprite
-   * @returns {Promise<(PIXI.Texture|void)>}
-   */
-  async #load() {
-    if ( CONFIG.debug.fog.manager ) console.debug("FogManager | Loading saved FogExploration for Scene.");
-
-    this.#deactivate();
+    // Remove the previous render texture if one exists
+    if ( this.#sprite?.texture?.valid ) {
+      this.#textures.push(this.#sprite.texture);
+      this.#sprite.texture = null;
+    }
 
     // Take no further action if token vision is not enabled
     if ( !this.tokenVision ) return;
@@ -234,32 +212,20 @@ class FogManager {
     const fogExplorationCls = getDocumentClass("FogExploration");
     this.exploration = await fogExplorationCls.get();
 
+    // Create a brand new FogExploration document
+    if ( !this.exploration ) {
+      this.exploration = new fogExplorationCls();
+      return this.#sprite.texture = PIXI.Texture.EMPTY;
+    }
+
     // Extract and assign the fog data image
     const assign = (tex, resolve) => {
-      if ( this.#explorationSprite?.texture === tex ) return resolve(tex);
-      this.#explorationSprite?.destroy(true);
-      this.#explorationSprite = new SpriteMesh(tex, FogSamplerShader);
-      canvas.effects.visibility.resetExploration();
-      canvas.perception.initialize();
+      this.#sprite.texture = tex;
       resolve(tex);
     };
-
-    // Initialize the exploration sprite if no exploration data exists
-    if ( !this.exploration ) {
-      return await new Promise(resolve => {
-        assign(Canvas.getRenderTexture({
-          clearColor: [0, 0, 0, 1],
-          textureConfiguration: this.textureConfiguration
-        }), resolve);
-      });
-    }
-    // Otherwise load the texture from the exploration data
     return await new Promise(resolve => {
       let tex = this.exploration.getTexture();
-      if ( tex === null ) assign(Canvas.getRenderTexture({
-        clearColor: [0, 0, 0, 1],
-        textureConfiguration: this.textureConfiguration
-      }), resolve);
+      if ( tex === null ) assign(PIXI.Texture.EMPTY, resolve);
       else if ( tex.baseTexture.valid ) assign(tex, resolve);
       else tex.on("update", tex => assign(tex, resolve));
     });
@@ -272,88 +238,110 @@ class FogManager {
    * Once the server has deleted existing FogExploration documents, the _onReset handler will re-draw the canvas.
    */
   async reset() {
-    if ( CONFIG.debug.fog.manager ) console.debug("FogManager | Resetting fog of war exploration for Scene.");
+    if ( CONFIG.debug.fog ) console.debug("SightLayer | Resetting fog of war exploration for Scene.");
     game.socket.emit("resetFog", canvas.scene.id);
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Request a fog of war save operation.
-   * Note: if a save operation is pending, we're waiting for its conclusion.
+   * Save Fog of War exploration data to a base64 string to the FogExploration document in the database.
+   * Assumes that the fog exploration has already been rendered as fog.rendered.texture.
    */
   async save() {
-    return await this.#queue.add(this.#save.bind(this));
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Request a fog of war save operation.
-   * Note: if a save operation is pending, we're waiting for its conclusion.
-   */
-  async #save() {
+    if ( !this.tokenVision || !this.fogExploration || !this.exploration ) return;
     if ( !this.#updated ) return;
     this.#updated = false;
-    const exploration = this.exploration;
-    if ( CONFIG.debug.fog.manager ) {
-      console.debug("FogManager | Initiate non-blocking extraction of the fog of war progress.");
-    }
-    if ( !this.#extractor ) {
-      console.error("FogManager | Browser does not support texture extraction.");
-      return;
-    }
+    if ( CONFIG.debug.fog ) console.debug("SightLayer | Saving exploration progress to FogExploration document.");
 
-    // Get compressed base64 image from the fog texture
-    let base64image;
-    try {
-      base64image = await this.#extractor.extract({
-        texture: this.#explorationSprite.texture,
-        compression: TextureExtractor.COMPRESSION_MODES.BASE64,
-        type: "image/webp",
-        quality: 0.8,
-        debug: CONFIG.debug.fog.extractor
-      });
-    } catch(err) {
-      // FIXME this is needed because for some reason .extract() may throw a boolean false instead of an Error
-      throw new Error("Fog of War base64 extraction failed");
-    }
+    // Use the existing rendered fog to create a Sprite and downsize to save with smaller footprint
+    const dims = canvas.dimensions;
+    const fog = new PIXI.Sprite(this.#sprite.texture);
 
-    // If the exploration changed, the fog was reloaded while the pixels were extracted
-    if ( this.exploration !== exploration ) return;
+    // Determine whether a downscaling factor should be used
+    const maxSize = FogManager.#MAXIMUM_FOW_TEXTURE_SIZE;
+    const scale = Math.min(maxSize / dims.sceneWidth, maxSize / dims.sceneHeight);
+    if ( scale < 1.0 ) fog.scale.set(scale, scale);
 
-    // Need to skip?
-    if ( !base64image ) {
-      if ( CONFIG.debug.fog.manager ) console.debug("FogManager | Fog of war has not changed. Skipping db operation.");
-      return;
-    }
+    // Add the fog to a temporary container to bound it's dimensions and export to base data
+    const stage = new PIXI.Container();
+    stage.addChild(fog);
 
-    // Generate fog exploration with base64 image and time stamp
+    // Extract fog exploration to a base64 image
     const updateData = {
-      explored: base64image,
+      explored: await ImageHelper.pixiToBase64(stage, "image/jpeg", 0.8),
       timestamp: Date.now()
     };
 
-    // Update the fog exploration document
-    await this.#updateFogExploration(updateData);
+    // Create or update the FogExploration document
+    if ( !this.exploration.id ) {
+      this.exploration.updateSource(updateData);
+      this.exploration = await this.exploration.constructor.create(this.exploration.toJSON());
+    }
+    else await this.exploration.update(updateData);
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Update the fog exploration document with provided data.
-   * @param {object} updateData
-   * @returns {Promise<void>}
+   * Update the fog layer when a player token reaches a board position which was not previously explored
+   * @param {VisionSource} source   The vision source for which the fog layer should update
+   * @param {boolean} force         Force fog to be updated even if the location is already explored
+   * @returns {boolean}             Whether the source position represents a new fog exploration point
    */
-  async #updateFogExploration(updateData) {
-    if ( !game.scenes.has(canvas.scene?.id) ) return;
-    if ( !this.exploration ) return;
-    if ( CONFIG.debug.fog.manager ) console.debug("FogManager | Saving fog of war progress into exploration document.");
-    if ( !this.exploration.id ) {
-      this.exploration.updateSource(updateData);
-      this.exploration = await this.exploration.constructor.create(this.exploration.toJSON(), {loadFog: false});
+  update(source, force=false) {
+    if ( !this.fogExploration || source.isPreview ) return false;
+    if ( !this.exploration ) {
+      const cls = getDocumentClass("FogExploration");
+      this.exploration = new cls();
     }
-    else await this.exploration.update(updateData, {loadFog: false});
+    return this.exploration.explore(source, force);
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * @typedef {object} FogResolution
+   * @property {number} resolution
+   * @property {number} width
+   * @property {number} height
+   * @property {number} mipmap
+   * @property {number} scaleMode
+   * @property {number} multisample
+   */
+
+  /**
+   * Choose an adaptive fog rendering resolution which downscales the saved fog textures for larger dimension Scenes.
+   * It is important that the width and height of the fog texture is evenly divisible by the downscaling resolution.
+   * @returns {FogResolution}
+   * @private
+   */
+  configureResolution() {
+    const dims = canvas.dimensions;
+    let width = dims.sceneWidth;
+    let height = dims.sceneHeight;
+    const maxSize = FogManager.#MAXIMUM_FOW_TEXTURE_SIZE;
+
+    // Adapt the fog texture resolution relative to some maximum size, and ensure that multiplying the scene dimensions
+    // by the resolution results in an integer number in order to avoid fog drift.
+    let resolution = 1.0;
+    if ( (width >= height) && (width > maxSize) ) {
+      resolution = maxSize / width;
+      height = Math.ceil(height * resolution) / resolution;
+    } else if ( height > maxSize ) {
+      resolution = maxSize / height;
+      width = Math.ceil(width * resolution) / resolution;
+    }
+
+    // Determine the fog texture dimensions that is evenly divisible by the scaled resolution
+    return this.#resolution = {
+      resolution,
+      width,
+      height,
+      mipmap: PIXI.MIPMAP_MODES.OFF,
+      scaleMode: PIXI.SCALE_MODES.LINEAR,
+      multisample: PIXI.MSAA_QUALITY.NONE
+    };
   }
 
   /* -------------------------------------------- */
@@ -364,95 +352,61 @@ class FogManager {
    * Destroy all stored textures and graphics.
    */
   #deactivate() {
+
     // Remove the current exploration document
     this.exploration = null;
-    this.#extractor?.reset();
+    canvas.masks.vision.clear();
 
-    // Destroy current exploration texture and provide a new one with transparency
-    if ( this.#explorationSprite && !this.#explorationSprite.destroyed ) this.#explorationSprite.destroy(true);
-    this.#explorationSprite = undefined;
+    // Un-stage fog containers from the visibility layer
+    if ( this.#pending.parent ) this.#pending.parent.removeChild(this.#pending);
+    if ( this.#revealed.parent ) this.#revealed.parent.removeChild(this.#revealed);
+    if ( this.#sprite.parent ) this.#sprite.parent.removeChild(this.#sprite);
 
-    this.#updated = false;
-    this.#refreshCount = 0;
+    // Clear the pending container
+    Canvas.clearContainer(this.#pending);
+
+    // Destroy fog exploration textures
+    while ( this.#textures.length ) {
+      const t = this.#textures.pop();
+      t.destroy(true);
+    }
+    this.#sprite.texture.destroy(true);
+    this.#sprite.texture = PIXI.Texture.EMPTY;
   }
 
   /* -------------------------------------------- */
 
   /**
-   * If fog of war data is reset from the server, deactivate the current fog and initialize the exploration.
+   * If fog of war data is reset from the server, re-draw the canvas
    * @returns {Promise}
    * @internal
    */
   async _handleReset() {
-    return await this.#queue.add(this.#handleReset.bind(this));
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * If fog of war data is reset from the server, deactivate the current fog and initialize the exploration.
-   * @returns {Promise}
-   */
-  async #handleReset() {
     ui.notifications.info("Fog of War exploration progress was reset for this Scene");
 
-    // Remove the current exploration document
+    // Deactivate the existing fog containers and re-draw CanvasVisibility
     this.#deactivate();
 
-    // Reset exploration in the visibility layer
-    canvas.effects.visibility.resetExploration();
+    // Create new fog exploration
+    const cls = getDocumentClass("FogExploration");
+    this.exploration = new cls();
 
-    // Refresh perception
+    // Re-draw the canvas visibility layer
+    await canvas.effects.visibility.draw();
     canvas.perception.initialize();
   }
 
   /* -------------------------------------------- */
-  /*  Deprecations and Compatibility              */
-  /* -------------------------------------------- */
 
   /**
-   * @deprecated since v11
-   * @ignore
+   * Get a usable RenderTexture from the textures pool
+   * @returns {PIXI.RenderTexture}
    */
-  get pending() {
-    const msg = "pending is deprecated and redirected to the exploration container";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return canvas.effects.visibility.explored;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  get revealed() {
-    const msg = "revealed is deprecated and redirected to the exploration container";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return canvas.effects.visibility.explored;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  update(source, force=false) {
-    const msg = "update is obsolete and always returns true. The fog exploration does not record position anymore.";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return true;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  get resolution() {
-    const msg = "resolution is deprecated and redirected to CanvasVisibility#textureConfiguration";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return canvas.effects.visibility.textureConfiguration;
+  #getTexture() {
+    if ( this.#textures.length ) {
+      const tex = this.#textures.pop();
+      if ( tex.valid ) return tex;
+    }
+    return PIXI.RenderTexture.create(this.#resolution);
   }
 }

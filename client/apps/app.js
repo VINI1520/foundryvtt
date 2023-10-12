@@ -101,7 +101,7 @@ class Application {
 
     /**
      * Track whether the Application is currently minimized
-     * @type {boolean|null}
+     * @type {boolean}
      */
     this._minimized = false;
 
@@ -278,16 +278,6 @@ class Application {
   /* -------------------------------------------- */
 
   /**
-   * Whether the Application is currently closing.
-   * @type {boolean}
-   */
-  get closing() {
-    return this._state === Application.RENDER_STATES.CLOSING;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * An Application window should define its own title definition logic which may be dynamic depending on its data
    * @type {string}
    */
@@ -350,7 +340,6 @@ class Application {
 
   /**
    * An asynchronous inner function which handles the rendering of the Application
-   * @fires renderApplication
    * @param {boolean} force     Render and display the application even if it is not currently displayed.
    * @param {object} options    Additional options which update the current values of the Application#options object
    * @returns {Promise<void>}   A Promise that resolves to the Application once rendering is complete
@@ -374,7 +363,6 @@ class Application {
 
     // Merge provided options with those supported by the Application class
     foundry.utils.mergeObject(this.options, options, { insertKeys: false });
-    options.focus ??= force;
 
     // Get the existing HTML element and application data used for rendering
     const element = this.element;
@@ -417,7 +405,9 @@ class Application {
     }
 
     // Apply focus to the application, maximizing it and bringing it to the top
-    if ( this.popOut && (options.focus === true) ) this.maximize().then(() => this.bringToTop());
+    if ( options.focus === true ) {
+      this.maximize().then(() => this.bringToTop());
+    }
 
     // Dispatch Hooks for rendering the base and subclass applications
     for ( let cls of this.constructor._getInheritanceChain() ) {
@@ -589,9 +579,10 @@ class Application {
    * Specify the set of config buttons which should appear in the Application header.
    * Buttons should be returned as an Array of objects.
    * The header buttons which are added to the application can be modified by the getApplicationHeaderButtons hook.
-   * @fires getApplicationHeaderButtons
+   * @typedef {{label: string, class: string, icon: string, onclick: Function|null}} ApplicationHeaderButton
+   * @fires Application#hook:getApplicationHeaderButtons
    * @returns {ApplicationHeaderButton[]}
-   * @protected
+   * @private
    */
   _getHeaderButtons() {
     const buttons = [
@@ -603,6 +594,14 @@ class Application {
       }
     ];
     for ( let cls of this.constructor._getInheritanceChain() ) {
+
+      /**
+       * A hook event that fires whenever this Application is first rendered to add buttons to its header.
+       * @function getApplicationHeaderButtons
+       * @memberof hookEvents
+       * @param {Application} app                     The Application instance being rendered
+       * @param {ApplicationHeaderButton[]} buttons   The array of header buttons which will be displayed
+       */
       Hooks.call(`get${cls.name}HeaderButtons`, this, buttons);
     }
     return buttons;
@@ -628,10 +627,10 @@ class Application {
    * @protected
    */
   _activateCoreListeners(html) {
-    const content = this.popOut ? html[0].parentElement : html[0];
-    this._tabs.forEach(t => t.bind(content));
-    this._dragDrop.forEach(d => d.bind(content));
-    this._searchFilters.forEach(f => f.bind(content));
+    const el = html[0];
+    this._tabs.forEach(t => t.bind(el));
+    this._dragDrop.forEach(d => d.bind(el));
+    this._searchFilters.forEach(f => f.bind(el));
   }
 
   /* -------------------------------------------- */
@@ -757,7 +756,6 @@ class Application {
   /**
    * Close the application and un-register references to it within UI mappings
    * This function returns a Promise which resolves once the window closing animation concludes
-   * @fires closeApplication
    * @param {object} [options={}] Options which affect how the Application is closed
    * @returns {Promise<void>}     A Promise which resolves once the application is closed
    */
@@ -773,6 +771,14 @@ class Application {
 
     // Dispatch Hooks for closing the base and subclass applications
     for ( let cls of this.constructor._getInheritanceChain() ) {
+
+      /**
+       * A hook event that fires whenever this Application is closed.
+       * @function closeApplication
+       * @memberof hookEvents
+       * @param {Application} app                     The Application instance being closed
+       * @param {jQuery[]} html                       The application HTML when it is closed
+       */
       Hooks.call(`close${cls.name}`, this, el);
     }
 
@@ -807,7 +813,6 @@ class Application {
     const window = this.element;
     const header = window.find(".window-header");
     const content = window.find(".window-content");
-    this._saveScrollPositions(window);
 
     // Remove minimum width and height styling rules
     window.css({minWidth: 100, minHeight: 30});
@@ -851,7 +856,6 @@ class Application {
           window.css({minWidth: "", minHeight: ""}); // Remove explicit dimensions
           content.css({display: ""});  // Remove explicit "block" display
           this.setPosition(this.position);
-          this._restoreScrollPositions(window);
           resolve();
         });
       });
@@ -958,26 +962,4 @@ class Application {
    * @private
    */
   _onResize(event) {}
-
-  /* -------------------------------------------- */
-
-  /**
-   * Wait for any images present in the Application to load.
-   * @returns {Promise<void>}  A Promise that resolves when all images have loaded.
-   * @protected
-   */
-  _waitForImages() {
-    return new Promise(resolve => {
-      let loaded = 0;
-      const images = Array.from(this.element.find("img")).filter(img => !img.complete);
-      if ( !images.length ) resolve();
-      for ( const img of images ) {
-        img.onload = img.onerror = () => {
-          loaded++;
-          img.onload = img.onerror = null;
-          if ( loaded >= images.length ) resolve();
-        };
-      }
-    });
-  }
 }

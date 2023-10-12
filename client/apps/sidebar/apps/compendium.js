@@ -1,33 +1,19 @@
 /**
  * An interface for displaying the content of a CompendiumCollection.
+ * @extends {Application}
  * @param {CompendiumCollection} collection  The {@link CompendiumCollection} object represented by this interface.
  * @param {ApplicationOptions} [options]     Application configuration options.
  */
-class Compendium extends DocumentDirectory {
-  constructor(...args) {
-    if ( args[0] instanceof Collection ) {
-      foundry.utils.logCompatibilityWarning("Compendium constructor should now be passed a CompendiumCollection "
-        + "instance via {collection: compendiumCollection}", {
-        since: 11,
-        until: 13
-      });
-      args[1] ||= {};
-      args[1].collection = args.shift();
-    }
-    super(...args);
+class Compendium extends Application {
+  constructor(collection, options) {
+    super(options);
+
+    /**
+     * The CompendiumCollection instance which is represented in this Compendium interface.
+     * @type {CompendiumCollection}
+     */
+    this.collection = collection;
   }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  get entryType() {
-    return this.metadata.type;
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  static entryPartial = "templates/sidebar/partials/compendium-index-partial.html";
 
   /* -------------------------------------------- */
 
@@ -39,45 +25,16 @@ class Compendium extends DocumentDirectory {
       height: window.innerHeight - 100,
       top: 70,
       left: 120,
-      popOut: true
+      scrollY: [".directory-list"],
+      dragDrop: [{dragSelector: ".directory-item", dropSelector: ".directory-list"}],
+      filters: [{inputSelector: 'input[name="search"]', contentSelector: ".directory-list"}]
     });
   }
-
-  /* -------------------------------------------- */
-
-  /** @inheritDoc */
-  get id() {
-    return `compendium-${this.collection.collection}`;
-  }
-
   /* ----------------------------------------- */
 
   /** @inheritdoc */
   get title() {
     return [this.collection.title, this.collection.locked ? "[Locked]" : null].filterJoin(" ");
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  get tabName() {
-    return "Compendium";
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  get canCreateEntry() {
-    const cls = getDocumentClass(this.collection.documentName);
-    const isOwner = this.collection.testUserPermission(game.user, "OWNER");
-    return !this.collection.locked && isOwner && cls.canUserCreate(game.user);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  get canCreateFolder() {
-    return this.canCreateEntry;
   }
 
   /* ----------------------------------------- */
@@ -90,76 +47,77 @@ class Compendium extends DocumentDirectory {
     return this.collection.metadata;
   }
 
-  /* -------------------------------------------- */
-
-  /** @override */
-  initialize() {
-    this.collection.initializeTree();
-  }
-
   /* ----------------------------------------- */
   /*  Rendering                                */
   /* ----------------------------------------- */
 
-  /** @inheritDoc */
-  render(force, options) {
-    if ( !this.collection.visible ) {
-      if ( force ) ui.notifications.warn("COMPENDIUM.CannotViewWarning", {localize: true});
-      return this;
-    }
-    return super.render(force, options);
-  }
-
-  /* ----------------------------------------- */
-
   /** @inheritdoc */
   async getData(options={}) {
-    const context = await super.getData(options);
-    return foundry.utils.mergeObject(context, {
+    if ( !this.collection.indexed ) await this.collection.getIndex();
+    const footerButtons = [];
+    if ( (this.collection.documentName === "Adventure") && game.user.isGM && !this.collection.locked ) {
+      footerButtons.push({action: "createAdventure", label: "ADVENTURE.Create", icon: CONFIG.Adventure.sidebarIcon});
+    }
+
+    // Sort index entries
+    const index = this.collection.index.contents;
+    index.sort((a, b) => (a.sort || 0) - (b.sort || 0) || a.name.localeCompare(b.name));
+
+    // Return rendering data
+    return {
       collection: this.collection,
-      index: this.collection.index,
-      name: game.i18n.localize(this.metadata.label),
-      footerButtons: []
-    });
+      documentCls: this.collection.documentName.toLowerCase(),
+      index: index,
+      documentPartial: SidebarDirectory.documentPartial,
+      footerButtons
+    };
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  async close(options) {
+    ui.compendium._toggleOpenState(this.collection.collection);
+    return super.close(options);
   }
 
   /* -------------------------------------------- */
   /*  Event Listeners and Handlers                */
   /* -------------------------------------------- */
 
-  /** @override */
-  _entryAlreadyExists(document) {
-    return (document.pack === this.collection.collection) && this.collection.index.has(document.id);
+  /** @inheritdoc */
+  activateListeners(html) {
+    super.activateListeners(html);
+    const directory = html.find(".directory-list");
+    const entries = directory.find(".directory-item");
+
+    // Open sheets
+    html.find(".document-name").click(this._onClickEntry.bind(this));
+
+    // Context menu for each entry
+    this._contextMenu(html);
+
+    // Intersection Observer for Compendium avatars
+    const observer = new IntersectionObserver(SidebarTab.prototype._onLazyLoadImage.bind(this), {root: directory[0]});
+    entries.each((i, li) => observer.observe(li));
+
+    // Footer buttons
+    html.find("button[data-action]").on("click", this._onClickFooterButton.bind(this));
   }
 
   /* -------------------------------------------- */
 
-  /** @override */
-  async _createDroppedEntry(document, folderId) {
-    document = document.clone({folder: folderId || null}, {keepId: true});
-    return this.collection.importDocument(document);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  _getEntryDragData(entryId) {
-    return {
-      type: this.collection.documentName,
-      uuid: this.collection.getUuid(entryId)
-    };
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  _onCreateEntry(event) {
-    // If this is an Adventure, use the Adventure Exporter application
-    if ( this.collection.documentName === "Adventure" ) {
-      const adventure = new Adventure({name: "New Adventure"}, {pack: this.collection.collection});
-      return new AdventureExporter(adventure).render(true);
-    }
-    return super._onCreateEntry(event);
+  /**
+   * Handle opening a single compendium entry by invoking the configured document class and its sheet
+   * @param {MouseEvent} event      The originating click event
+   * @private
+   */
+  async _onClickEntry(event) {
+    let li = event.currentTarget.parentElement;
+    const document = await this.collection.getDocument(li.dataset.documentId);
+    const sheet = document.sheet;
+    if ( sheet._minimized ) return sheet.maximize();
+    else return sheet.render(true, {editable: game.user.isGM && !this.collection.locked});
   }
 
   /* -------------------------------------------- */
@@ -180,37 +138,69 @@ class Compendium extends DocumentDirectory {
 
   /* -------------------------------------------- */
 
-  /** @override */
-  _getDocumentDragData(documentId) {
-    return {
-      type: this.collection.documentName,
-      uuid: this.collection.getUuid(documentId)
-    };
+  /** @inheritdoc */
+  _onSearchFilter(event, query, rgx, html) {
+    for (let li of html.children) {
+      const name = li.querySelector(".document-name").textContent;
+      const match = rgx.test(SearchFilter.cleanQuery(name));
+      li.style.display = match ? "flex" : "none";
+    }
   }
 
   /* -------------------------------------------- */
 
-  /** @override */
-  _getFolderDragData(folderId) {
-    const folder = this.collection.folders.get(folderId);
-    if ( !folder ) return null;
-    return {
-      type: "Folder",
-      uuid: folder.uuid
-    };
+  /** @inheritdoc */
+  _canDragStart(selector) {
+    return true;
   }
 
   /* -------------------------------------------- */
 
-  /** @override */
-  _getFolderContextOptions() {
-    const toRemove = ["OWNERSHIP.Configure", "FOLDER.Export"];
-    return super._getFolderContextOptions().filter(o => !toRemove.includes(o.name));
+  /** @inheritdoc */
+  _canDragDrop(selector) {
+    return game.user.isGM;
   }
 
   /* -------------------------------------------- */
 
-  /** @override */
+  /** @inheritdoc */
+  _onDragStart(event) {
+    const li = event.currentTarget;
+    const pack = this.collection;
+    event.dataTransfer.setData("text/plain", JSON.stringify({
+      type: pack.documentName,
+      uuid: `Compendium.${pack.collection}.${li.dataset.documentId}`
+    }));
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  async _onDrop(event) {
+    const data = TextEditor.getDragEventData(event);
+    if ( !data.type ) throw new Error("You must define the type of document data being dropped");
+
+    // Import the dropped Document
+    const cls = this.collection.documentClass;
+    const document = await cls.fromDropData(data);
+    if ( document.pack === this.collection.collection ) return false; // Prevent drop on self
+    return this.collection.importDocument(document);
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  _contextMenu(html) {
+    ContextMenu.create(this, html, ".directory-item", this._getEntryContextOptions());
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Get Compendium entry context options
+   * @returns {object[]}  The Compendium entry context options
+   * @private
+   */
   _getEntryContextOptions() {
     const isAdventure = this.collection.documentName === "Adventure";
     return [
@@ -232,18 +222,6 @@ class Compendium extends DocumentDirectory {
           const id = li.data("document-id");
           const document = await this.collection.getDocument(id);
           return new AdventureExporter(document.clone({}, {keepId: true})).render(true);
-        }
-      },
-      {
-        name: "SCENES.GenerateThumb",
-        icon: '<i class="fas fa-image"></i>',
-        condition: () => !this.collection.locked && (this.collection.documentName === "Scene"),
-        callback: async li => {
-          const scene = await this.collection.getDocument(li.data("document-id"));
-          scene.createThumbnail().then(data => {
-            scene.update({thumb: data.thumb}, {diff: false});
-            ui.notifications.info(game.i18n.format("SCENES.GenerateThumbSuccess", {name: scene.name}));
-          }).catch(err => ui.notifications.error(err.message));
         }
       },
       {

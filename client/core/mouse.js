@@ -4,6 +4,7 @@
 class MouseManager {
   constructor() {
     this._wheelTime = 0;
+    window.addEventListener("wheel", this._onWheel.bind(this), {passive: false});
   }
 
   /**
@@ -13,16 +14,6 @@ class MouseManager {
    * @type {number}
    */
   static MOUSE_WHEEL_RATE_LIMIT = 50;
-
-  /* -------------------------------------------- */
-
-  /**
-   * Begin listening to mouse events.
-   * @internal
-   */
-  _activateListeners() {
-    window.addEventListener("wheel", this._onWheel.bind(this), {passive: false});
-  }
 
   /* -------------------------------------------- */
 

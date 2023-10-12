@@ -1,7 +1,7 @@
 /**
  * The sidebar directory which organizes and displays world-level Item documents.
  */
-class ItemDirectory extends DocumentDirectory {
+class ItemDirectory extends SidebarDirectory {
 
   /** @override */
   static documentName = "Item";
@@ -28,7 +28,7 @@ class ItemDirectory extends DocumentDirectory {
         },
         callback: li => {
           const item = game.items.get(li.data("documentId"));
-          new ImagePopout(item.img, {
+          new ImagePopout(item.data.img, {
             title: item.name,
             uuid: item.uuid
           }).render(true);

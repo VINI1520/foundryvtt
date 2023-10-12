@@ -17,7 +17,7 @@ export default class BaseSystem extends BasePackage {
   /** @inheritDoc */
   static defineSchema() {
     return Object.assign({}, super.defineSchema(), {
-      background: new fields.StringField({required: false, blank: false}),
+      background: new fields.StringField(),
       initiative: new fields.StringField(),
       gridDistance: new fields.NumberField(),
       gridUnits: new fields.StringField(),
@@ -28,12 +28,6 @@ export default class BaseSystem extends BasePackage {
 
   /** @inheritdoc */
   static type = "system";
-
-  /**
-   * The default icon used for this type of Package.
-   * @type {string}
-   */
-  static icon = "fa-dice";
 
   /**
    * An alias for the document types available in the currently active World.

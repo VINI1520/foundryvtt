@@ -23,7 +23,7 @@
      * @type {[number, number, number]}
      */
     get rgb() {
-      return [((this >> 16) & 0xFF) / 255, ((this >> 8) & 0xFF) / 255, (this & 0xFF) / 255];
+      return [...this];
     }
 
     /* ------------------------------------------ */
@@ -158,7 +158,9 @@
      * @returns {Color}           The resulting mixed Color
      */
     mix(other, weight) {
-      return new Color(Color.mix(this, other, weight));
+      const o = other.rgb;
+      const mixed = this.rgb.map((c, i) => Math.clamped((weight * o[i]) + ((1 - weight) * c), 0, 1));
+      return Color.fromRGB(mixed);
     }
 
     /* ------------------------------------------ */
@@ -169,8 +171,9 @@
      * @returns {Color}             The resulting Color.
      */
     multiply(other) {
-      if ( other instanceof Color ) return new Color(Color.multiply(this, other));
-      return new Color(Color.multiplyScalar(this, other));
+      const o = other instanceof Color ? other.rgb : [other, other, other];
+      const mixed = this.rgb.map((c, i) => Math.clamped(c * o[i], 0, 1));
+      return Color.fromRGB(mixed);
     }
 
     /* ------------------------------------------ */
@@ -181,8 +184,9 @@
      * @returns {Color}             The resulting Color.
      */
     add(other) {
-      if ( other instanceof Color ) return new Color(Color.add(this, other));
-      return new Color(Color.addScalar(this, other));
+      const o = other instanceof Color ? other.rgb : [other, other, other];
+      const mixed = this.rgb.map((c, i) => Math.clamped(c + o[i], 0, 1));
+      return Color.fromRGB(mixed);
     }
 
     /* ------------------------------------------ */
@@ -193,8 +197,9 @@
      * @returns {Color}             The resulting Color.
      */
     subtract(other) {
-      if ( other instanceof Color ) return new Color(Color.subtract(this, other));
-      return new Color(Color.subtractScalar(this, other));
+      const o = other instanceof Color ? other.rgb : [other, other, other];
+      const mixed = this.rgb.map((c, i) => Math.clamped(c - o[i], 0, 1));
+      return Color.fromRGB(mixed);
     }
 
     /* ------------------------------------------ */
@@ -205,8 +210,9 @@
      * @returns {Color}             The resulting Color.
      */
     maximize(other) {
-      if ( other instanceof Color ) return new Color(Color.maximize(this, other));
-      return new Color(Color.maximizeScalar(this, other));
+      const o = other instanceof Color ? other.rgb : [other, other, other];
+      const mixed = this.rgb.map((c, i) => Math.clamped(Math.max(c, o[i]), 0, 1));
+      return Color.fromRGB(mixed);
     }
 
     /* ------------------------------------------ */
@@ -217,8 +223,9 @@
      * @returns {Color}             The resulting Color.
      */
     minimize(other) {
-      if ( other instanceof Color ) return new Color(Color.minimize(this, other));
-      return new Color(Color.minimizeScalar(this, other));
+      const o = other instanceof Color ? other.rgb : [other, other, other];
+      const mixed = this.rgb.map((c, i) => Math.clamped(Math.min(c, o[i]), 0, 1));
+      return Color.fromRGB(mixed);
     }
 
     /* ------------------------------------------ */
@@ -233,189 +240,6 @@
       yield this.r;
       yield this.g;
       yield this.b;
-    }
-
-    /* ------------------------------------------------------------------------------------------- */
-    /*                      Real-time performance Methods and Properties                           */
-    /*  Important Note:                                                                            */
-    /*  These methods are not a replacement, but a tool when real-time performance is needed.      */
-    /*  They do not have the flexibility of the "classic" methods and come with some limitations.  */
-    /*  Unless you have to deal with real-time performance, you should use the "classic" methods.  */
-    /* ------------------------------------------------------------------------------------------- */
-
-    /**
-     * Set an rgb array with the rgb values contained in this Color class.
-     * @param {number[]} vec3  Receive the result. Must be an array with at least a length of 3.
-     */
-    applyRGB(vec3) {
-      vec3[0] = ((this >> 16) & 0xFF) / 255;
-      vec3[1] = ((this >> 8) & 0xFF) / 255;
-      vec3[2] = (this & 0xFF) / 255;
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Apply a linear interpolation between two colors, according to the weight.
-     * @param {number}        color1       The first color to mix.
-     * @param {number}        color2       The second color to mix.
-     * @param {number}        weight       Weight of the linear interpolation.
-     * @returns {number}                   The resulting mixed color
-     */
-    static mix(color1, color2, weight) {
-      return (((((color1 >> 16) & 0xFF) * (1 - weight) + ((color2 >> 16) & 0xFF) * weight) << 16) & 0xFF0000)
-        | (((((color1 >> 8) & 0xFF) * (1 - weight) + ((color2 >> 8) & 0xFF) * weight) << 8) & 0x00FF00)
-        | (((color1 & 0xFF) * (1 - weight) + (color2 & 0xFF) * weight) & 0x0000FF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Multiply two colors.
-     * @param {number}        color1       The first color to multiply.
-     * @param {number}        color2       The second color to multiply.
-     * @returns {number}                   The result.
-     */
-    static multiply(color1, color2) {
-      return ((((color1 >> 16) & 0xFF) / 255 * ((color2 >> 16) & 0xFF) / 255) * 255 << 16)
-        | ((((color1 >> 8) & 0xFF) / 255 * ((color2 >> 8) & 0xFF) / 255) * 255 << 8)
-        | (((color1 & 0xFF) / 255 * ((color2 & 0xFF) / 255)) * 255);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Multiply a color by a scalar
-     * @param {number} color        The color to multiply.
-     * @param {number} scalar       A static scalar to multiply with.
-     * @returns {number}            The resulting color as a number.
-     */
-    static multiplyScalar(color, scalar) {
-      return ((((color >> 16) & 0xFF) / 255 * scalar) * 255 << 16)
-        | ((((color >> 8) & 0xFF) / 255 * scalar) * 255 << 8)
-        | (((color & 0xFF) / 255 * scalar) * 255);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Maximize two colors.
-     * @param {number}        color1       The first color.
-     * @param {number}        color2       The second color.
-     * @returns {number}                   The result.
-     */
-    static maximize(color1, color2) {
-      return (Math.clamped(Math.max((color1 >> 16) & 0xFF, (color2 >> 16) & 0xFF), 0, 0xFF) << 16)
-        | (Math.clamped(Math.max((color1 >> 8) & 0xFF, (color2 >> 8) & 0xFF), 0, 0xFF) << 8)
-        | Math.clamped(Math.max(color1 & 0xFF, color2 & 0xFF), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Maximize a color by a static scalar.
-     * @param {number} color         The color to maximize.
-     * @param {number} scalar        Scalar to maximize with (normalized).
-     * @returns {number}             The resulting color as a number.
-     */
-    static maximizeScalar(color, scalar) {
-      return (Math.clamped(Math.max((color >> 16) & 0xFF, scalar * 255), 0, 0xFF) << 16)
-        | (Math.clamped(Math.max((color >> 8) & 0xFF, scalar * 255), 0, 0xFF) << 8)
-        | Math.clamped(Math.max(color & 0xFF, scalar * 255), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Add two colors.
-     * @param {number}        color1       The first color.
-     * @param {number}        color2       The second color.
-     * @returns {number}                   The resulting color as a number.
-     */
-    static add(color1, color2) {
-      return (Math.clamped((((color1 >> 16) & 0xFF) + ((color2 >> 16) & 0xFF)), 0, 0xFF) << 16)
-        | (Math.clamped((((color1 >> 8) & 0xFF) + ((color2 >> 8) & 0xFF)), 0, 0xFF) << 8)
-        | Math.clamped(((color1 & 0xFF) + (color2 & 0xFF)), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Add a static scalar to a color.
-     * @param {number} color         The color.
-     * @param {number} scalar        Scalar to add with (normalized).
-     * @returns {number}             The resulting color as a number.
-     */
-    static addScalar(color, scalar) {
-      return (Math.clamped((((color >> 16) & 0xFF) + scalar * 255), 0, 0xFF) << 16)
-        | (Math.clamped((((color >> 8) & 0xFF) + scalar * 255), 0, 0xFF) << 8)
-        | Math.clamped(((color & 0xFF) + scalar * 255), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Subtract two colors.
-     * @param {number}        color1       The first color.
-     * @param {number}        color2       The second color.
-     */
-    static subtract(color1, color2) {
-      return (Math.clamped((((color1 >> 16) & 0xFF) - ((color2 >> 16) & 0xFF)), 0, 0xFF) << 16)
-        | (Math.clamped((((color1 >> 8) & 0xFF) - ((color2 >> 8) & 0xFF)), 0, 0xFF) << 8)
-        | Math.clamped(((color1 & 0xFF) - (color2 & 0xFF)), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Subtract a color by a static scalar.
-     * @param {number} color         The color.
-     * @param {number} scalar        Scalar to subtract with (normalized).
-     * @returns {number}             The resulting color as a number.
-     */
-    static subtractScalar(color, scalar) {
-      return (Math.clamped((((color >> 16) & 0xFF) - scalar * 255), 0, 0xFF) << 16)
-        | (Math.clamped((((color >> 8) & 0xFF) - scalar * 255), 0, 0xFF) << 8)
-        | Math.clamped(((color & 0xFF) - scalar * 255), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Minimize two colors.
-     * @param {number}        color1       The first color.
-     * @param {number}        color2       The second color.
-     */
-    static minimize(color1, color2) {
-      return (Math.clamped(Math.min((color1 >> 16) & 0xFF, (color2 >> 16) & 0xFF), 0, 0xFF) << 16)
-        | (Math.clamped(Math.min((color1 >> 8) & 0xFF, (color2 >> 8) & 0xFF), 0, 0xFF) << 8)
-        | Math.clamped(Math.min(color1 & 0xFF, color2 & 0xFF), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Minimize a color by a static scalar.
-     * @param {number} color         The color.
-     * @param {number} scalar        Scalar to minimize with (normalized).
-     */
-    static minimizeScalar(color, scalar) {
-      return (Math.clamped(Math.min((color >> 16) & 0xFF, scalar * 255), 0, 0xFF) << 16)
-        | (Math.clamped(Math.min((color >> 8) & 0xFF, scalar * 255), 0, 0xFF) << 8)
-        | Math.clamped(Math.min(color & 0xFF, scalar * 255), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Convert a color to RGB and assign values to a passed array.
-     * @param {number} color   The color to convert to RGB values.
-     * @param {number[]} vec3  Receive the result. Must be an array with at least a length of 3.
-     */
-    static applyRGB(color, vec3) {
-      vec3[0] = ((color >> 16) & 0xFF) / 255;
-      vec3[1] = ((color >> 8) & 0xFF) / 255;
-      vec3[2] = (color & 0xFF) / 255;
     }
 
     /* ------------------------------------------ */
@@ -457,19 +281,6 @@
      */
     static fromRGB(rgb) {
       return new this(((rgb[0] * 255) << 16) + ((rgb[1] * 255) << 8) + (rgb[2] * 255 | 0));
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Create a Color instance from an RGB normalized values.
-     * @param {number} r                          The red value
-     * @param {number} g                          The green value
-     * @param {number} b                          The blue value
-     * @returns {Color}                           The hex color instance
-     */
-    static fromRGBvalues(r, g, b) {
-      return new this(((r * 255) << 16) + ((g * 255) << 8) + (b * 255 | 0));
     }
 
     /* ------------------------------------------ */
@@ -717,16 +528,6 @@
   };
 
   /**
-   * The CSS themes which are currently supported for the V11 Setup menu.
-   * @enum {{id: string, label: string}}
-   */
-  const CSS_THEMES = Object.freeze({
-    foundry: "THEME.foundry",
-    fantasy: "THEME.fantasy",
-    scifi: "THEME.scifi"
-  });
-
-  /**
    * The default artwork used for Token images if none is provided
    * @type {string}
    */
@@ -871,13 +672,13 @@
    * Define the allowed Document types which Folders may contain
    * @type {string[]}
    */
-  const FOLDER_DOCUMENT_TYPES = ["Actor", "Adventure", "Item", "Scene", "JournalEntry", "Playlist", "RollTable", "Cards", "Macro", "Compendium"];
+  const FOLDER_DOCUMENT_TYPES = ["Actor", "Item", "Scene", "JournalEntry", "Playlist", "RollTable", "Cards", "Macro"];
 
   /**
    * The maximum allowed level of depth for Folder nesting
    * @type {number}
    */
-  const FOLDER_MAX_DEPTH = 4;
+  const FOLDER_MAX_DEPTH = 3;
 
   /**
    * A list of allowed game URL names
@@ -932,7 +733,7 @@
    * A list of supported setup URL names
    * @type {string[]}
    */
-  const SETUP_VIEWS = ["auth", "license", "setup", "players", "join", "update"];
+  const SETUP_VIEWS = ["license", "setup", "players", "join", "auth"];
 
   /**
    * An Array of valid MacroAction scope values
@@ -1003,15 +804,6 @@
   };
 
   /**
-   * The available modes for searching within a DirectoryCollection
-   * @type {{FULL: string, NAME: string}}
-   */
-  const DIRECTORY_SEARCH_MODES = {
-    FULL: "full",
-    NAME: "name"
-  };
-
-  /**
    * The allowed package types
    * @type {string[]}
    */
@@ -1025,52 +817,42 @@
     /**
      * Package availability could not be determined
      */
-    UNKNOWN: 0,
+    UNKNOWN: -1,
 
     /**
-     * The Package is verified to be compatible with the current core software build
+     * Package is available for use
      */
-    VERIFIED: 1,
+    AVAILABLE: 0,
 
     /**
-     * Package is available for use, but not verified for the current core software build
+     * Package requires an update to a newer Package version
      */
-    UNVERIFIED_BUILD: 2,
-
-    /**
-     * Package is available for use, but not verified for the current core software generation
-     */
-    UNVERIFIED_GENERATION: 3,
+    REQUIRES_UPDATE: 1,
 
     /**
      * The System that the Package relies on is not available
      */
-    MISSING_SYSTEM: 4,
+    REQUIRES_SYSTEM: 2,
 
     /**
      * A dependency of the Package is not available
      */
-    MISSING_DEPENDENCY: 5,
+    REQUIRES_DEPENDENCY: 3,
 
     /**
      * The Package is compatible with an older version of Foundry than the currently installed version
      */
-    REQUIRES_CORE_DOWNGRADE: 6,
+    REQUIRES_CORE_DOWNGRADE: 4,
 
     /**
      * The Package is compatible with a newer version of Foundry than the currently installed version, and that version is Stable
      */
-    REQUIRES_CORE_UPGRADE_STABLE: 7,
+    REQUIRES_CORE_UPGRADE_STABLE: 5,
 
     /**
      * The Package is compatible with a newer version of Foundry than the currently installed version, and that version is not yet Stable
      */
-    REQUIRES_CORE_UPGRADE_UNSTABLE: 8,
-
-    /**
-     * A required dependency is not compatible with the current version of Foundry
-     */
-    REQUIRES_DEPENDENCY_UPDATE: 9
+    REQUIRES_CORE_UPGRADE_UNSTABLE: 6
   };
 
   /**
@@ -1187,7 +969,7 @@
    * @enum {number}
    * @see https://foundryvtt.com/article/tiles/
    */
-  const OCCLUSION_MODES = {
+  const TILE_OCCLUSION_MODES = {
     /**
      * Turns off occlusion, making the tile never fade while tokens are under it.
      */
@@ -1214,11 +996,6 @@
      */
     VISION: 4
   };
-
-  /**
-   * Alias for old tile occlusion modes definition
-   */
-  const TILE_OCCLUSION_MODES = OCCLUSION_MODES;
 
   /**
    * Describe the various thresholds of token control upon which to show certain pieces of information
@@ -1263,11 +1040,6 @@
    * @see https://foundryvtt.com/article/tokens/
    */
   const TOKEN_DISPOSITIONS = {
-    /**
-     * Displayed with a purple borders for owners and with no borders for others (and no pointer change).
-     */
-    SECRET: -2,
-
     /**
      * Displayed as an enemy with a red border.
      */
@@ -1387,12 +1159,6 @@
       hint: "PERMISSION.BroadcastVideoHint",
       disableGM: true,
       defaultRole: USER_ROLES.TRUSTED
-    },
-    CARDS_CREATE: {
-      label: "PERMISSION.CardsCreate",
-      hint: "PERMISSION.CardsCreateHint",
-      disableGM: false,
-      defaultRole: USER_ROLES.ASSISTANT
     },
     DRAWING_CREATE: {
       label: "PERMISSION.DrawingCreate",
@@ -1565,12 +1331,6 @@
   };
 
   /**
-   * The possible ways to interact with a door
-   * @enum {string[]}
-   */
-  const WALL_DOOR_INTERACTIONS = ["open", "close", "lock", "unlock", "test"];
-
-  /**
    * The wall properties which restrict the way interaction occurs with a specific wall
    * @type {string[]}
    */
@@ -1595,17 +1355,7 @@
     /**
      * Senses collide with the second intersection, bypassing the first.
      */
-    NORMAL: 20,
-
-    /**
-     * Senses bypass the wall within a certain proximity threshold.
-     */
-    PROXIMITY: 30,
-
-    /**
-     * Senses bypass the wall outside a certain proximity threshold.
-     */
-    DISTANCE: 40
+    NORMAL: 20
   };
 
   /**
@@ -1677,7 +1427,7 @@
   const VIDEO_FILE_EXTENSIONS = {
     m4v: "video/mp4",
     mp4: "video/mp4",
-    ogv: "video/ogg",
+    ogg: "video/ogg",
     webm: "video/webm"
   };
 
@@ -1830,99 +1580,6 @@
   };
 
   /**
-   * The list of allowed attributes in HTML elements.
-   * @type {Record<string, string[]>}
-   */
-  const ALLOWED_HTML_ATTRIBUTES = Object.freeze({
-    "*": Object.freeze(["class", "data-*", "id", "title", "style", "draggable", "aria-*", "tabindex", "dir"]),
-    a: Object.freeze(["href", "name", "target", "rel"]),
-    area: Object.freeze(["alt", "coords", "href", "rel", "shape", "target"]),
-    audio: Object.freeze(["controls", "loop", "muted", "src", "autoplay"]),
-    blockquote: Object.freeze(["cite"]),
-    button: Object.freeze(["disabled", "name", "type", "value"]),
-    col: Object.freeze(["span"]),
-    colgroup: Object.freeze(["span"]),
-    details: Object.freeze(["open"]),
-    fieldset: Object.freeze(["disabled"]),
-    form: Object.freeze(["name"]),
-    iframe: Object.freeze(["src", "srcdoc", "name", "height", "width", "loading", "sandbox"]),
-    img: Object.freeze(["height", "src", "width", "usemap", "sizes", "srcset", "alt"]),
-    input: Object.freeze([
-      "checked", "disabled", "name", "value", "placeholder", "type", "alt", "height", "list",
-      "max", "min", "placeholder", "readonly", "size", "src", "step", "width"
-    ]),
-    label: Object.freeze(["for"]),
-    li: Object.freeze(["value"]),
-    map: Object.freeze(["name"]),
-    meter: Object.freeze(["value", "min", "max", "low", "high", "optimum"]),
-    ol: Object.freeze(["reversed", "start", "type"]),
-    optgroup: Object.freeze(["disabled", "label"]),
-    option: Object.freeze(["disabled", "selected", "label", "value"]),
-    progress: Object.freeze(["max", "value"]),
-    select: Object.freeze(["name", "disabled", "multiple", "size"]),
-    source: Object.freeze(["media", "sizes", "src", "srcset", "type"]),
-    table: Object.freeze(["border"]),
-    td: Object.freeze(["colspan", "headers", "rowspan"]),
-    textarea: Object.freeze(["rows", "cols", "disabled", "name", "readonly", "wrap"]),
-    time: Object.freeze(["datetime"]),
-    th: Object.freeze(["abbr", "colspan", "headers", "rowspan", "scope", "sorted"]),
-    track: Object.freeze(["default", "kind", "label", "src", "srclang"]),
-    video: Object.freeze(["controls", "height", "width", "loop", "muted", "poster", "src", "autoplay"])
-  });
-
-  /**
-   * The list of trusted iframe domains.
-   * @type {string[]}
-   */
-  const TRUSTED_IFRAME_DOMAINS = Object.freeze(["google.com", "youtube.com"]);
-
-  /**
-   * Available themes for the world join page.
-   * @enum {string}
-   */
-  const WORLD_JOIN_THEMES = {
-    default: "WORLD.JoinThemeDefault",
-    minimal: "WORLD.JoinThemeMinimal"
-  };
-
-  /**
-   * Setup page package progress protocol.
-   * @type {{ACTIONS: Object<string>, STEPS: Object<string>}}
-   */
-  const SETUP_PACKAGE_PROGRESS = {
-    ACTIONS: {
-      CREATE_BACKUP: "createBackup",
-      RESTORE_BACKUP: "restoreBackup",
-      DELETE_BACKUP: "deleteBackup",
-      CREATE_SNAPSHOT: "createSnapshot",
-      RESTORE_SNAPSHOT: "restoreSnapshot",
-      DELETE_SNAPSHOT: "deleteSnapshot",
-      INSTALL_PKG: "installPackage",
-      LAUNCH_WORLD: "launchWorld",
-      UPDATE_CORE: "updateCore"
-    },
-    STEPS: {
-      ARCHIVE: "archive",
-      CHECK_DISK_SPACE: "checkDiskSpace",
-      CONNECT_WORLD: "connectWorld",
-      CONNECT_PKG: "connectPackage",
-      MIGRATE_CORE: "migrateCore",
-      MIGRATE_SYSTEM: "migrateSystem",
-      DOWNLOAD: "download",
-      EXTRACT: "extract",
-      INSTALL: "install",
-      CLEANUP: "cleanup",
-      COMPLETE: "complete",
-      DELETE: "delete",
-      ERROR: "error",
-      VEND: "vend",
-      SNAPSHOT_MODULES: "snapshotModules",
-      SNAPSHOT_SYSTEMS: "snapshotSystems",
-      SNAPSHOT_WORLDS: "snapshotWorlds"
-    }
-  };
-
-  /**
    * @deprecated since v10.
    * @see {data.ShapeData.TYPES}
    * @enum {string}
@@ -1935,91 +1592,76 @@
     FREEHAND: "f"
   };
 
-  /**
-   * The combat announcements.
-   * @enum {string[]}
-   */
-  const COMBAT_ANNOUNCEMENTS = ["startEncounter", "nextUp", "yourTurn"];
-
   var CONST$1 = /*#__PURE__*/Object.freeze({
     __proto__: null,
-    ACTIVE_EFFECT_MODES: ACTIVE_EFFECT_MODES,
-    ALLOWED_HTML_ATTRIBUTES: ALLOWED_HTML_ATTRIBUTES,
+    vtt: vtt$1,
+    VTT: VTT,
+    WEBSITE_URL: WEBSITE_URL,
+    WEBSITE_API_URL: WEBSITE_API_URL,
     ASCII: ASCII,
-    AUDIO_FILE_EXTENSIONS: AUDIO_FILE_EXTENSIONS,
+    ACTIVE_EFFECT_MODES: ACTIVE_EFFECT_MODES,
     BASE_DOCUMENT_TYPE: BASE_DOCUMENT_TYPE,
-    CANVAS_PERFORMANCE_MODES: CANVAS_PERFORMANCE_MODES,
     CARD_DRAW_MODES: CARD_DRAW_MODES,
+    CANVAS_PERFORMANCE_MODES: CANVAS_PERFORMANCE_MODES,
     CHAT_MESSAGE_TYPES: CHAT_MESSAGE_TYPES,
-    COMBAT_ANNOUNCEMENTS: COMBAT_ANNOUNCEMENTS,
-    COMPATIBILITY_MODES: COMPATIBILITY_MODES,
-    COMPENDIUM_DOCUMENT_TYPES: COMPENDIUM_DOCUMENT_TYPES,
     CORE_SUPPORTED_LANGUAGES: CORE_SUPPORTED_LANGUAGES,
-    CSS_THEMES: CSS_THEMES,
+    COMPATIBILITY_MODES: COMPATIBILITY_MODES,
     DEFAULT_TOKEN: DEFAULT_TOKEN,
-    DICE_ROLL_MODES: DICE_ROLL_MODES,
-    DIRECTORY_SEARCH_MODES: DIRECTORY_SEARCH_MODES,
-    DOCUMENT_LINK_TYPES: DOCUMENT_LINK_TYPES,
-    DOCUMENT_META_OWNERSHIP_LEVELS: DOCUMENT_META_OWNERSHIP_LEVELS,
-    DOCUMENT_OWNERSHIP_LEVELS: DOCUMENT_OWNERSHIP_LEVELS,
-    DOCUMENT_PERMISSION_LEVELS: DOCUMENT_PERMISSION_LEVELS,
     DOCUMENT_TYPES: DOCUMENT_TYPES,
+    COMPENDIUM_DOCUMENT_TYPES: COMPENDIUM_DOCUMENT_TYPES,
+    DOCUMENT_OWNERSHIP_LEVELS: DOCUMENT_OWNERSHIP_LEVELS,
+    DOCUMENT_META_OWNERSHIP_LEVELS: DOCUMENT_META_OWNERSHIP_LEVELS,
+    DOCUMENT_PERMISSION_LEVELS: DOCUMENT_PERMISSION_LEVELS,
+    DOCUMENT_LINK_TYPES: DOCUMENT_LINK_TYPES,
+    DICE_ROLL_MODES: DICE_ROLL_MODES,
     DRAWING_FILL_TYPES: DRAWING_FILL_TYPES,
-    DRAWING_TYPES: DRAWING_TYPES,
-    FILE_CATEGORIES: FILE_CATEGORIES,
     FOLDER_DOCUMENT_TYPES: FOLDER_DOCUMENT_TYPES,
     FOLDER_MAX_DEPTH: FOLDER_MAX_DEPTH,
-    FONT_FILE_EXTENSIONS: FONT_FILE_EXTENSIONS,
-    FONT_WEIGHTS: FONT_WEIGHTS,
     GAME_VIEWS: GAME_VIEWS,
-    GRAPHICS_FILE_EXTENSIONS: GRAPHICS_FILE_EXTENSIONS,
     GRID_MIN_SIZE: GRID_MIN_SIZE,
     GRID_TYPES: GRID_TYPES,
-    HTML_FILE_EXTENSIONS: HTML_FILE_EXTENSIONS,
-    IMAGE_FILE_EXTENSIONS: IMAGE_FILE_EXTENSIONS,
-    JOURNAL_ENTRY_PAGE_FORMATS: JOURNAL_ENTRY_PAGE_FORMATS,
-    KEYBINDING_PRECEDENCE: KEYBINDING_PRECEDENCE,
+    SETUP_VIEWS: SETUP_VIEWS,
     MACRO_SCOPES: MACRO_SCOPES,
     MACRO_TYPES: MACRO_TYPES,
-    MEASURED_TEMPLATE_TYPES: MEASURED_TEMPLATE_TYPES,
-    MEDIA_MIME_TYPES: MEDIA_MIME_TYPES,
-    OCCLUSION_MODES: OCCLUSION_MODES,
-    PACKAGE_AVAILABILITY_CODES: PACKAGE_AVAILABILITY_CODES,
-    PACKAGE_TYPES: PACKAGE_TYPES,
-    PASSWORD_SAFE_STRING: PASSWORD_SAFE_STRING,
     PLAYLIST_MODES: PLAYLIST_MODES,
     PLAYLIST_SORT_MODES: PLAYLIST_SORT_MODES,
-    SETUP_PACKAGE_PROGRESS: SETUP_PACKAGE_PROGRESS,
-    SETUP_VIEWS: SETUP_VIEWS,
-    SHOWDOWN_OPTIONS: SHOWDOWN_OPTIONS,
+    PACKAGE_TYPES: PACKAGE_TYPES,
+    PACKAGE_AVAILABILITY_CODES: PACKAGE_AVAILABILITY_CODES,
+    PASSWORD_SAFE_STRING: PASSWORD_SAFE_STRING,
     SOFTWARE_UPDATE_CHANNELS: SOFTWARE_UPDATE_CHANNELS,
     SORT_INTEGER_DENSITY: SORT_INTEGER_DENSITY,
-    SYSTEM_SPECIFIC_COMPENDIUM_TYPES: SYSTEM_SPECIFIC_COMPENDIUM_TYPES,
     TABLE_RESULT_TYPES: TABLE_RESULT_TYPES,
+    JOURNAL_ENTRY_PAGE_FORMATS: JOURNAL_ENTRY_PAGE_FORMATS,
     TEXT_ANCHOR_POINTS: TEXT_ANCHOR_POINTS,
-    TEXT_FILE_EXTENSIONS: TEXT_FILE_EXTENSIONS,
     TILE_OCCLUSION_MODES: TILE_OCCLUSION_MODES,
-    TIMEOUTS: TIMEOUTS,
     TOKEN_DISPLAY_MODES: TOKEN_DISPLAY_MODES,
     TOKEN_DISPOSITIONS: TOKEN_DISPOSITIONS,
-    TRUSTED_IFRAME_DOMAINS: TRUSTED_IFRAME_DOMAINS,
-    UPLOADABLE_FILE_EXTENSIONS: UPLOADABLE_FILE_EXTENSIONS,
-    USER_PERMISSIONS: USER_PERMISSIONS,
     USER_ROLES: USER_ROLES,
     USER_ROLE_NAMES: USER_ROLE_NAMES,
-    VIDEO_FILE_EXTENSIONS: VIDEO_FILE_EXTENSIONS,
-    VTT: VTT,
+    MEASURED_TEMPLATE_TYPES: MEASURED_TEMPLATE_TYPES,
+    USER_PERMISSIONS: USER_PERMISSIONS,
     WALL_DIRECTIONS: WALL_DIRECTIONS,
-    WALL_DOOR_INTERACTIONS: WALL_DOOR_INTERACTIONS,
-    WALL_DOOR_STATES: WALL_DOOR_STATES,
     WALL_DOOR_TYPES: WALL_DOOR_TYPES,
-    WALL_MOVEMENT_TYPES: WALL_MOVEMENT_TYPES,
+    WALL_DOOR_STATES: WALL_DOOR_STATES,
     WALL_RESTRICTION_TYPES: WALL_RESTRICTION_TYPES,
     WALL_SENSE_TYPES: WALL_SENSE_TYPES,
-    WEBSITE_API_URL: WEBSITE_API_URL,
-    WEBSITE_URL: WEBSITE_URL,
-    WORLD_JOIN_THEMES: WORLD_JOIN_THEMES,
-    vtt: vtt$1
+    WALL_MOVEMENT_TYPES: WALL_MOVEMENT_TYPES,
+    KEYBINDING_PRECEDENCE: KEYBINDING_PRECEDENCE,
+    HTML_FILE_EXTENSIONS: HTML_FILE_EXTENSIONS,
+    IMAGE_FILE_EXTENSIONS: IMAGE_FILE_EXTENSIONS,
+    VIDEO_FILE_EXTENSIONS: VIDEO_FILE_EXTENSIONS,
+    AUDIO_FILE_EXTENSIONS: AUDIO_FILE_EXTENSIONS,
+    TEXT_FILE_EXTENSIONS: TEXT_FILE_EXTENSIONS,
+    FONT_FILE_EXTENSIONS: FONT_FILE_EXTENSIONS,
+    GRAPHICS_FILE_EXTENSIONS: GRAPHICS_FILE_EXTENSIONS,
+    UPLOADABLE_FILE_EXTENSIONS: UPLOADABLE_FILE_EXTENSIONS,
+    MEDIA_MIME_TYPES: MEDIA_MIME_TYPES,
+    FILE_CATEGORIES: FILE_CATEGORIES,
+    FONT_WEIGHTS: FONT_WEIGHTS,
+    TIMEOUTS: TIMEOUTS,
+    SYSTEM_SPECIFIC_COMPENDIUM_TYPES: SYSTEM_SPECIFIC_COMPENDIUM_TYPES,
+    SHOWDOWN_OPTIONS: SHOWDOWN_OPTIONS,
+    DRAWING_TYPES: DRAWING_TYPES
   });
 
   /**
@@ -2036,13 +1678,9 @@
   function logCompatibilityWarning(message, {mode, since, until, details, stack=true}={}) {
 
     // Determine the logging mode
+    const config = CONFIG.compatibility;
     const modes = COMPATIBILITY_MODES;
-    const compatibility = globalThis.CONFIG?.compatibility || {
-      mode: modes.WARNING,
-      includePatterns: [],
-      excludePatterns: []
-    };
-    mode ??= compatibility.mode;
+    mode = mode ?? CONFIG.compatibility.mode ?? modes.FAILURE;
     if ( mode === modes.SILENT ) return;
 
     // Compose the message
@@ -2052,11 +1690,11 @@
 
     // Filter the message by its stack trace
     const error = new Error(message);
-    if ( compatibility.includePatterns.length ) {
-      if ( !compatibility.includePatterns.some(rgx => rgx.test(error.stack)) ) return;
+    if ( config.includePatterns.length ) {
+      if ( !config.includePatterns.some(rgx => rgx.test(error.stack)) ) return;
     }
-    if ( compatibility.excludePatterns.length ) {
-      if ( compatibility.excludePatterns.some(rgx => rgx.test(error.stack)) ) return;
+    if ( config.excludePatterns.length ) {
+      if ( config.excludePatterns.some(rgx => rgx.test(error.stack)) ) return;
     }
 
     // Log the message
@@ -2277,22 +1915,6 @@
   /* -------------------------------------------- */
 
   /**
-   * Search up the prototype chain and return the class that defines the given property.
-   * @param {object} cls       The starting class.
-   * @param {string} property  The property name.
-   * @returns {function}       The class that defines the property.
-   */
-  function getDefiningClass(cls, property) {
-    let proto = Object.getPrototypeOf(cls);
-    while ( proto ) {
-      if ( proto.hasOwnProperty(property) ) return proto.constructor;
-      proto = Object.getPrototypeOf(proto);
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * Encode a url-like string by replacing any characters which need encoding
    * To reverse this encoding, the native decodeURIComponent can be used on the whole encoded string, without adjustment.
    * @param {string} path     A fully-qualified URL or url component (like a relative path)
@@ -2317,23 +1939,28 @@
 
   /**
    * Expand a flattened object to be a standard nested Object by converting all dot-notation keys to inner objects.
-   * Only simple objects will be expanded. Other Object types like class instances will be retained as-is.
    * @param {object} obj      The object to expand
+   * @param {number} [_d=0]   Track the recursion depth to prevent overflow
    * @return {object}         An expanded object
    */
-  function expandObject(obj) {
-    function _expand(value, depth) {
-      if ( depth > 32 ) throw new Error("Maximum object expansion depth exceeded");
-      if ( !value ) return value;
-      if ( Array.isArray(value) ) return value.map(v => _expand(v, depth+1)); // Map arrays
-      if ( value.constructor?.name !== "Object" ) return value;               // Return advanced objects directly
-      const expanded = {};                                                    // Expand simple objects
-      for ( let [k, v] of Object.entries(value) ) {
-        setProperty(expanded, k, _expand(v, depth+1));
+  function expandObject(obj, _d=0) {
+    if ( _d > 100 ) throw new Error("Maximum object expansion depth exceeded");
+
+    // Recursive expansion function
+    function _expand(value) {
+      if ( value instanceof Object ) {
+        if ( Array.isArray(value) ) return value.map(_expand);
+        else return expandObject(value, _d+1)
       }
-      return expanded;
+      return value;
     }
-    return _expand(obj, 0);
+
+    // Expand all object keys
+    const expanded = {};
+    for ( let [k, v] of Object.entries(obj) ) {
+      setProperty(expanded, k, _expand(v));
+    }
+    return expanded;
   }
 
   /* -------------------------------------------- */
@@ -2422,8 +2049,8 @@
 
   /**
    * Obtain references to the parent classes of a certain class.
-   * @param {Function} cls            An class definition
-   * @return {Array<typeof Object>}   An array of parent classes which the provided class extends
+   * @param {Function} cls      An ES6 Class definition
+   * @return {Function[]}       An array of parent Classes which the provided class extends
    */
   function getParentClasses(cls) {
     if ( typeof cls !== "function" ) {
@@ -2634,10 +2261,10 @@
    * A simple function to test whether an Object is empty
    * @param {object} obj    The object to test
    * @return {boolean}      Is the object empty?
-   * @deprecated since v10, will be removed in v12 - Use isEmpty instead.
+   * @deprecated since v10, will be removed in v11 - Use isEmpty instead.
    */
   function isObjectEmpty(obj) {
-    foundry.utils.logCompatibilityWarning("foundry.utils.isObjectEmpty is deprecated in favor of foundry.utils.isEmpty", {since: 10, until: 12});
+    foundry.utils.logCompatibilityWarning("foundry.utils.isObjectEmpty is deprecated in favor of foundry.utils.isEmpty", {since: 10, until: 11});
     if ( getType(obj) !== "Object" ) {
       throw new Error("The provided data is not an object!");
     }
@@ -2656,12 +2283,10 @@
     switch ( t ) {
       case "undefined":
         return true;
-      case "null":
-        return true;
       case "Array":
         return !value.length;
       case "Object":
-        return !Object.keys(value).length;
+        return (getType(value) === "Object") && !Object.keys(value).length;
       case "Set":
       case "Map":
         return !value.size;
@@ -2716,13 +2341,13 @@
    *
    * @example Control whether merges are performed recursively
    * ```js
-   * mergeObject({k1: {i1: "v1"}}, {k1: {i2: "v2"}}, {recursive: false}); // {k1: {i2: "v2"}}
+   * mergeObject({k1: {i1: "v1"}}, {k1: {i2: "v2"}}, {recursive: false}); // {k1: {i1: "v2"}}
    * mergeObject({k1: {i1: "v1"}}, {k1: {i2: "v2"}}, {recursive: true}); // {k1: {i1: "v1", i2: "v2"}}
    * ```
    *
    * @example Deleting an existing object key
    * ```js
-   * mergeObject({k1: "v1", k2: "v2"}, {"-=k1": null}, {performDeletions: true});   // {k2: "v2"}
+   * mergeObject({k1: "v1", k2: "v2"}, {"-=k1": null});   // {k2: "v2"}
    * ```
    */
   function mergeObject(original, other={}, {
@@ -2874,115 +2499,6 @@
   }
 
   /* -------------------------------------------- */
-
-  /**
-   * Format a file size to an appropriate order of magnitude.
-   * @param {number} size  The size in bytes.
-   * @param {object} [options]
-   * @param {number} [options.decimalPlaces=2]  The number of decimal places to round to.
-   * @param {2|10} [options.base=10]            The base to use. In base 10 a kilobyte is 1000 bytes. In base 2 it is
-   *                                            1024 bytes.
-   * @returns {string}
-   */
-  function formatFileSize(size, { decimalPlaces=2, base=10 }={}) {
-    const units = ["B", "kB", "MB", "GB", "TB"];
-    const divisor = base === 2 ? 1024 : 1000;
-    let iterations = 0;
-    while ( (iterations < units.length) && (size > divisor) ) {
-      size /= divisor;
-      iterations++;
-    }
-    return `${size.toFixed(decimalPlaces)} ${units[iterations]}`;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @typedef {object} ResolvedUUID
-   * @property {string} uuid                      The original UUID.
-   * @property {DocumentCollection} [collection]  The parent collection.
-   * @property {string} [documentId]              The parent document.
-   * @property {string} [documentType]            The parent document type.
-   * @property {Document} [doc]                   An already-resolved document.
-   * @property {string[]} embedded                Any remaining Embedded Document parts.
-   */
-
-  /**
-   * Parse a UUID into its constituent parts.
-   * @param {string} uuid                  The UUID to parse.
-   * @param {object} [options]             Options to configure parsing behavior.
-   * @param {Document} [options.relative]  A document to resolve relative UUIDs against.
-   * @returns {ResolvedUUID}               Returns the Collection, Document Type, and Document ID to resolve the parent
-   *                                       document, as well as the remaining Embedded Document parts, if any.
-   */
-  function parseUuid(uuid, {relative}={}) {
-    if ( !uuid ) return {uuid, embedded: []};
-    if ( uuid.startsWith(".") && relative ) return _resolveRelativeUuid(uuid, relative);
-    const packs = globalThis.db?.packs ?? game.packs;
-    const parts = uuid.split(".");
-    let collection;
-    let documentId;
-    let documentType;
-
-    // Compendium Documents.
-    if ( parts[0] === "Compendium" ) {
-      parts.shift();
-      const [scope, packName, documentName, id] = parts;
-      collection = packs.get(`${scope}.${packName}`);
-
-      // Fully-qualified compendium UUID containing the primary document type.
-      if ( (documentName === "Folder") || COMPENDIUM_DOCUMENT_TYPES.includes(documentName) ) {
-        parts.splice(0, 4);
-        documentId = id;
-        documentType = documentName;
-      }
-
-      // Legacy compendium UUID with implicit primary document type.
-      else {
-        parts.splice(0, 3);
-        documentId = documentName;
-      }
-    }
-
-    // World Documents.
-    else {
-      const [documentName, id] = parts.splice(0, 2);
-      collection = globalThis.db?.[documentName] ?? CONFIG[documentName]?.collection?.instance;
-      documentType = documentName;
-      documentId = id;
-    }
-
-    return {uuid, collection, documentId, documentType, embedded: parts};
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Resolve a UUID relative to another document.
-   * The general-purpose algorithm for resolving relative UUIDs is as follows:
-   * 1. If the number of parts is odd, remove the first part and resolve it against the current document and update the
-   *    current document.
-   * 2. If the number of parts is even, resolve embedded documents against the current document.
-   * @param {string} uuid        The UUID to resolve.
-   * @param {Document} relative  The document to resolve against.
-   * @returns {ResolvedUUID}
-   * @private
-   */
-  function _resolveRelativeUuid(uuid, relative) {
-    uuid = uuid.substring(1);
-    const parts = uuid.split(".");
-
-    // A child document. If we don't have a reference to an actual embedded collection, it will not be resolved in
-    // _resolveEmbedded.
-    if ( parts.length % 2 === 0 ) return {doc: relative, embedded: parts};
-
-    // A sibling document.
-    const documentId = parts.shift();
-    const collection = (relative.compendium && !relative.isEmbedded) ? relative.compendium : relative.collection;
-    return {uuid, collection, documentId, embedded: parts};
-  }
-
-  /* -------------------------------------------- */
   /*  Deprecations and Compatibility              */
   /* -------------------------------------------- */
 
@@ -3123,17 +2639,9 @@
     return Array.from({length: n}, (v, i) => i + min);
   }
 
-  // Define primitives on the Array prototype
-  Object.defineProperties(Array.prototype, {
-    deepFlatten: {value: deepFlatten},
-    equals: {value: equals$1},
-    filterJoin: {value: filterJoin},
-    findSplice: {value: findSplice},
-    partition: {value: partition}
-  });
-  Object.defineProperties(Array,{
-    fromRange: {value: fromRange}
-  });
+  // Assign primitives to the Array prototype
+  Object.assign(Array.prototype, {deepFlatten, equals: equals$1, partition, filterJoin, findSplice});
+  Object.assign(Array, {fromRange});
 
   /**
    * Test whether a Date instance is valid.
@@ -3164,12 +2672,8 @@
     return this.toTimeString().split(" ")[0];
   }
 
-  // Define primitives on the Date prototype
-  Object.defineProperties(Date.prototype, {
-    isValid: {value: isValid},
-    toDateInputString: {value: toDateInputString},
-    toTimeInputString: {value: toTimeInputString}
-  });
+  // Assign primitives to the Date prototype
+  Object.assign(Date.prototype, {isValid, toDateInputString, toTimeInputString});
 
   /**
    * Bound a number between some minimum and maximum value, inclusively.
@@ -3229,15 +2733,11 @@
   }
 
   /**
+   * TODO: Add deprecation in V11 or V12
    * To keep compatibility with previous implementation.
    * roundFast was bugged and the performance advantage was not there.
-   * @deprecated since v10
    */
-  const roundFast = value => {
-    const msg = "roundFast is deprecated in favor of Math.round";
-    foundry.utils.logCompatibilityWarning(msg, {since: 10, until: 12});
-    return Math.round(value);
-  };
+  const roundFast = Math.round;
 
   /**
    * Transform an angle in radians to a number in degrees
@@ -3270,18 +2770,8 @@
     return ((maxVal - minVal) * (func((2 * Math.PI * t) / p) + 1) / 2) + minVal;
   }
 
-  // Define properties on the Math environment
-  Object.defineProperties(Math, {
-    clamped: {value: clamped},
-    mix: {value: mix},
-    normalizeDegrees: {value: normalizeDegrees},
-    normalizeRadians: {value: normalizeRadians},
-    roundDecimals: {value: roundDecimals},
-    roundFast: {value: roundFast},
-    toDegrees: {value: toDegrees},
-    toRadians: {value: toRadians},
-    oscillation: {value: oscillation}
-  });
+  Object.assign(Math, {clamped, mix, normalizeDegrees, normalizeRadians, roundDecimals,
+    roundFast, toDegrees, toRadians, oscillation});
 
   /**
    * Test for near-equivalence of two numbers within some permitted epsilon
@@ -3394,19 +2884,9 @@
     return Number(n);
   }
 
-  // Define properties on the Number environment
-  Object.defineProperties(Number.prototype, {
-    almostEqual: {value: almostEqual},
-    between: {value: between},
-    ordinalString: {value: ordinalString},
-    paddedString: {value: paddedString},
-    signedString: {value: signedString},
-    toNearest: {value: toNearest}
-  });
-  Object.defineProperties(Number, {
-    isNumeric: {value: isNumeric},
-    fromString: {value: fromString}
-  });
+  // Assign primitives to the Number prototype
+  Object.assign(Number.prototype, {almostEqual, ordinalString, paddedString, signedString, toNearest, between});
+  Object.assign(Number, {isNumeric, fromString});
 
   /**
    * Return the difference of two sets.
@@ -3420,21 +2900,6 @@
       if ( !other.has(element) ) difference.add(element);
     }
     return difference;
-  }
-
-  /**
-   * Return the symmetric difference of two sets.
-   * @param {Set} other  Another set.
-   * @returns {Set}      The set of elements that exist in this or other, but not both.
-   */
-  function symmetricDifference(other) {
-    if ( !(other instanceof Set) ) throw new Error("Some other Set instance must be provided.");
-    const difference = new Set(this);
-    for ( const element of other ) {
-      if ( difference.has(element) ) difference.delete(element);
-      else difference.add(element);
-    }
-    return difference
   }
 
   /**
@@ -3483,18 +2948,6 @@
       if ( other.has(element) ) return true;
     }
     return false;
-  }
-
-  /**
-   * Return the union of two sets.
-   * @param {Set} other  The other set.
-   * @returns {Set}
-   */
-  function union(other) {
-    if ( !(other instanceof Set) ) throw new Error("Some other Set instance must be provided.");
-    const union = new Set(this);
-    for ( const element of other ) union.add(element);
-    return union;
   }
 
   /**
@@ -3623,22 +3076,8 @@
   }
 
   // Assign primitives to Set prototype
-  Object.defineProperties(Set.prototype, {
-    difference: {value: difference},
-    symmetricDifference: {value: symmetricDifference},
-    equals: {value: equals},
-    every: {value: every},
-    filter: {value: filter},
-    find: {value: find},
-    first: {value: first},
-    intersection: {value: intersection},
-    intersects: {value: intersects},
-    union: {value: union},
-    isSubset: {value: isSubset},
-    map: {value: map},
-    reduce: {value: reduce},
-    some: {value: some},
-    toObject: {value: toObject}
+  Object.assign(Set.prototype, {
+    difference, equals, first, intersection, intersects, isSubset, toObject, every, filter, find, map, reduce, some
   });
 
   /**
@@ -3678,38 +3117,32 @@
   }
 
   /**
-   * Map characters to lower case ASCII
-   * @type {Record<string, string>}
-   */
-  const CHAR_MAP = JSON.parse('{"$":"dollar","%":"percent","&":"and","<":"less",">":"greater","|":"or","¢":"cent","£":"pound","¤":"currency","¥":"yen","©":"(c)","ª":"a","®":"(r)","º":"o","À":"A","Á":"A","Â":"A","Ã":"A","Ä":"A","Å":"A","Æ":"AE","Ç":"C","È":"E","É":"E","Ê":"E","Ë":"E","Ì":"I","Í":"I","Î":"I","Ï":"I","Ð":"D","Ñ":"N","Ò":"O","Ó":"O","Ô":"O","Õ":"O","Ö":"O","Ø":"O","Ù":"U","Ú":"U","Û":"U","Ü":"U","Ý":"Y","Þ":"TH","ß":"ss","à":"a","á":"a","â":"a","ã":"a","ä":"a","å":"a","æ":"ae","ç":"c","è":"e","é":"e","ê":"e","ë":"e","ì":"i","í":"i","î":"i","ï":"i","ð":"d","ñ":"n","ò":"o","ó":"o","ô":"o","õ":"o","ö":"o","ø":"o","ù":"u","ú":"u","û":"u","ü":"u","ý":"y","þ":"th","ÿ":"y","Ā":"A","ā":"a","Ă":"A","ă":"a","Ą":"A","ą":"a","Ć":"C","ć":"c","Č":"C","č":"c","Ď":"D","ď":"d","Đ":"DJ","đ":"dj","Ē":"E","ē":"e","Ė":"E","ė":"e","Ę":"e","ę":"e","Ě":"E","ě":"e","Ğ":"G","ğ":"g","Ģ":"G","ģ":"g","Ĩ":"I","ĩ":"i","Ī":"i","ī":"i","Į":"I","į":"i","İ":"I","ı":"i","Ķ":"k","ķ":"k","Ļ":"L","ļ":"l","Ľ":"L","ľ":"l","Ł":"L","ł":"l","Ń":"N","ń":"n","Ņ":"N","ņ":"n","Ň":"N","ň":"n","Ő":"O","ő":"o","Œ":"OE","œ":"oe","Ŕ":"R","ŕ":"r","Ř":"R","ř":"r","Ś":"S","ś":"s","Ş":"S","ş":"s","Š":"S","š":"s","Ţ":"T","ţ":"t","Ť":"T","ť":"t","Ũ":"U","ũ":"u","Ū":"u","ū":"u","Ů":"U","ů":"u","Ű":"U","ű":"u","Ų":"U","ų":"u","Ŵ":"W","ŵ":"w","Ŷ":"Y","ŷ":"y","Ÿ":"Y","Ź":"Z","ź":"z","Ż":"Z","ż":"z","Ž":"Z","ž":"z","ƒ":"f","Ơ":"O","ơ":"o","Ư":"U","ư":"u","ǈ":"LJ","ǉ":"lj","ǋ":"NJ","ǌ":"nj","Ș":"S","ș":"s","Ț":"T","ț":"t","˚":"o","Ά":"A","Έ":"E","Ή":"H","Ί":"I","Ό":"O","Ύ":"Y","Ώ":"W","ΐ":"i","Α":"A","Β":"B","Γ":"G","Δ":"D","Ε":"E","Ζ":"Z","Η":"H","Θ":"8","Ι":"I","Κ":"K","Λ":"L","Μ":"M","Ν":"N","Ξ":"3","Ο":"O","Π":"P","Ρ":"R","Σ":"S","Τ":"T","Υ":"Y","Φ":"F","Χ":"X","Ψ":"PS","Ω":"W","Ϊ":"I","Ϋ":"Y","ά":"a","έ":"e","ή":"h","ί":"i","ΰ":"y","α":"a","β":"b","γ":"g","δ":"d","ε":"e","ζ":"z","η":"h","θ":"8","ι":"i","κ":"k","λ":"l","μ":"m","ν":"n","ξ":"3","ο":"o","π":"p","ρ":"r","ς":"s","σ":"s","τ":"t","υ":"y","φ":"f","χ":"x","ψ":"ps","ω":"w","ϊ":"i","ϋ":"y","ό":"o","ύ":"y","ώ":"w","Ё":"Yo","Ђ":"DJ","Є":"Ye","І":"I","Ї":"Yi","Ј":"J","Љ":"LJ","Њ":"NJ","Ћ":"C","Џ":"DZ","А":"A","Б":"B","В":"V","Г":"G","Д":"D","Е":"E","Ж":"Zh","З":"Z","И":"I","Й":"J","К":"K","Л":"L","М":"M","Н":"N","О":"O","П":"P","Р":"R","С":"S","Т":"T","У":"U","Ф":"F","Х":"H","Ц":"C","Ч":"Ch","Ш":"Sh","Щ":"Sh","Ъ":"U","Ы":"Y","Ь":"","Э":"E","Ю":"Yu","Я":"Ya","а":"a","б":"b","в":"v","г":"g","д":"d","е":"e","ж":"zh","з":"z","и":"i","й":"j","к":"k","л":"l","м":"m","н":"n","о":"o","п":"p","р":"r","с":"s","т":"t","у":"u","ф":"f","х":"h","ц":"c","ч":"ch","ш":"sh","щ":"sh","ъ":"u","ы":"y","ь":"","э":"e","ю":"yu","я":"ya","ё":"yo","ђ":"dj","є":"ye","і":"i","ї":"yi","ј":"j","љ":"lj","њ":"nj","ћ":"c","ѝ":"u","џ":"dz","Ґ":"G","ґ":"g","Ғ":"GH","ғ":"gh","Қ":"KH","қ":"kh","Ң":"NG","ң":"ng","Ү":"UE","ү":"ue","Ұ":"U","ұ":"u","Һ":"H","һ":"h","Ә":"AE","ә":"ae","Ө":"OE","ө":"oe","฿":"baht","ა":"a","ბ":"b","გ":"g","დ":"d","ე":"e","ვ":"v","ზ":"z","თ":"t","ი":"i","კ":"k","ლ":"l","მ":"m","ნ":"n","ო":"o","პ":"p","ჟ":"zh","რ":"r","ს":"s","ტ":"t","უ":"u","ფ":"f","ქ":"k","ღ":"gh","ყ":"q","შ":"sh","ჩ":"ch","ც":"ts","ძ":"dz","წ":"ts","ჭ":"ch","ხ":"kh","ჯ":"j","ჰ":"h","Ẁ":"W","ẁ":"w","Ẃ":"W","ẃ":"w","Ẅ":"W","ẅ":"w","ẞ":"SS","Ạ":"A","ạ":"a","Ả":"A","ả":"a","Ấ":"A","ấ":"a","Ầ":"A","ầ":"a","Ẩ":"A","ẩ":"a","Ẫ":"A","ẫ":"a","Ậ":"A","ậ":"a","Ắ":"A","ắ":"a","Ằ":"A","ằ":"a","Ẳ":"A","ẳ":"a","Ẵ":"A","ẵ":"a","Ặ":"A","ặ":"a","Ẹ":"E","ẹ":"e","Ẻ":"E","ẻ":"e","Ẽ":"E","ẽ":"e","Ế":"E","ế":"e","Ề":"E","ề":"e","Ể":"E","ể":"e","Ễ":"E","ễ":"e","Ệ":"E","ệ":"e","Ỉ":"I","ỉ":"i","Ị":"I","ị":"i","Ọ":"O","ọ":"o","Ỏ":"O","ỏ":"o","Ố":"O","ố":"o","Ồ":"O","ồ":"o","Ổ":"O","ổ":"o","Ỗ":"O","ỗ":"o","Ộ":"O","ộ":"o","Ớ":"O","ớ":"o","Ờ":"O","ờ":"o","Ở":"O","ở":"o","Ỡ":"O","ỡ":"o","Ợ":"O","ợ":"o","Ụ":"U","ụ":"u","Ủ":"U","ủ":"u","Ứ":"U","ứ":"u","Ừ":"U","ừ":"u","Ử":"U","ử":"u","Ữ":"U","ữ":"u","Ự":"U","ự":"u","Ỳ":"Y","ỳ":"y","Ỵ":"Y","ỵ":"y","Ỷ":"Y","ỷ":"y","Ỹ":"Y","ỹ":"y","‘":"\'","’":"\'","“":"\\\"","”":"\\\"","†":"+","•":"*","…":"...","₠":"ecu","₢":"cruzeiro","₣":"french franc","₤":"lira","₥":"mill","₦":"naira","₧":"peseta","₨":"rupee","₩":"won","₪":"new shequel","₫":"dong","€":"euro","₭":"kip","₮":"tugrik","₯":"drachma","₰":"penny","₱":"peso","₲":"guarani","₳":"austral","₴":"hryvnia","₵":"cedi","₸":"kazakhstani tenge","₹":"indian rupee","₽":"russian ruble","₿":"bitcoin","℠":"sm","™":"tm","∂":"d","∆":"delta","∑":"sum","∞":"infinity","♥":"love","元":"yuan","円":"yen","﷼":"rial"}');
-
-  /**
    * Transform any string into an url-viable slug string
    * @param {object} [options]      Optional arguments which customize how the slugify operation is performed
    * @param {string} [options.replacement="-"]  The replacement character to separate terms, default is '-'
    * @param {boolean} [options.strict=false]    Replace all non-alphanumeric characters, or allow them? Default false
-   * @param {boolean} [options.lowercase=true]  Lowercase the string.
    * @returns {string}              The slugified input string
    */
-  function slugify({replacement='-', strict=false, lowercase=true}={}) {
-    let slug = this.split("").reduce((result, char) => result + (CHAR_MAP[char] || char), "").trim();
-    if ( lowercase ) slug = slug.toLowerCase();
+  function slugify({replacement='-', strict=false}={}) {
+
+    // Map characters to lower case ASCII
+    const charMap = JSON.parse('{"$":"dollar","%":"percent","&":"and","<":"less",">":"greater","|":"or","¢":"cent","£":"pound","¤":"currency","¥":"yen","©":"(c)","ª":"a","®":"(r)","º":"o","À":"A","Á":"A","Â":"A","Ã":"A","Ä":"A","Å":"A","Æ":"AE","Ç":"C","È":"E","É":"E","Ê":"E","Ë":"E","Ì":"I","Í":"I","Î":"I","Ï":"I","Ð":"D","Ñ":"N","Ò":"O","Ó":"O","Ô":"O","Õ":"O","Ö":"O","Ø":"O","Ù":"U","Ú":"U","Û":"U","Ü":"U","Ý":"Y","Þ":"TH","ß":"ss","à":"a","á":"a","â":"a","ã":"a","ä":"a","å":"a","æ":"ae","ç":"c","è":"e","é":"e","ê":"e","ë":"e","ì":"i","í":"i","î":"i","ï":"i","ð":"d","ñ":"n","ò":"o","ó":"o","ô":"o","õ":"o","ö":"o","ø":"o","ù":"u","ú":"u","û":"u","ü":"u","ý":"y","þ":"th","ÿ":"y","Ā":"A","ā":"a","Ă":"A","ă":"a","Ą":"A","ą":"a","Ć":"C","ć":"c","Č":"C","č":"c","Ď":"D","ď":"d","Đ":"DJ","đ":"dj","Ē":"E","ē":"e","Ė":"E","ė":"e","Ę":"e","ę":"e","Ě":"E","ě":"e","Ğ":"G","ğ":"g","Ģ":"G","ģ":"g","Ĩ":"I","ĩ":"i","Ī":"i","ī":"i","Į":"I","į":"i","İ":"I","ı":"i","Ķ":"k","ķ":"k","Ļ":"L","ļ":"l","Ľ":"L","ľ":"l","Ł":"L","ł":"l","Ń":"N","ń":"n","Ņ":"N","ņ":"n","Ň":"N","ň":"n","Ő":"O","ő":"o","Œ":"OE","œ":"oe","Ŕ":"R","ŕ":"r","Ř":"R","ř":"r","Ś":"S","ś":"s","Ş":"S","ş":"s","Š":"S","š":"s","Ţ":"T","ţ":"t","Ť":"T","ť":"t","Ũ":"U","ũ":"u","Ū":"u","ū":"u","Ů":"U","ů":"u","Ű":"U","ű":"u","Ų":"U","ų":"u","Ŵ":"W","ŵ":"w","Ŷ":"Y","ŷ":"y","Ÿ":"Y","Ź":"Z","ź":"z","Ż":"Z","ż":"z","Ž":"Z","ž":"z","ƒ":"f","Ơ":"O","ơ":"o","Ư":"U","ư":"u","ǈ":"LJ","ǉ":"lj","ǋ":"NJ","ǌ":"nj","Ș":"S","ș":"s","Ț":"T","ț":"t","˚":"o","Ά":"A","Έ":"E","Ή":"H","Ί":"I","Ό":"O","Ύ":"Y","Ώ":"W","ΐ":"i","Α":"A","Β":"B","Γ":"G","Δ":"D","Ε":"E","Ζ":"Z","Η":"H","Θ":"8","Ι":"I","Κ":"K","Λ":"L","Μ":"M","Ν":"N","Ξ":"3","Ο":"O","Π":"P","Ρ":"R","Σ":"S","Τ":"T","Υ":"Y","Φ":"F","Χ":"X","Ψ":"PS","Ω":"W","Ϊ":"I","Ϋ":"Y","ά":"a","έ":"e","ή":"h","ί":"i","ΰ":"y","α":"a","β":"b","γ":"g","δ":"d","ε":"e","ζ":"z","η":"h","θ":"8","ι":"i","κ":"k","λ":"l","μ":"m","ν":"n","ξ":"3","ο":"o","π":"p","ρ":"r","ς":"s","σ":"s","τ":"t","υ":"y","φ":"f","χ":"x","ψ":"ps","ω":"w","ϊ":"i","ϋ":"y","ό":"o","ύ":"y","ώ":"w","Ё":"Yo","Ђ":"DJ","Є":"Ye","І":"I","Ї":"Yi","Ј":"J","Љ":"LJ","Њ":"NJ","Ћ":"C","Џ":"DZ","А":"A","Б":"B","В":"V","Г":"G","Д":"D","Е":"E","Ж":"Zh","З":"Z","И":"I","Й":"J","К":"K","Л":"L","М":"M","Н":"N","О":"O","П":"P","Р":"R","С":"S","Т":"T","У":"U","Ф":"F","Х":"H","Ц":"C","Ч":"Ch","Ш":"Sh","Щ":"Sh","Ъ":"U","Ы":"Y","Ь":"","Э":"E","Ю":"Yu","Я":"Ya","а":"a","б":"b","в":"v","г":"g","д":"d","е":"e","ж":"zh","з":"z","и":"i","й":"j","к":"k","л":"l","м":"m","н":"n","о":"o","п":"p","р":"r","с":"s","т":"t","у":"u","ф":"f","х":"h","ц":"c","ч":"ch","ш":"sh","щ":"sh","ъ":"u","ы":"y","ь":"","э":"e","ю":"yu","я":"ya","ё":"yo","ђ":"dj","є":"ye","і":"i","ї":"yi","ј":"j","љ":"lj","њ":"nj","ћ":"c","ѝ":"u","џ":"dz","Ґ":"G","ґ":"g","Ғ":"GH","ғ":"gh","Қ":"KH","қ":"kh","Ң":"NG","ң":"ng","Ү":"UE","ү":"ue","Ұ":"U","ұ":"u","Һ":"H","һ":"h","Ә":"AE","ә":"ae","Ө":"OE","ө":"oe","฿":"baht","ა":"a","ბ":"b","გ":"g","დ":"d","ე":"e","ვ":"v","ზ":"z","თ":"t","ი":"i","კ":"k","ლ":"l","მ":"m","ნ":"n","ო":"o","პ":"p","ჟ":"zh","რ":"r","ს":"s","ტ":"t","უ":"u","ფ":"f","ქ":"k","ღ":"gh","ყ":"q","შ":"sh","ჩ":"ch","ც":"ts","ძ":"dz","წ":"ts","ჭ":"ch","ხ":"kh","ჯ":"j","ჰ":"h","Ẁ":"W","ẁ":"w","Ẃ":"W","ẃ":"w","Ẅ":"W","ẅ":"w","ẞ":"SS","Ạ":"A","ạ":"a","Ả":"A","ả":"a","Ấ":"A","ấ":"a","Ầ":"A","ầ":"a","Ẩ":"A","ẩ":"a","Ẫ":"A","ẫ":"a","Ậ":"A","ậ":"a","Ắ":"A","ắ":"a","Ằ":"A","ằ":"a","Ẳ":"A","ẳ":"a","Ẵ":"A","ẵ":"a","Ặ":"A","ặ":"a","Ẹ":"E","ẹ":"e","Ẻ":"E","ẻ":"e","Ẽ":"E","ẽ":"e","Ế":"E","ế":"e","Ề":"E","ề":"e","Ể":"E","ể":"e","Ễ":"E","ễ":"e","Ệ":"E","ệ":"e","Ỉ":"I","ỉ":"i","Ị":"I","ị":"i","Ọ":"O","ọ":"o","Ỏ":"O","ỏ":"o","Ố":"O","ố":"o","Ồ":"O","ồ":"o","Ổ":"O","ổ":"o","Ỗ":"O","ỗ":"o","Ộ":"O","ộ":"o","Ớ":"O","ớ":"o","Ờ":"O","ờ":"o","Ở":"O","ở":"o","Ỡ":"O","ỡ":"o","Ợ":"O","ợ":"o","Ụ":"U","ụ":"u","Ủ":"U","ủ":"u","Ứ":"U","ứ":"u","Ừ":"U","ừ":"u","Ử":"U","ử":"u","Ữ":"U","ữ":"u","Ự":"U","ự":"u","Ỳ":"Y","ỳ":"y","Ỵ":"Y","ỵ":"y","Ỷ":"Y","ỷ":"y","Ỹ":"Y","ỹ":"y","‘":"\'","’":"\'","“":"\\\"","”":"\\\"","†":"+","•":"*","…":"...","₠":"ecu","₢":"cruzeiro","₣":"french franc","₤":"lira","₥":"mill","₦":"naira","₧":"peseta","₨":"rupee","₩":"won","₪":"new shequel","₫":"dong","€":"euro","₭":"kip","₮":"tugrik","₯":"drachma","₰":"penny","₱":"peso","₲":"guarani","₳":"austral","₴":"hryvnia","₵":"cedi","₸":"kazakhstani tenge","₹":"indian rupee","₽":"russian ruble","₿":"bitcoin","℠":"sm","™":"tm","∂":"d","∆":"delta","∑":"sum","∞":"infinity","♥":"love","元":"yuan","円":"yen","﷼":"rial"}');
+    let slug = this.split("").reduce((result, char) => {
+      return result + (charMap[char] || char);
+    }, "").trim().toLowerCase();
 
     // Convert any spaces to the replacement character and de-dupe
     slug = slug.replace(new RegExp('[\\s' + replacement + ']+', 'g'), replacement);
 
     // If we're being strict, replace anything that is not alphanumeric
-    if ( strict ) slug = slug.replace(new RegExp('[^a-zA-Z0-9' + replacement + ']', 'g'), '');
+    if (strict) {
+      slug = slug.replace(new RegExp('[^a-zA-Z0-9' + replacement + ']', 'g'), '');
+    }
     return slug;
   }
 
-  // Define properties on the String environment
-  Object.defineProperties(String.prototype, {
-    capitalize: {value: capitalize},
-    titleCase: {value: titleCase},
-    stripScripts: {value: stripScripts},
-    slugify: {value: slugify}
-  });
+  // Assign primitives to String prototype
+  Object.assign(String.prototype, {capitalize, titleCase, stripScripts, slugify});
 
   /**
    * Escape a given input string, prefacing special characters with backslashes for use in a regular expression
@@ -3719,11 +3152,7 @@
   function escape(string) {
     return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
   }
-
-  // Define properties on the RegExp environment
-  Object.defineProperties(RegExp, {
-    escape: {value: escape}
-  });
+  RegExp.escape = escape;
 
   /**
    * Attempt to parse a URL without throwing an error.
@@ -3737,379 +3166,7 @@
     return null;
   }
 
-  // Define properties on the URL environment
-  Object.defineProperties(URL, {
-    parseSafe: {value: parseSafe}
-  });
-
-  /** @module validators */
-
-  /**
-   * Test whether a string is a valid 16 character UID
-   * @param {string} id
-   * @return {boolean}
-   */
-  function isValidId(id) {
-    return /^[a-zA-Z0-9]{16}$/.test(id);
-  }
-
-  /**
-   * Test whether a file path has an extension in a list of provided extensions
-   * @param {string} path
-   * @param {string[]} extensions
-   * @return {boolean}
-   */
-  function hasFileExtension(path, extensions) {
-    const xts = extensions.map(ext => `\\.${ext}`).join("|");
-    const rgx = new RegExp(`(${xts})(\\?.*)?$`, "i");
-    return !!path && rgx.test(path);
-  }
-
-  /**
-   * Test whether a string data blob contains base64 data, optionally of a specific type or types
-   * @param {string} data       The candidate string data
-   * @param {string[]} [types]  An array of allowed mime types to test
-   * @return {boolean}
-   */
-  function isBase64Data(data, types) {
-    if ( types === undefined ) return /^data:([a-z]+)\/([a-z0-9]+);base64,/.test(data);
-    return types.some(type => data.startsWith(`data:${type};base64,`))
-  }
-
-  /**
-   * Test whether an input represents a valid 6-character color string
-   * @param {string} color      The input string to test
-   * @return {boolean}          Is the string a valid color?
-   */
-  function isColorString(color) {
-    return /#[0-9A-Fa-f]{6}/.test(color);
-  }
-
-  /**
-   * Assert that the given value parses as a valid JSON string
-   * @param {string} val        The value to test
-   * @return {boolean}          Is the String valid JSON?
-   */
-  function isJSON(val) {
-    try {
-      JSON.parse(val);
-      return true;
-    } catch(err) {
-      return false;
-    }
-  }
-
-  var validators = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    hasFileExtension: hasFileExtension,
-    isBase64Data: isBase64Data,
-    isColorString: isColorString,
-    isJSON: isJSON,
-    isValidId: isValidId
-  });
-
-  /**
-   * A class responsible for recording information about a validation failure.
-   */
-  class DataModelValidationFailure {
-    /**
-     * @param {any} [invalidValue]       The value that failed validation for this field.
-     * @param {any} [fallback]           The value it was replaced by, if any.
-     * @param {boolean} [dropped=false]  Whether the value was dropped from some parent collection.
-     * @param {string} [message]         The validation error message.
-     * @param {boolean} [unresolved]     Whether this failure was unresolved
-     */
-    constructor({invalidValue, fallback, dropped=false, message, unresolved}={}) {
-      this.invalidValue = invalidValue;
-      this.fallback = fallback;
-      this.dropped = dropped;
-      this.message = message;
-      this.unresolved = unresolved ?? false;
-    }
-
-    /**
-     * The value that failed validation for this field.
-     * @type {any}
-     */
-    invalidValue;
-
-    /**
-     * The value it was replaced by, if any.
-     * @type {any}
-     */
-    fallback;
-
-    /**
-     * Whether the value was dropped from some parent collection.
-     * @type {boolean}
-     */
-    dropped;
-
-    /**
-     * The validation error message.
-     * @type {string}
-     */
-    message;
-
-    /**
-     * If this field contains other fields that are validated as part of its validation, their results are recorded here.
-     * @type {Object<DataModelValidationFailure>}
-     */
-    fields = {};
-
-    /**
-     * @typedef {object} ElementValidationFailure
-     * @property {string|number} id                    Either the element's index or some other identifier for it.
-     * @property {string} [name]                       Optionally a user-friendly name for the element.
-     * @property {DataModelValidationFailure} failure  The element's validation failure.
-     */
-
-    /**
-     * If this field contains a list of elements that are validated as part of its validation, their results are recorded
-     * here.
-     * @type {ElementValidationFailure[]}
-     */
-    elements = [];
-
-    /**
-     * Record whether a validation failure is unresolved.
-     * This reports as true if validation for this field or any hierarchically contained field is unresolved.
-     * A failure is unresolved if the value was invalid and there was no valid fallback value available.
-     * @type {boolean}
-     */
-    unresolved;
-
-    /* -------------------------------------------- */
-
-    /**
-     * Return this validation failure as an Error object.
-     * @returns {DataModelValidationError}
-     */
-    asError() {
-      return new DataModelValidationError(this);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Whether this failure contains other sub-failures.
-     * @returns {boolean}
-     */
-    isEmpty() {
-      return isEmpty(this.fields) && isEmpty(this.elements);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Return the base properties of this failure, omitting any nested failures.
-     * @returns {{invalidValue: any, fallback: any, dropped: boolean, message: string}}
-     */
-    toObject() {
-      const {invalidValue, fallback, dropped, message} = this;
-      return {invalidValue, fallback, dropped, message};
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Represent the DataModelValidationFailure as a string.
-     * @returns {string}
-     */
-    toString() {
-      return DataModelValidationFailure.#formatString(this);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Format a DataModelValidationFailure instance as a string message.
-     * @param {DataModelValidationFailure} failure    The failure instance
-     * @param {number} _d                             An internal depth tracker
-     * @returns {string}                              The formatted failure string
-     */
-    static #formatString(failure, _d=0) {
-      let message = failure.message ?? "";
-      _d++;
-      if ( !isEmpty(failure.fields) ) {
-        message += "\n";
-        const messages = [];
-        for ( const [name, subFailure] of Object.entries(failure.fields) ) {
-          const subMessage = DataModelValidationFailure.#formatString(subFailure, _d);
-          messages.push(`${" ".repeat(2 * _d)}${name}: ${subMessage}`);
-        }
-        message += messages.join("\n");
-      }
-      if ( !isEmpty(failure.elements) ) {
-        message += "\n";
-        const messages = [];
-        for ( const element of failure.elements ) {
-          const subMessage = DataModelValidationFailure.#formatString(element.failure, _d);
-          messages.push(`${" ".repeat(2 * _d)}${element.id}: ${subMessage}`);
-        }
-        message += messages.join("\n");
-      }
-      return message;
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * A specialised Error to indicate a model validation failure.
-   * @extends {Error}
-   */
-  class DataModelValidationError extends Error {
-    /**
-     * @param {DataModelValidationFailure|string} failure  The failure that triggered this error or an error message
-     * @param {...any} [params]                            Additional Error constructor parameters
-     */
-    constructor(failure, ...params) {
-      super(failure.toString(), ...params);
-      if ( failure instanceof DataModelValidationFailure ) this.#failure = failure;
-    }
-
-    /**
-     * The root validation failure that triggered this error.
-     * @type {DataModelValidationFailure}
-     */
-    #failure;
-
-    /* -------------------------------------------- */
-
-    /**
-     * Retrieve the root failure that caused this error, or a specific sub-failure via a path.
-     * @param {string} [path]  The property path to the failure.
-     * @returns {DataModelValidationFailure}
-     *
-     * @example Retrieving a failure.
-     * ```js
-     * const changes = {
-     *   "foo.bar": "validValue",
-     *   "foo.baz": "invalidValue"
-     * };
-     * try {
-     *   doc.validate(expandObject(changes));
-     * } catch ( err ) {
-     *   const failure = err.getFailure("foo.baz");
-     *   console.log(failure.invalidValue); // "invalidValue"
-     * }
-     * ```
-     */
-    getFailure(path) {
-      if ( !this.#failure ) return;
-      if ( !path ) return this.#failure;
-      let failure = this.#failure;
-      for ( const p of path.split(".") ) {
-        if ( !failure ) return;
-        if ( !isEmpty(failure.fields) ) failure = failure.fields[p];
-        else if ( !isEmpty(failure.elements) ) failure = failure.elements.find(e => e.id?.toString() === p);
-      }
-      return failure;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Retrieve a flattened object of all the properties that failed validation as part of this error.
-     * @returns {Object<DataModelValidationFailure>}
-     *
-     * @example Removing invalid changes from an update delta.
-     * ```js
-     * const changes = {
-     *   "foo.bar": "validValue",
-     *   "foo.baz": "invalidValue"
-     * };
-     * try {
-     *   doc.validate(expandObject(changes));
-     * } catch ( err ) {
-     *   const failures = err.getAllFailures();
-     *   if ( failures ) {
-     *     for ( const prop in failures ) delete changes[prop];
-     *     doc.validate(expandObject(changes));
-     *   }
-     * }
-     * ```
-     */
-    getAllFailures() {
-      if ( !this.#failure || this.#failure.isEmpty() ) return;
-      return DataModelValidationError.#aggregateFailures(this.#failure);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Log the validation error as a table.
-     */
-    logAsTable() {
-      const failures = this.getAllFailures();
-      if ( isEmpty(failures) ) return;
-      console.table(Object.entries(failures).reduce((table, [p, failure]) => {
-        table[p] = failure.toObject();
-        return table;
-      }, {}));
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Generate a nested tree view of the error as an HTML string.
-     * @returns {string}
-     */
-    asHTML() {
-      const renderFailureNode = failure => {
-        if ( failure.isEmpty() ) return `<li>${failure.message || ""}</li>`;
-        const nodes = [];
-        for ( const [field, subFailure] of Object.entries(failure.fields) ) {
-          nodes.push(`<li><details><summary>${field}</summary><ul>${renderFailureNode(subFailure)}</ul></details></li>`);
-        }
-        for ( const element of failure.elements ) {
-          const name = element.name || element.id;
-          const html = `
-          <li><details><summary>${name}</summary><ul>${renderFailureNode(element.failure)}</ul></details></li>
-        `;
-          nodes.push(html);
-        }
-        return nodes.join("");
-      };
-      return `<ul class="summary-tree">${renderFailureNode(this.#failure)}</ul>`;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Collect nested failures into an aggregate object.
-     * @param {DataModelValidationFailure} failure                               The failure.
-     * @returns {DataModelValidationFailure|Object<DataModelValidationFailure>}  Returns the failure at the leaf of the
-     *                                                                           tree, otherwise an object of
-     *                                                                           sub-failures.
-     */
-    static #aggregateFailures(failure) {
-      if ( failure.isEmpty() ) return failure;
-      const failures = {};
-      const recordSubFailures = (field, subFailures) => {
-        if ( subFailures instanceof DataModelValidationFailure ) failures[field] = subFailures;
-        else {
-          for ( const [k, v] of Object.entries(subFailures) ) {
-            failures[`${field}.${k}`] = v;
-          }
-        }
-      };
-      for ( const [field, subFailure] of Object.entries(failure.fields) ) {
-        recordSubFailures(field, DataModelValidationError.#aggregateFailures(subFailure));
-      }
-      for ( const element of failure.elements ) {
-        recordSubFailures(element.id, DataModelValidationError.#aggregateFailures(element.failure));
-      }
-      return failures;
-    }
-  }
-
-  var validationFailure = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    DataModelValidationError: DataModelValidationError,
-    DataModelValidationFailure: DataModelValidationFailure
-  });
+  Object.assign(URL, {parseSafe});
 
   /**
    * A reusable storage concept which blends the functionality of an Array with the efficient key-based lookup of a Map.
@@ -4342,19 +3399,15 @@
    */
   class EmbeddedCollection extends Collection {
     /**
-     * @param {string} name           The name of this collection in the parent Document.
-     * @param {DataModel} parent      The parent DataModel instance to which this collection belongs.
-     * @param {object[]} sourceArray  The source data array for the collection in the parent Document data.
+     * @param {DataModel} model           The parent DataModel instance to which this collection belongs
+     * @param {object[]} sourceArray      The source data array for the collection in the parent Document data
+     * @param {typeof foundry.abstract.Document} documentClass The Document class contained in the collection
      */
-    constructor(name, parent, sourceArray) {
-      if ( typeof name !== "string" ) throw new Error("The signature of EmbeddedCollection has changed in v11.");
+    constructor(model, sourceArray, documentClass) {
       super();
-      Object.defineProperties(this, {
-        _source: {value: sourceArray, writable: false},
-        documentClass: {value: parent.constructor.hierarchy[name].model, writable: false},
-        name: {value: name, writable: false},
-        model: {value: parent, writable: false}
-      });
+      this.#model = model;
+      Object.defineProperty(this, "_source", {value: sourceArray, writable: false});
+      Object.defineProperty(this, "documentClass", {value: documentClass, writable: false});
     }
 
     /**
@@ -4364,23 +3417,17 @@
     documentClass;
 
     /**
-     * The name of this collection in the parent Document.
-     * @type {string}
-     */
-    name;
-
-    /**
      * The parent DataModel to which this EmbeddedCollection instance belongs.
      * @type {DataModel}
+     * @private
      */
-    model;
+    #model;
 
     /**
      * Has this embedded collection been initialized as a one-time workflow?
      * @type {boolean}
-     * @protected
      */
-    _initialized = false;
+    #initialized = false;
 
     /**
      * The source data array from which the embedded collection is created
@@ -4398,23 +3445,6 @@
     /* -------------------------------------------- */
 
     /**
-     * Instantiate a Document for inclusion in the Collection.
-     * @param {object} data       The Document data.
-     * @param {object} [context]  Document creation context.
-     * @returns {Document}
-     */
-    createDocument(data, context={}) {
-      return new this.documentClass(data, {
-        ...context,
-        parent: this.model,
-        parentCollection: this.name,
-        pack: this.model.pack
-      });
-    }
-
-    /* -------------------------------------------- */
-
-    /**
      * Initialize the EmbeddedCollection object by constructing its contained Document instances
      * @param {object} [options]  Initialization options.
      * @param {boolean} [options.strict=true]  Whether to log an error or a warning when encountering invalid embedded
@@ -4423,133 +3453,51 @@
     initialize({strict=true, ...options}={}) {
 
       // Repeat initialization
-      if ( this._initialized ) {
+      if ( this.#initialized ) {
         for ( const doc of this ) {
-          doc._initialize(options);
+          doc._initialize();
         }
         return;
       }
 
       // First-time initialization
       this.clear();
+      const docName = this.documentClass["documentName"];
+      const parent = this.#model;
+      const parentName = this.#model["documentName"] ?? this.#model["name"];
       for ( let d of this._source ) {
-        this._initializeDocument(d, {strict});
+        if ( !d._id ) d._id = randomID(16);
+        let doc;
+        try {
+          doc = new this.documentClass(d, {parent});
+          this.set(doc.id, doc, {modifySource: false});
+        } catch(err) {
+          this.invalidDocumentIds.add(d._id);
+          err.message = `Failed to initialized ${docName} [${d._id}] in ${parentName} [${parent._id}]: ${err.message}`;
+          if ( strict ) globalThis.logger.error(err);
+          else globalThis.logger.warn(err);
+          if ( globalThis.Hooks && strict ) {
+            Hooks.onError("EmbeddedCollection#_initialize", err, {id: d._id, documentName: docName});
+          }
+        }
       }
-
-      this._initialized = true;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Initialize an embedded document and store it in the collection.
-     * @param {object} data                    The Document data.
-     * @param {object} [options]               Options to configure Document initialization.
-     * @param {boolean} [options.strict=true]  Whether to log an error or warning if the Document fails to initialize.
-     * @protected
-     */
-    _initializeDocument(data, {strict=true}) {
-      if ( !data._id ) data._id = randomID(16);
-      let doc;
-      try {
-        doc = this.createDocument(data);
-        super.set(doc.id, doc);
-      } catch(err) {
-        this._handleInvalidDocument(data._id, err, {strict});
-      }
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Log warnings or errors when a Document is found to be invalid.
-     * @param {string} id                      The invalid Document's ID.
-     * @param {Error} err                      The validation error.
-     * @param {object} [options]               Options to configure invalid Document handling.
-     * @param {boolean} [options.strict=true]  Whether to throw an error or only log a warning.
-     * @protected
-     */
-    _handleInvalidDocument(id, err, {strict=true}={}) {
-      const docName = this.documentClass.documentName;
-      const parent = this.model;
-      const parentName = this.model.documentName ?? this.model.name;
-      this.invalidDocumentIds.add(id);
-      err.message = `Failed to initialize ${docName} [${id}] in ${parentName} [${parent._id}]: ${err.message}`;
-      if ( strict ) globalThis.logger.error(err);
-      else globalThis.logger.warn(err);
-      if ( globalThis.Hooks && strict ) {
-        Hooks.onError(`${this.constructor.name}#_initializeDocument`, err, {id, documentName: docName});
-      }
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Get an element from the EmbeddedCollection by its ID.
-     * @param {string} id                        The ID of the Embedded Document to retrieve.
-     * @param {object} [options]                 Additional options to configure retrieval.
-     * @param {boolean} [options.strict=false]   Throw an Error if the requested Embedded Document does not exist.
-     * @param {boolean} [options.invalid=false]  Allow retrieving an invalid Embedded Document.
-     * @returns {Document}
-     * @throws If strict is true and the Embedded Document cannot be found.
-     */
-    get(id, {invalid=false, strict=false}={}) {
-      let result = super.get(id);
-      if ( !result && invalid ) result = this.getInvalid(id, { strict: false });
-      if ( !result && strict ) throw new Error(`${this.constructor.documentName} id [${id}] does not exist in the `
-        + `${this.constructor.name} collection.`);
-      return result;
+      this.#initialized = true;
     }
 
     /* ---------------------------------------- */
 
-    /**
-     * Add an item to the collection.
-     * @param {string} key                           The embedded Document ID.
-     * @param {Document} value                       The embedded Document instance.
-     * @param {object} [options]                     Additional options to the set operation.
-     * @param {boolean} [options.modifySource=true]  Whether to modify the collection's source as part of the operation.
-     * */
-    set(key, value, {modifySource=true, ...options}={}) {
-      if ( modifySource ) this._set(key, value, options);
+    /** @inheritdoc */
+    set(key, value, {modifySource=true}={}) {
+      if ( modifySource && !this.has(key) ) this._source.push(value._source);
       return super.set(key, value);
     }
 
-    /* -------------------------------------------- */
-
-    /**
-     * Modify the underlying source array to include the Document.
-     * @param {string} key      The Document ID key.
-     * @param {Document} value  The Document.
-     * @protected
-     */
-    _set(key, value) {
-      if ( this.has(key) ) this._source.findSplice(d => d._id === key, value._source);
-      else this._source.push(value._source);
-    }
-
     /* ---------------------------------------- */
 
-    /**
-     * @param {string} key                           The embedded Document ID.
-     * @param {object} [options]                     Additional options to the delete operation.
-     * @param {boolean} [options.modifySource=true]  Whether to modify the collection's source as part of the operation.
-     * */
-    delete(key, {modifySource=true, ...options}={}) {
-      if ( modifySource ) this._delete(key, options);
+    /** @inheritdoc */
+    delete(key, {modifySource=true}={}) {
+      if ( modifySource && this.has(key) ) this._source.findSplice(d => d._id === key);
       return super.delete(key);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Remove the value from the underlying source array.
-     * @param {string} key        The Document ID key.
-     * @param {object} [options]  Additional options to configure deletion behavior.
-     * @protected
-     */
-    _delete(key, options={}) {
-      if ( this.has(key) ) this._source.findSplice(d => d._id === key);
     }
 
     /* ---------------------------------------- */
@@ -4560,37 +3508,26 @@
      * @param {object} [options={}]         Additional options which modify how the collection is updated
      */
     update(changes, options={}) {
+      const currentIds = Array.from(this.keys());
       const updated = new Set();
 
       // Create or update documents within the collection
       for ( let data of changes ) {
         if ( !data._id ) data._id = randomID(16);
-        this._createOrUpdate(data, options);
+        const current = this.get(data._id);
+        if ( current ) current.updateSource(data, options);
+        else {
+          const doc = new this.documentClass(data, {parent: this.#model});
+          this.set(doc.id, doc);
+        }
         updated.add(data._id);
       }
 
       // If the update was not recursive, remove all non-updated documents
       if ( options.recursive === false ) {
-        for ( const id of this._source.map(d => d._id) ) {
-          if ( !updated.has(id) ) this.delete(id, options);
+        for ( let id of currentIds ) {
+          if ( !updated.has(id) ) this.delete(id);
         }
-      }
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Create or update an embedded Document in this collection.
-     * @param {DataModel} data       The update delta.
-     * @param {object} [options={}]  Additional options which modify how the collection is updated.
-     * @protected
-     */
-    _createOrUpdate(data, options) {
-      const current = this.get(data._id);
-      if ( current ) current.updateSource(data, options);
-      else {
-        const doc = this.createDocument(data);
-        this.set(doc.id, doc);
       }
     }
 
@@ -4598,20 +3535,15 @@
 
     /**
      * Obtain a temporary Document instance for a document id which currently has invalid source data.
-     * @param {string} id                      A document ID with invalid source data.
-     * @param {object} [options]               Additional options to configure retrieval.
-     * @param {boolean} [options.strict=true]  Throw an Error if the requested ID is not in the set of invalid IDs for
-     *                                         this collection.
-     * @returns {Document}                     An in-memory instance for the invalid Document
-     * @throws If strict is true and the requested ID is not in the set of invalid IDs for this collection.
+     * @param {string} id         A document ID with invalid source data.
+     * @returns {Document}        An in-memory instance for the invalid Document
      */
-    getInvalid(id, {strict=true}={}) {
+    getInvalid(id) {
       if ( !this.invalidDocumentIds.has(id) ) {
-        if ( strict ) throw new Error(`${this.constructor.documentName} id [${id}] is not in the set of invalid ids`);
-        return;
+        throw new Error(`${this.constructor.documentName} id [${id}] is not in the set of invalid ids`);
       }
       const data = this._source.find(d => d._id === id);
-      return this.documentClass.fromSource(foundry.utils.deepClone(data), {parent: this.model});
+      return this.documentClass.fromSource(data, {parent: this.#model});
     }
 
     /* ---------------------------------------- */
@@ -4630,281 +3562,71 @@
     }
   }
 
+  /** @module validators */
+
   /**
-   * This class provides a {@link Collection} wrapper around a singleton embedded Document so that it can be interacted
-   * with via a common interface.
+   * Test whether a string is a valid 16 character UID
+   * @param {string} id
+   * @return {boolean}
    */
-  class SingletonEmbeddedCollection extends EmbeddedCollection {
-    /** @inheritdoc */
-    set(key, value) {
-      if ( this.size && !this.has(key) ) {
-        const embeddedName = this.documentClass.documentName;
-        const parentName = this.model.documentName;
-        throw new Error(`Cannot create singleton embedded ${embeddedName} [${key}] in parent ${parentName} `
-          + `[${this.model.id}] as it already has one assigned.`);
-      }
-      return super.set(key, value);
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    _set(key, value) {
-      this.model._source[this.name] = value?._source ?? null;
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    _delete(key) {
-      this.model._source[this.name] = null;
-    }
+  function isValidId(id) {
+    return /^[a-zA-Z0-9]{16}$/.test(id);
   }
 
   /**
-   * An embedded collection delta contains delta source objects that can be compared against other objects inside a base
-   * embedded collection, and generate new embedded Documents by combining them.
+   * Test whether a file path has an extension in a list of provided extensions
+   * @param {string} path
+   * @param {string[]} extensions
+   * @return {boolean}
    */
-  class EmbeddedCollectionDelta extends EmbeddedCollection {
-    /**
-     * Maintain a list of IDs that are managed by this collection delta to distinguish from those IDs that are inherited
-     * from the base collection.
-     * @type {Set<string>}
-     */
-    #managedIds = new Set();
+  function hasFileExtension(path, extensions) {
+    const xts = extensions.map(ext => `\\.${ext}`).join("|");
+    const rgx = new RegExp(`(${xts})(\\?.*)?$`, "i");
+    return !!path && rgx.test(path);
+  }
 
-    /* -------------------------------------------- */
+  /**
+   * Test whether a string data blob contains base64 data, optionally of a specific type or types
+   * @param {string} data       The candidate string data
+   * @param {string[]} [types]  An array of allowed mime types to test
+   * @return {boolean}
+   */
+  function isBase64Data(data, types) {
+    if ( types === undefined ) return /^data:([a-z]+)\/([a-z]+);base64,/.test(data);
+    return types.some(type => data.startsWith(`data:${type};base64,`))
+  }
 
-    /**
-     * Maintain a list of IDs that are tombstone Documents.
-     * @type {Set<string>}
-     */
-    #tombstones = new Set();
+  /**
+   * Test whether an input represents a valid 6-character color string
+   * @param {string} color      The input string to test
+   * @return {boolean}          Is the string a valid color?
+   */
+  function isColorString(color) {
+    return /#[0-9A-Fa-f]{6}/.test(color);
+  }
 
-    /* -------------------------------------------- */
-
-    /**
-     * A convenience getter to return the corresponding base collection.
-     * @type {EmbeddedCollection}
-     */
-    get baseCollection() {
-      return this.model.getBaseCollection?.(this.name);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * A convenience getter to return the corresponding synthetic collection.
-     * @type {EmbeddedCollection}
-     */
-    get syntheticCollection() {
-      return this.model.syntheticActor?.getEmbeddedCollection(this.name);
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    createDocument(data, context={}) {
-      return new this.documentClass(data, {
-        ...context,
-        parent: this.model.syntheticActor ?? this.model,
-        parentCollection: this.name,
-        pack: this.model.pack
-      });
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    initialize({strict=true, full=false, ...options} = {}) {
-      // Repeat initialization.
-      if ( this._initialized && !full ) return;
-
-      // First-time initialization.
-      this.clear();
-      if ( !this.baseCollection ) return;
-
-      // Initialize the deltas.
-      for ( const d of this._source ) {
-        if ( d._tombstone ) this.#tombstones.add(d._id);
-        else this._initializeDocument(d, {strict});
-        this.#managedIds.add(d._id);
-      }
-
-      // Include the Documents from the base collection.
-      for ( const d of this.baseCollection._source ) {
-        if ( this.has(d._id) || this.isTombstone(d._id) ) continue;
-        this._initializeDocument(deepClone(d), {strict});
-      }
-
-      this._initialized = true;
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    _initializeDocument(data, {strict=true}) {
-      if ( !data._id ) data._id = randomID(16);
-      let doc;
-      if ( this.syntheticCollection ) doc = this.syntheticCollection.get(data._id);
-      else {
-        try {
-          doc = this.createDocument(data);
-        } catch(err) {
-          this._handleInvalidDocument(data._id, err, {strict});
-        }
-      }
-      if ( doc ) super.set(doc.id, doc, {modifySource: false});
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    _createOrUpdate(data, options) {
-      if ( options.recursive === false ) {
-        if ( data._tombstone ) return this.delete(data._id);
-        else if ( this.isTombstone(data._id) ) return this.set(data._id, this.createDocument(data));
-      }
-      else if ( this.isTombstone(data._id) || data._tombstone ) return;
-      let doc = this.get(data._id);
-      if ( doc ) doc.updateSource(data, options);
-      else doc = this.createDocument(data);
-      this.set(doc.id, doc);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Determine whether a given ID is managed directly by this collection delta or inherited from the base collection.
-     * @param {string} key  The Document ID.
-     * @returns {boolean}
-     */
-    manages(key) {
-      return this.#managedIds.has(key);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Determine whether a given ID exists as a tombstone Document in the collection delta.
-     * @param {string} key  The Document ID.
-     * @returns {boolean}
-     */
-    isTombstone(key) {
-      return this.#tombstones.has(key);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Restore a Document so that it is no longer managed by the collection delta and instead inherits from the base
-     * Document.
-     * @param {string} id            The Document ID.
-     * @returns {Promise<Document>}  The restored Document.
-     */
-    async restoreDocument(id) {
-      const docs = await this.restoreDocuments([id]);
-      return docs.shift();
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Restore the given Documents so that they are no longer managed by the collection delta and instead inherit directly
-     * from their counterparts in the base Actor.
-     * @param {string[]} ids           The IDs of the Documents to restore.
-     * @returns {Promise<Document[]>}  An array of updated Document instances.
-     */
-    async restoreDocuments(ids) {
-      if ( !this.model.syntheticActor ) return [];
-      const baseActor = this.model.parent.baseActor;
-      const embeddedName = this.documentClass.documentName;
-      const {deltas, tombstones} = ids.reduce((obj, id) => {
-        if ( !this.manages(id) ) return obj;
-        const doc = baseActor.getEmbeddedCollection(this.name).get(id);
-        if ( this.isTombstone(id) ) obj.tombstones.push(doc.toObject());
-        else obj.deltas.push(doc.toObject());
-        return obj;
-      }, {deltas: [], tombstones: []});
-
-      // For the benefit of downstream CRUD workflows, we emulate events from the perspective of the synthetic Actor.
-      // Restoring an Item to the version on the base Actor is equivalent to updating that Item on the synthetic Actor
-      // with the version of the Item on the base Actor.
-      // Restoring an Item that has been deleted on the synthetic Actor is equivalent to creating a new Item on the
-      // synthetic Actor with the contents of the version on the base Actor.
-      // On the ActorDelta, those Items are removed from this collection delta so that they are once again 'linked' to the
-      // base Actor's Item, as though they had never been modified from the original in the first place.
-
-      let updated = [];
-      if ( deltas.length ) {
-        updated = await this.model.syntheticActor.updateEmbeddedDocuments(embeddedName, deltas, {
-          diff: false, recursive: false, restoreDelta: true
-        });
-      }
-
-      let created = [];
-      if ( tombstones.length ) {
-        created = await this.model.syntheticActor.createEmbeddedDocuments(embeddedName, tombstones, {
-          keepId: true, restoreDelta: true
-        });
-      }
-
-      return updated.concat(created);
-    }
-
-    /* -------------------------------------------- */
-
-    /** @inheritdoc */
-    set(key, value, options={}) {
-      super.set(key, value, options);
-      this.syntheticCollection?.set(key, value, options);
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    _set(key, value, {restoreDelta=false}={}) {
-      if ( restoreDelta ) {
-        this._source.findSplice(entry => entry._id === key);
-        this.#managedIds.delete(key);
-        this.#tombstones.delete(key);
-        return;
-      }
-
-      if ( this.manages(key) ) this._source.findSplice(d => d._id === key, value._source);
-      else this._source.push(value._source);
-      this.#managedIds.add(key);
-    }
-
-    /* -------------------------------------------- */
-
-    /** @inheritdoc */
-    delete(key, options={}) {
-      super.delete(key, options);
-      this.syntheticCollection?.delete(key, options);
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    _delete(key, {restoreDelta=false}={}) {
-      if ( !this.baseCollection ) return;
-
-      // Remove the document from this collection, if it exists.
-      if ( this.manages(key) ) {
-        this._source.findSplice(entry => entry._id === key);
-        this.#managedIds.delete(key);
-        this.#tombstones.delete(key);
-      }
-
-      // If the document exists in the base collection, push a tombstone in its place.
-      if ( !restoreDelta && this.baseCollection.has(key) ) {
-        this._source.push({_id: key, _tombstone: true});
-        this.#managedIds.add(key);
-        this.#tombstones.add(key);
-      }
+  /**
+   * Assert that the given value parses as a valid JSON string
+   * @param {string} val        The value to test
+   * @return {boolean}          Is the String valid JSON?
+   */
+  function isJSON(val) {
+    try {
+      JSON.parse(val);
+      return true;
+    } catch(err) {
+      return false;
     }
   }
+
+  var validators = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    isValidId: isValidId,
+    hasFileExtension: hasFileExtension,
+    isBase64Data: isBase64Data,
+    isColorString: isColorString,
+    isJSON: isJSON
+  });
 
   /**
    * This module contains data field classes which are used to define a data schema.
@@ -4928,16 +3650,6 @@
    * @property {string} [hint]              Localizable help text displayed on forms which render this field.
    * @property {string} [validationError]   A custom validation error string. When displayed will be prepended with the
    *                                        document name, field name, and candidate value.
-   */
-
-  /**
-   * @typedef {object} DataFieldValidationOptions
-   * @property {boolean} [partial]   Whether this is a partial schema validation, or a complete one.
-   * @property {boolean} [fallback]  Whether to allow replacing invalid values with valid fallbacks.
-   * @property {object} [source]     The full source object being evaluated.
-   * @property {boolean} [dropInvalidEmbedded]  If true, invalid embedded documents will emit a warning and be placed in
-   *                                            the invalidDocuments collection rather than causing the parent to be
-   *                                            considered invalid.
    */
 
   /**
@@ -4985,20 +3697,6 @@
      * @internal
      */
     parent;
-
-    /**
-     * Whether this field defines part of a Document/Embedded Document hierarchy.
-     * @type {boolean}
-     */
-    static hierarchical = false;
-
-    /**
-     * Does this field type contain other fields in a recursive structure?
-     * Examples of recursive fields are SchemaField, ArrayField, or TypeDataField
-     * Examples of non-recursive fields are StringField, NumberField, or ObjectField
-     * @type {boolean}
-     */
-    static recursive = false;
 
     /**
      * Default parameters for this field type
@@ -5112,13 +3810,11 @@
 
     /**
      * Validate a candidate input for this field, ensuring it meets the field requirements.
-     * A validation failure can be provided as a raised Error (with a string message), by returning false, or by returning
-     * a DataModelValidationFailure instance.
+     * A validation failure can be provided as a raised Error (with a string message) or by returning false.
      * A validator which returns true denotes that the result is certainly valid and further validations are unnecessary.
-     * @param {*} value                                  The initial value
-     * @param {DataFieldValidationOptions} [options={}]  Options which affect validation behavior
-     * @returns {DataModelValidationFailure}             Returns a DataModelValidationFailure if a validation failure
-     *                                                   occurred.
+     * @param {*} value                        The initial value
+     * @param {object} [options={}]            Options which affect validation behavior
+     * @returns {ModelValidationError}         Returns a ModelValidationError if a validation failure occurred
      */
     validate(value, options={}) {
       const validators = [this._validateSpecial, this._validateType];
@@ -5127,16 +3823,13 @@
         for ( const validator of validators ) {
           const isValid = validator.call(this, value, options);
           if ( isValid === true ) return undefined;
-          if ( isValid === false ) {
-            return new DataModelValidationFailure({
-              invalidValue: value,
-              message: this.validationError
-            });
-          }
-          if ( isValid instanceof DataModelValidationFailure ) return isValid;
+          if ( isValid === false ) return new ModelValidationError(this.validationError);
         }
       } catch(err) {
-        return new DataModelValidationFailure({invalidValue: value, message: err.message, unresolved: true});
+        if ( err instanceof ModelValidationError ) return err;
+        const mve = new ModelValidationError(err.message);
+        mve.stack = err.stack;
+        return mve;
       }
     }
 
@@ -5170,27 +3863,14 @@
 
     /**
      * A default type-specific validator that can be overridden by child classes
-     * @param {*} value                                    The candidate value
-     * @param {DataFieldValidationOptions} [options={}]    Options which affect validation behavior
-     * @returns {boolean|DataModelValidationFailure|void}  A boolean to indicate with certainty whether the value is
-     *                                                     valid, or specific DataModelValidationFailure information,
-     *                                                     otherwise void.
-     * @throws                                             May throw a specific error if the value is not valid
+     * @param {*} value               The candidate value
+     * @param {object} [options={}]   Options which affect validation behavior
+     * @returns {boolean|void}        A boolean to indicate with certainty whether the value is valid.
+     *                                Otherwise, return void.
+     * @throws                        May throw a specific error if the value is not valid
      * @protected
      */
     _validateType(value, options={}) {}
-
-    /* -------------------------------------------- */
-
-    /**
-     * Certain fields may declare joint data validation criteria.
-     * This method will only be called if the field is designated as recursive.
-     * @param {object} data       Candidate data for joint model validation
-     * @param {object} options    Options which modify joint model validation
-     * @throws  An error if joint model validation fails
-     * @internal
-     */
-    _validateModel(data, options={}) {}
 
     /* -------------------------------------------- */
     /*  Initialization and Serialization            */
@@ -5214,15 +3894,6 @@
      */
     toObject(value) {
       return value;
-    }
-
-    /**
-     * Recursively traverse a schema and retrieve a field specification by a given path
-     * @param {string[]} path             The field path as an array of strings
-     * @protected
-     */
-    _getField(path) {
-      return path.length ? undefined : this;
     }
   }
 
@@ -5254,9 +3925,6 @@
         initial: {}
       });
     }
-
-    /** @override */
-    static recursive = true;
 
     /* -------------------------------------------- */
 
@@ -5347,26 +4015,6 @@
       return this.fields[fieldName];
     }
 
-    /**
-     * Traverse the schema, obtaining the DataField definition for a particular field.
-     * @param {string[]|string} fieldName       A field path like ["abilities", "strength"] or "abilities.strength"
-     * @returns {SchemaField|DataField}         The corresponding DataField definition for that field, or undefined
-     */
-    getField(fieldName) {
-      let path;
-      if ( typeof fieldName === "string" ) path = fieldName.split(".");
-      else if ( Array.isArray(fieldName) ) path = fieldName;
-      else throw new Error("A field path must be an array of strings or a dot-delimited string");
-      return this._getField(path);
-    }
-
-    /** @override */
-    _getField(path) {
-      if ( !path.length ) return this;
-      const field = this.get(path.shift());
-      return field?._getField(path);
-    }
-
     /* -------------------------------------------- */
     /*  Data Field Methods                          */
     /* -------------------------------------------- */
@@ -5426,48 +4074,28 @@
     _validateType(data, options={}) {
       if ( !(data instanceof Object) ) throw new Error("must be an object");
       options.source = options.source || data;
-      const schemaFailure = new DataModelValidationFailure();
+      const errors = {};
       for ( const [key, field] of this.entries() ) {
         if ( options.partial && !(key in data) ) continue;
 
         // Validate the field's current value
         const value = data[key];
-        const failure = field.validate(value, options);
+        const error = field.validate(value, options);
 
-        // Failure may be permitted if fallback replacement is allowed
-        if ( failure ) {
-          schemaFailure.fields[field.name] = failure;
-
-          // If the field internally applied fallback logic
-          if ( !failure.unresolved ) continue;
-
-          // If fallback is allowed at the schema level
+        // Errors may be permitted if fallback replacement is allowed
+        if ( error ) {
           if ( options.fallback ) {
             const initial = field.getInitialValue(options.source);
-            if ( field.validate(initial, {source: options.source}) === undefined ) {  // Ensure initial is valid
-              data[key] = initial;
-              failure.fallback = initial;
-              failure.unresolved = false;
-            }
-            else failure.unresolved = schemaFailure.unresolved = true;
+            if ( field.validate(initial, {source: options.source}) !== undefined ) errors[field.fieldPath] = error;
+            else data[key] = initial;
           }
 
-          // Otherwise the field-level failure is unresolved
-          else failure.unresolved = schemaFailure.unresolved = true;
+          // Otherwise, record validation failures
+          else errors[field.fieldPath] = error;
         }
       }
-      if ( !isEmpty(schemaFailure.fields) ) return schemaFailure;
-    }
-
-    /* ---------------------------------------- */
-
-    /** @override */
-    _validateModel(changes, options={}) {
-      options.source = options.source || changes;
-      if ( !changes ) return;
-      for ( const [name, field] of this.entries() ) {
-        const change = changes[name];  // May be nullish
-        if ( change && field.constructor.recursive ) field._validateModel(change, options);
+      if ( !isEmpty(errors) ) {
+        throw new ModelValidationError(errors);
       }
     }
 
@@ -5475,7 +4103,6 @@
 
     /** @override */
     toObject(value) {
-      if ( (value === undefined) || (value === null) ) return value;
       const data = {};
       for ( const [name, field] of this.entries() ) {
         data[name] = field.toObject(value[name]);
@@ -5494,20 +4121,6 @@
         if ( !options.filter || !isEmpty(r) ) results[key] = r;
       }
       return results;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Migrate this field's candidate source data.
-     * @param {object} sourceData   Candidate source data of the root model
-     * @param {any} fieldData       The value of this field within the source data
-     */
-    migrateSource(sourceData, fieldData) {
-      for ( const [key, field] of this.entries() ) {
-        const canMigrate = field.migrateSource instanceof Function;
-        if ( canMigrate && fieldData[key] ) field.migrateSource(sourceData, fieldData[key]);
-      }
     }
   }
 
@@ -5666,29 +4279,21 @@
      */
     constructor(options={}) {
       super(options);
-
       // If choices are provided, the field should not be null or blank by default
       if ( this.choices ) {
         this.nullable = options.nullable ?? false;
         this.blank = options.blank ?? false;
-      }
-
-      // Adjust the default initial value depending on field configuration
-      if ( !("initial" in options) ) {
-        if ( !this.required ) this.initial = undefined;
-        else if ( this.blank ) this.initial = "";
-        else if ( this.nullable ) this.initial = null;
       }
     }
 
     /** @inheritdoc */
     static get _defaults() {
       return mergeObject(super._defaults, {
+        initial: "",
         blank: true,
         trim: true,
         nullable: false,
-        choices: undefined,
-        textSearch: false
+        choices: undefined
       });
     }
 
@@ -5773,7 +4378,7 @@
 
     /** @override */
     _validateType(value, options={}) {
-      if ( foundry.utils.getType(value) !== "Object" ) throw new Error("must be an object");
+      if (foundry.utils.getType(value) !== "Object") throw new Error("must be an object");
     }
   }
 
@@ -5796,20 +4401,6 @@
       this.element = this.constructor._validateElementType(element);
     }
 
-    /** @inheritdoc */
-    static get _defaults() {
-      return mergeObject(super._defaults, {
-        required: true,
-        nullable: false,
-        initial: () => []
-      });
-    }
-
-    /** @override */
-    static recursive = true;
-
-    /* ---------------------------------------- */
-
     /**
      * Validate the contained element type of the ArrayField
      * @param {*} element       The type of Array element
@@ -5824,17 +4415,14 @@
       return element;
     }
 
-    /* ---------------------------------------- */
-
-    /** @override */
-    _validateModel(changes, options) {
-      if ( !this.element.constructor.recursive ) return;
-      for ( const element of changes ) {
-        this.element._validateModel(element, options);
-      }
+    /** @inheritdoc */
+    static get _defaults() {
+      return mergeObject(super._defaults, {
+        required: true,
+        nullable: false,
+        initial: () => []
+      });
     }
-
-    /* ---------------------------------------- */
 
     /** @override */
     _cast(value) {
@@ -5861,35 +4449,25 @@
     /** @override */
     _validateType(value, options={}) {
       if ( !(value instanceof Array) ) throw new Error("must be an Array");
-      return this._validateElements(value, options);
+      const errors = this._validateElements(value, options);
+      if ( errors.length ) throw new ModelValidationError(errors);
     }
 
     /**
      * Validate every element of the ArrayField
-     * @param {Array} value                         The array to validate
-     * @param {DataFieldValidationOptions} options  Validation options
-     * @returns {DataModelValidationFailure|void}   A validation failure if any of the elements failed validation,
-     *                                              otherwise void.
+     * @param {Array} value       The array to validate
+     * @param {options} options   Validation options
+     * @returns {Array}           An array of element-specific errors
      * @protected
      */
     _validateElements(value, options) {
-      const arrayFailure = new DataModelValidationFailure();
+      const errors = [];
       for ( let i=0; i<value.length; i++ ) {
-        const failure = this._validateElement(value[i], options);
-        if ( failure ) arrayFailure.elements.push({id: i, failure});
+        const v = value[i];
+        const error = this.element.validate(v, options);
+        if ( error ) errors[i] = error;
       }
-      if ( arrayFailure.elements.length ) return arrayFailure;
-    }
-
-    /**
-     * Validate a single element of the ArrayField.
-     * @param {*} value                       The value of the array element
-     * @param {DataFieldValidationOptions} options  Validation options
-     * @returns {DataModelValidationFailure}  A validation failure if the element failed validation
-     * @protected
-     */
-    _validateElement(value, options) {
-      return this.element.validate(value, options);
+      return errors;
     }
 
     /** @override */
@@ -5913,25 +4491,6 @@
       }
       return results;
     }
-
-    /** @override */
-    _getField(path) {
-      if ( !path.length ) return this;
-      if ( path[0] === "element" ) path.shift();
-      return this.element._getField(path);
-    }
-
-    /**
-     * Migrate this field's candidate source data.
-     * @param {object} sourceData   Candidate source data of the root model
-     * @param {any} fieldData       The value of this field within the source data
-     */
-    migrateSource(sourceData, fieldData) {
-      const canMigrate = this.element.migrateSource instanceof Function;
-      if ( canMigrate && (fieldData instanceof Array) ) {
-        for ( const entry of fieldData ) this.element.migrateSource(sourceData, entry);
-      }
-    }
   }
 
   /* -------------------------------------------- */
@@ -5946,31 +4505,21 @@
 
     /** @override */
     _validateElements(value, options) {
-      const setFailure = new DataModelValidationFailure();
+      const errors = [];
       for ( let i=value.length-1; i>=0; i-- ) {  // iterate backwards so we can splice as we go
-        const failure = this._validateElement(value[i], options);
-        if ( failure ) {
-          setFailure.elements.unshift({id: i, failure});
+        const v = value[i];
+        const error = this.element.validate(v, options);
+        if ( error ) {
 
-          // The failure may have been internally resolved by fallback logic
-          if ( !failure.unresolved && failure.fallback ) continue;
-
-          // If fallback is allowed, remove invalid elements from the set
+          // If the Set element is invalid, we can remove it from the array and log a warning.
           if ( options.fallback ) {
+            globalThis.logger?.warn(`Dropped invalid Set element ${JSON.stringify(v)}`);
             value.splice(i, 1);
-            failure.dropped = true;
           }
-
-          // Otherwise the set failure is unresolved
-          else setFailure.unresolved = true;
+          else errors.push(error);
         }
       }
-
-      // Return a record of any failed set elements
-      if ( setFailure.elements.length ) {
-        if ( options.fallback && !setFailure.unresolved ) setFailure.fallback = value;
-        return setFailure;
-      }
+      return errors;
     }
 
     /** @override */
@@ -6020,22 +4569,7 @@
 
     /** @override */
     toObject(value) {
-      if ( !value ) return value;
       return value.toObject(false);
-    }
-
-    /**
-     * Migrate this field's candidate source data.
-     * @param {object} sourceData   Candidate source data of the root model
-     * @param {any} fieldData       The value of this field within the source data
-     */
-    migrateSource(sourceData, fieldData) {
-      if ( fieldData ) this.model.migrateDataSafe(fieldData);
-    }
-
-    /** @override */
-    _validateModel(changes, options) {
-      this.model.validateJoint(changes);
     }
   }
 
@@ -6047,8 +4581,8 @@
    */
   class EmbeddedCollectionField extends ArrayField {
     /**
-     * @param {typeof Document} element     The type of Document which belongs to this embedded collection
-     * @param {DataFieldOptions} [options]  Options which configure the behavior of the field
+     * @param {typeof Document} element       The type of Document which belongs to this embedded collection
+     * @param {DataFieldOptions} [options]    Options which configure the behavior of the field
      */
     constructor(element, options={}) {
       super(element, options);
@@ -6062,19 +4596,8 @@
     }
 
     /**
-     * The Collection implementation to use when initializing the collection.
-     * @type {typeof EmbeddedCollection}
-     */
-    static get implementation() {
-      return EmbeddedCollection;
-    }
-
-    /** @override */
-    static hierarchical = true;
-
-    /**
      * A reference to the DataModel subclass of the embedded document element
-     * @type {typeof Document}
+     * @type {typeof DataModel}
      */
     get model() {
       return this.element.implementation;
@@ -6085,7 +4608,7 @@
      * @type {SchemaField}
      */
     get schema() {
-      return this.model.schema;
+      return this.element.schema;
     }
 
     /** @override */
@@ -6093,14 +4616,23 @@
       return value.map(v => this.schema.clean(v, {...options, source: v}));
     }
 
-    /** @override */
+    /**
+     * @inheritdoc
+     * @returns {Array<Object<Error>>}  An array of error objects
+     */
     _validateElements(value, options) {
-      const collectionFailure = new DataModelValidationFailure();
-      for ( const v of value ) {
-        const failure = this.schema.validate(v, {...options, source: v});
-        if ( failure && !options.dropInvalidEmbedded) collectionFailure.elements.push({id: v._id, name: v.name, failure});
+      const errors = [];
+      for ( let i=0; i<value.length; i++ ) {
+        const v = value[i];
+        const errs = this.schema.validate(v, {...options, source: v});
+        if ( !isEmpty(errs) ) {
+          if ( options.fallback ) {  // If the Document is invalid remove it from the Collection and log a warning
+            const label = `Dropped invalid EmbeddedDocument ${v._id}:`;
+            globalThis.logger?.warn(this.model.formatValidationErrors(errors, {label}));
+          } else errors[i] = errs;
+        }
       }
-      if ( collectionFailure.elements.length ) return collectionFailure;
+      return errors;
     }
 
     /** @override */
@@ -6124,119 +4656,6 @@
         if ( !options.filter || !isEmpty(r) ) results.push(r);
       }
       return results;
-    }
-
-    /**
-     * Migrate this field's candidate source data.
-     * @param {object} sourceData   Candidate source data of the root model
-     * @param {any} fieldData       The value of this field within the source data
-     */
-    migrateSource(sourceData, fieldData) {
-      if ( fieldData instanceof Array ) {
-        for ( const entry of fieldData ) this.model.migrateDataSafe(entry);
-      }
-    }
-
-    /* -------------------------------------------- */
-    /*  Embedded Document Operations                */
-    /* -------------------------------------------- */
-
-    /**
-     * Return the embedded document(s) as a Collection.
-     * @param {Document} parent  The parent document.
-     * @returns {Collection<Document>}
-     */
-    getCollection(parent) {
-      return parent[this.name];
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * A subclass of {@link EmbeddedCollectionField} which manages a collection of delta objects relative to another
-   * collection.
-   */
-  class EmbeddedCollectionDeltaField extends EmbeddedCollectionField {
-    /** @override */
-    static get implementation() {
-      return EmbeddedCollectionDelta;
-    }
-
-    /** @override */
-    _cleanType(value, options) {
-      return value.map(v => {
-        if ( v._tombstone ) return foundry.data.TombstoneData.schema.clean(v, {...options, source: v});
-        return this.schema.clean(v, {...options, source: v});
-      });
-    }
-
-    /** @override */
-    _validateElements(value, options) {
-      const collectionFailure = new DataModelValidationFailure();
-      for ( const v of value ) {
-        const validationOptions = {...options, source: v};
-        const failure = v._tombstone
-          ? foundry.data.TombstoneData.schema.validate(v, validationOptions)
-          : this.schema.validate(v, validationOptions);
-        if ( failure && !options.fallback ) collectionFailure.elements.push({id: v._id, failure});
-      }
-      if ( collectionFailure.elements.length ) return collectionFailure;
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * A subclass of {@link EmbeddedDataField} which supports a single embedded Document.
-   */
-  class EmbeddedDocumentField extends EmbeddedDataField {
-    /**
-     * @param {typeof Document} model     The type of Document which is embedded.
-     * @param {DataFieldOptions} options  Options which configure the behavior of the field.
-     */
-    constructor(model, options={}) {
-      if ( !isSubclass(model, foundry.abstract.Document) ) {
-        throw new Error("An EmbeddedDocumentField must specify a Document subclass as its type.");
-      }
-      super(model.implementation, options);
-    }
-
-    /** @inheritdoc */
-    static get _defaults() {
-      return mergeObject(super._defaults, {
-        nullable: true
-      });
-    }
-
-    /** @override */
-    static hierarchical = true;
-
-    /** @override */
-    initialize(value, model, options={}) {
-      if ( !value ) return value;
-      if ( model[this.name] ) {
-        model[this.name]._initialize(options);
-        return model[this.name];
-      }
-      return new this.model(value, {...options, parent: model, parentCollection: this.name});
-    }
-
-    /* -------------------------------------------- */
-    /*  Embedded Document Operations                */
-    /* -------------------------------------------- */
-
-    /**
-     * Return the embedded document(s) as a Collection.
-     * @param {Document} parent  The parent document.
-     * @returns {Collection<Document>}
-     */
-    getCollection(parent) {
-      const collection = new SingletonEmbeddedCollection(this.name, parent, []);
-      const doc = parent[this.name];
-      if ( !doc ) return collection;
-      collection.set(doc.id, doc);
-      return collection;
     }
   }
 
@@ -6316,14 +4735,102 @@
     /** @inheritdoc */
     initialize(value, model, options={}) {
       if ( this.idOnly ) return value;
-      if ( model?.pack && !foundry.utils.isSubclass(this.model, foundry.documents.BaseFolder) ) return null;
       if ( !game.collections ) return value; // server-side
-      return () => this.model?.get(value, {pack: model?.pack, ...options}) ?? null;
+      return () => this.model?.get(value) ?? null;
     }
 
     /** @inheritdoc */
     toObject(value) {
       return value?._id ?? value
+    }
+  }
+
+  /* ---------------------------------------- */
+
+  /**
+   * A subclass of [ObjectField]{@link ObjectField} which supports a system-level data object.
+   */
+  class SystemDataField extends ObjectField {
+    /**
+     * @param {typeof Document} document      The base document class which belongs in this field
+     * @param {DataFieldOptions} options      Options which configure the behavior of the field
+     */
+    constructor(document, options={}) {
+      super(options);
+      /**
+       * The canonical document name of the document type which belongs in this field
+       * @type {typeof Document}
+       */
+      this.document = document;
+    }
+
+    /** @inheritdoc */
+    static get _defaults() {
+      return mergeObject(super._defaults, {required: true});
+    }
+
+    /**
+     * A convenience accessor for the name of the document type associated with this SystemDataField
+     * @type {string}
+     */
+    get documentName() {
+      return this.document.documentName;
+    }
+
+    /**
+     * Get the DataModel definition that should be used for this type of document.
+     * @param {string} type         The Document instance type
+     * @returns {typeof DataModel|null}    The DataModel class, or null
+     */
+    getModelForType(type) {
+      if ( !type ) return null;
+      return globalThis.CONFIG?.[this.documentName]?.systemDataModels?.[type] ?? null;
+    }
+
+    /** @override */
+    getInitialValue(data) {
+      const cls = this.getModelForType(data.type);
+      return cls?.cleanData() || foundry.utils.deepClone(game?.model[this.documentName]?.[data.type] || {});
+    }
+
+    /** @override */
+    _cleanType(value, options) {
+      if ( !(typeof value === "object") ) value = {};
+
+      // Use a defined DataModel
+      const cls = this.getModelForType(options.source?.type);
+      if ( cls ) return cls.cleanData(value, options);
+      if ( options.partial ) return value;
+
+      // Use the defined template.json
+      const template = this.getInitialValue(options.source);
+      const insertKeys = !game?.system?.template.strictDataCleaning;
+      return mergeObject(template, value, {insertKeys, inplace: true});
+    }
+
+    /** @override */
+    initialize(value, model, options={}) {
+      const cls = this.getModelForType(model._source.type);
+      if ( cls ) return new cls(value, {parent: model, ...options});
+      return deepClone(value);
+    }
+
+    /** @inheritdoc */
+    _validateType(data, options={}) {
+      super._validateType(data);
+      options.source = options.source || data;
+      const cls = this.getModelForType(options.source.type);
+      if ( !cls?._enableV10Validation ) return;
+      const schema = cls?.schema;
+      const {errors} = schema?.validate(data, options) ?? {};
+      if ( !isEmpty(errors) ) {
+        throw new ModelValidationError(errors);
+      }
+    }
+
+    /** @override */
+    toObject(value) {
+      return value.toObject instanceof Function ? value.toObject(false) : deepClone(value);
     }
   }
 
@@ -6393,16 +4900,6 @@
         initial: null
       });
     }
-
-    /* -------------------------------------------- */
-
-    /** @inheritdoc */
-    clean(value, options) {
-      if ( (value === "") && (this.nullable) ) value = null;
-      return super.clean(value, options);
-    }
-
-    /* -------------------------------------------- */
 
     /** @inheritdoc */
     _validateType(value) {
@@ -6606,153 +5103,15 @@
   }
 
   /* ---------------------------------------- */
-
-  /**
-   * A subclass of [ObjectField]{@link ObjectField} which supports a type-specific data object.
-   */
-  class TypeDataField extends ObjectField {
-    /**
-     * @param {typeof Document} document      The base document class which belongs in this field
-     * @param {DataFieldOptions} options      Options which configure the behavior of the field
-     */
-    constructor(document, options={}) {
-      super(options);
-      /**
-       * The canonical document name of the document type which belongs in this field
-       * @type {typeof Document}
-       */
-      this.document = document;
-    }
-
-    /** @inheritdoc */
-    static get _defaults() {
-      return mergeObject(super._defaults, {required: true});
-    }
-
-    /** @override */
-    static recursive = true;
-
-    /**
-     * Return the package that provides the sub-type for the given model.
-     * @param {DataModel} model       The model instance created for this sub-type.
-     * @returns {System|Module|null}
-     */
-    static getModelProvider(model) {
-      const type = model.parent?.type;
-      const modules = game.modules ?? game.world?.modules;
-      if ( !game.system || !modules || !type ) return null;
-      const [moduleId] = type.split(".");
-      if ( type.indexOf(".") < 0 ) {
-        const coreTypes = model.parent.constructor.metadata?.coreTypes ?? [];
-        if ( !coreTypes.includes(type) ) return game.system;
-      }
-      return game.modules.get(moduleId) ?? null;
-    }
-
-    /**
-     * A convenience accessor for the name of the document type associated with this TypeDataField
-     * @type {string}
-     */
-    get documentName() {
-      return this.document.documentName;
-    }
-
-    /**
-     * Get the DataModel definition that should be used for this type of document.
-     * @param {string} type              The Document instance type
-     * @returns {typeof DataModel|null}  The DataModel class or null
-     */
-    getModelForType(type) {
-      if ( !type ) return null;
-      return globalThis.CONFIG?.[this.documentName]?.dataModels?.[type] ?? null;
-    }
-
-    /** @override */
-    getInitialValue(data) {
-      const cls = this.getModelForType(data.type);
-      return cls?.cleanData() || foundry.utils.deepClone(game?.model[this.documentName]?.[data.type] || {});
-    }
-
-    /** @override */
-    _cleanType(value, options) {
-      if ( !(typeof value === "object") ) value = {};
-
-      // Use a defined DataModel
-      const type = options.source?.type;
-      const cls = this.getModelForType(type);
-      if ( cls ) return cls.cleanData(value, options);
-      if ( options.partial ) return value;
-
-      // Use the defined template.json
-      const template = this.getInitialValue(options.source);
-      const insertKeys = (type === BASE_DOCUMENT_TYPE) || !game?.system?.template.strictDataCleaning;
-      return mergeObject(template, value, {insertKeys, inplace: true});
-    }
-
-    /** @override */
-    initialize(value, model, options={}) {
-      const cls = this.getModelForType(model._source.type);
-      if ( cls ) {
-        const instance = new cls(value, {parent: model, ...options});
-        if ( !("modelProvider" in instance) ) Object.defineProperty(instance, "modelProvider", {
-          value: this.constructor.getModelProvider(instance),
-          writable: false
-        });
-        return instance;
-      }
-      return deepClone(value);
-    }
-
-    /** @inheritdoc */
-    _validateType(data, options={}) {
-      super._validateType(data);
-      options.source = options.source || data;
-      const cls = this.getModelForType(options.source.type);
-      const schema = cls?.schema;
-      return schema?.validate(data, options);
-    }
-
-    /* ---------------------------------------- */
-
-    /** @override */
-    _validateModel(changes, options) {
-      options.source ||= changes;
-      const cls = this.getModelForType(options.source.type);
-      return cls?.validateJoint(changes);
-    }
-
-    /* ---------------------------------------- */
-
-    /** @override */
-    toObject(value) {
-      return value.toObject instanceof Function ? value.toObject(false) : deepClone(value);
-    }
-
-    /**
-     * Migrate this field's candidate source data.
-     * @param {object} sourceData   Candidate source data of the root model
-     * @param {any} fieldData       The value of this field within the source data
-     */
-    migrateSource(sourceData, fieldData) {
-      const cls = this.getModelForType(sourceData.type);
-      if ( cls ) cls.migrateDataSafe(fieldData);
-    }
-  }
-
-  /* ---------------------------------------- */
-  /*  DEPRECATIONS                            */
+  /*  Errors                                  */
   /* ---------------------------------------- */
 
   /**
-   * @deprecated since v11
-   * @see DataModelValidationError
-   * @ignore
+   * A special type of error that wraps multiple errors which occurred during DataModel validation.
+   * @param {Object<Error>|Error[]} errors  An array or object containing several errors.
    */
   class ModelValidationError extends Error {
     constructor(errors) {
-      logCompatibilityWarning(
-        "ModelValidationError is deprecated. Please use DataModelValidationError instead.",
-        {since: 11, until: 13});
       const message = ModelValidationError.formatErrors(errors);
       super(message);
       this.errors = errors;
@@ -6772,15 +5131,19 @@
     }
   }
 
+  /* ---------------------------------------- */
+  /*  DEPRECATIONS                            */
+  /* ---------------------------------------- */
+
   /**
    * @deprecated since v10
-   * @see TypeDataField
+   * @see SystemDataField
    * @ignore
    */
   function systemDataField(document) {
-    const msg = "fields.systemDataField is deprecated and replaced by the TypeDataField class";
+    const msg = "fields.systemDataField is deprecated and replaced by the SystemDataField class";
     logCompatibilityWarning(msg, {since: 10, until: 12});
-    return new TypeDataField(document);
+    return new SystemDataField(document);
   }
 
   /**
@@ -6829,6 +5192,10 @@
 
   var fields = /*#__PURE__*/Object.freeze({
     __proto__: null,
+    systemDataField: systemDataField,
+    foreignDocumentField: foreignDocumentField,
+    embeddedCollectionField: embeddedCollectionField,
+    field: field,
     AlphaField: AlphaField,
     AngleField: AngleField,
     ArrayField: ArrayField,
@@ -6838,26 +5205,20 @@
     DocumentIdField: DocumentIdField,
     DocumentOwnershipField: DocumentOwnershipField,
     DocumentStatsField: DocumentStatsField,
-    EmbeddedCollectionDeltaField: EmbeddedCollectionDeltaField,
-    EmbeddedCollectionField: EmbeddedCollectionField,
     EmbeddedDataField: EmbeddedDataField,
-    EmbeddedDocumentField: EmbeddedDocumentField,
+    EmbeddedCollectionField: EmbeddedCollectionField,
     FilePathField: FilePathField,
     ForeignDocumentField: ForeignDocumentField,
     HTMLField: HTMLField,
     IntegerSortField: IntegerSortField,
     JSONField: JSONField,
-    ModelValidationError: ModelValidationError,
     NumberField: NumberField,
     ObjectField: ObjectField,
     SchemaField: SchemaField,
     SetField: SetField,
     StringField: StringField,
-    TypeDataField: TypeDataField,
-    embeddedCollectionField: embeddedCollectionField,
-    field: field,
-    foreignDocumentField: foreignDocumentField,
-    systemDataField: systemDataField
+    SystemDataField: SystemDataField,
+    ModelValidationError: ModelValidationError
   });
 
   /**
@@ -6866,20 +5227,17 @@
 
   /**
    * @typedef {Object} DataValidationOptions
-   * @property {boolean} [strict=true]     Throw an error if validation fails.
    * @property {boolean} [fallback=false]  Attempt to replace invalid values with valid defaults?
    * @property {boolean} [partial=false]   Allow partial source data, ignoring absent fields?
-   * @property {boolean} [dropInvalidEmbedded=false]  If true, invalid embedded documents will emit a warning and be
-   *                                                  placed in the invalidDocuments collection rather than causing the
-   *                                                  parent to be considered invalid.
    */
 
   /**
    * The abstract base class which defines the data schema contained within a Document.
-   * @param {object} [data={}]                    Initial data used to construct the data object. The provided object
-   *                                              will be owned by the constructed model instance and may be mutated.
-   * @param {DataValidationOptions} [options={}]  Options which affect DataModel construction
-   * @param {Document} [options.parent]           A parent DataModel instance to which this DataModel belongs
+   * @param {object} [data={}]          Initial data used to construct the data object. The provided object will be owned
+   *                                    by the constructed model instance and may be mutated.
+   * @param {object} [options={}]       Options which affect DataModel construction
+   * @param {Document} [options.parent]     A parent DataModel instance to which this DataModel belongs
+   * @param {boolean} [options.strict=true] Control the strictness of validation for initially provided data
    * @abstract
    */
   class DataModel {
@@ -6908,9 +5266,7 @@
       this._configure(options);
 
       // Data validation and initialization
-      const fallback = options.fallback ?? !strict;
-      const dropInvalidEmbedded = options.dropInvalidEmbedded ?? !strict;
-      this.validate({strict, fallback, dropInvalidEmbedded, fields: true, joint: true});
+      this.#valid = this.validate({strict, fallback: !strict, fields: true, joint: true});
       this._initialize({strict, ...options});
     }
 
@@ -6942,6 +5298,13 @@
      */
     parent;
 
+    /**
+     * Is the current state of the DataModel valid?
+     * @type {boolean}
+     * @private
+     */
+    #valid;
+
     /* ---------------------------------------- */
     /*  Data Schema                             */
     /* ---------------------------------------- */
@@ -6959,7 +5322,7 @@
     /* ---------------------------------------- */
 
     /**
-     * The Data Schema for all instances of this DataModel.
+     * Define the data schema for documents of this type.
      * @type {SchemaField}
      */
     static get schema() {
@@ -6984,22 +5347,11 @@
 
     /**
      * Is the current state of this DataModel invalid?
-     * The model is invalid if there is any unresolved failure.
      * @type {boolean}
      */
     get invalid() {
-      return Object.values(this.#validationFailures).some(f => f?.unresolved);
+      return !this.#valid;
     }
-
-    /**
-     * An array of validation failure instances which may have occurred when this instance was last validated.
-     * @type {{fields: DataModelValidationFailure|null, joint: DataModelValidationFailure|null}}
-     */
-    get validationFailures() {
-      return this.#validationFailures;
-    }
-
-    #validationFailures = Object.seal({fields: null, joint: null });
 
     /* ---------------------------------------- */
     /*  Data Cleaning Methods                   */
@@ -7043,31 +5395,20 @@
     /* ---------------------------------------- */
 
     /**
-     * A generator that orders the DataFields in the DataSchema into an expected initialization order.
-     * @returns {Generator<[string,DataField]>}
-     * @protected
-     */
-    static *_initializationOrder() {
-      for ( const entry of this.schema.entries() ) yield entry;
-    }
-
-    /* ---------------------------------------- */
-
-    /**
      * Initialize the instance by copying data from the source object to instance attributes.
      * This mirrors the workflow of SchemaField#initialize but with some added functionality.
      * @param {object} [options]        Options provided to the model constructor
      * @protected
      */
     _initialize(options={}) {
-      for ( let [name, field] of this.constructor._initializationOrder() ) {
+      for ( let [name, field] of this.schema.entries() ) {
         const sourceValue = this._source[name];
 
         // Field initialization
         const value = field.initialize(sourceValue, this, options);
 
         // Special handling for Document IDs.
-        if ( (name === "_id") && (!Object.getOwnPropertyDescriptor(this, "_id") || (this._id === null)) ) {
+        if ( (name === "_id") && (value === null) ) {
           Object.defineProperty(this, name, {value, writable: false, configurable: true});
         }
 
@@ -7106,7 +5447,7 @@
      */
     clone(data={}, context={}) {
       data = mergeObject(this.toObject(), data, {insertKeys: false, performDeletions: true, inplace: true});
-      return new this.constructor(data, {parent: this.parent, ...context});
+      return new this.constructor(data, context);
     }
 
     /* ---------------------------------------- */
@@ -7117,15 +5458,12 @@
      * Validate the data contained in the document to check for type and content
      * This function throws an error if data within the document is not valid
      *
-     * @param {object} options                    Optional parameters which customize how validation occurs.
+     * @param {object} options          Optional parameters which customize how validation occurs.
      * @param {object} [options.changes]          A specific set of proposed changes to validate, rather than the full
      *                                            source data of the model.
      * @param {boolean} [options.clean=false]     If changes are provided, attempt to clean the changes before validating
      *                                            them?
      * @param {boolean} [options.fallback=false]  Allow replacement of invalid values with valid defaults?
-     * @param {boolean} [options.dropInvalidEmbedded=false]  If true, invalid embedded documents will emit a warning and
-     *                                                       be placed in the invalidDocuments collection rather than
-     *                                                       causing the parent to be considered invalid.
      * @param {boolean} [options.strict=true]     Throw if an invalid value is encountered, otherwise log a warning?
      * @param {boolean} [options.fields=true]     Perform validation on individual fields?
      * @param {boolean} [options.joint]           Perform joint validation on the full data model?
@@ -7133,11 +5471,11 @@
      *                                            Joint validation will be disabled by default if changes are passed.
      *                                            Joint validation can be performed on a complete set of changes (for
      *                                            example testing a complete data model) by explicitly passing true.
-     * @return {boolean}                          An indicator for whether the document contains valid data
+     * @return {boolean}                An indicator for whether the document contains valid data
      */
-    validate({changes, clean=false, fallback=false, dropInvalidEmbedded=false, strict=true, fields=true, joint}={}) {
+    validate({changes, clean=false, fallback=false, strict=true, fields=true, joint}={}) {
+      let isValid = true;
       const source = changes ?? this._source;
-      this.#validationFailures.fields = this.#validationFailures.joint = null; // Remove any prior failures
 
       // Determine whether we are performing partial or joint validation
       const partial = !!changes;
@@ -7151,31 +5489,29 @@
 
       // Validate individual fields in the data or in a specific change-set, throwing errors if validation fails
       if ( fields ) {
-        const failure = this.schema.validate(source, {partial, fallback, dropInvalidEmbedded});
-        if ( failure ) {
+        const error = this.schema.validate(source, {partial, fallback});
+        if ( error ) {
+          isValid = false;
           const id = this._source._id ? `[${this._source._id}] ` : "";
-          failure.message = `${this.constructor.name} ${id}validation errors:`;
-          this.#validationFailures.fields = failure;
-          if ( strict && failure.unresolved ) throw failure.asError();
-          else logger.warn(failure.asError());
+          error.message = `${this.constructor.name} ${id}${error.message}`;
+          if ( strict ) throw error;
+          else logger.warn(error);
         }
       }
 
       // Perform joint document-level validations which consider all fields together
       if ( joint ) {
         try {
-          this.schema._validateModel(source);     // Validate inner models
-          this.constructor.validateJoint(source); // Validate this model
+          this._validateModel(source);
         } catch (err) {
-          const id = this._source._id ? `[${this._source._id}] ` : "";
-          const message = [this.constructor.name, id, `Joint Validation Error:\n${err.message}`].filterJoin(" ");
-          const failure = new DataModelValidationFailure({message, unresolved: true});
-          this.#validationFailures.joint = failure;
-          if ( strict ) throw failure.asError();
-          else logger.warn(failure.asError());
+          isValid = false;
+          const prefix = this["_id"] ? `[${this["_id"]}] ` : "";
+          const e = new ModelValidationError(`${prefix}Model Validation Error:\n${err.message}`);
+          if ( strict ) throw e;
+          else logger.warn(e);
         }
       }
-      return !this.invalid;
+      return isValid;
     }
 
     /* ---------------------------------------- */
@@ -7200,24 +5536,12 @@
     /* ---------------------------------------- */
 
     /**
-     * Evaluate joint validation rules which apply validation conditions across multiple fields of the model.
-     * Field-specific validation rules should be defined as part of the DataSchema for the model.
-     * This method allows for testing aggregate rules which impose requirements on the overall model.
-     * @param {object} data     Candidate data for the model
+     * Jointly validate the overall data model after each field has been individually validated.
+     * @param {object} data     The candidate data object to validate
      * @throws                  An error if a validation failure is detected
+     * @protected
      */
-    static validateJoint(data) {
-      /**
-       * @deprecated since v11
-       * @ignore
-       */
-      if ( this.prototype._validateModel instanceof Function ) {
-        const msg = `${this.name} defines ${this.name}.prototype._validateModel instance method which should now be`
-                  + ` declared as ${this.name}.validateJoint static method.`;
-        foundry.utils.logCompatibilityWarning(msg, {from: 11, until: 13});
-        return this.prototype._validateModel.call(this, data);
-      }
-    }
+    _validateModel(data) {}
 
     /* ---------------------------------------- */
     /*  Data Management                         */
@@ -7239,7 +5563,6 @@
       const _diff = {};
       const _backup = {};
       const _collections = this.collections;
-      const _singletons = this.singletons;
 
       // Expand the object, if dot-notation keys are provided
       if ( Object.keys(changes).some(k => /\./.test(k)) ) changes = expandObject(changes);
@@ -7248,22 +5571,19 @@
       this.validate({changes, clean: true, fallback: options.fallback, strict: true, fields: true, joint: false});
 
       // Update the source data for all fields and validate the final combined model
-      let error;
       try {
-        DataModel.#updateData(schema, source, changes, {_backup, _collections, _singletons, _diff, ...options});
-        this.validate({fields: this.invalid, joint: true, strict: true});
-      } catch(err) {
-        error = err;
+        DataModel.#updateData(schema, source, changes, {_backup, _collections, _diff, ...options});
+        this.#valid = this.validate({fields: !this.#valid, joint: true, strict: true});
       }
 
-      // Restore the backup data
-      if ( error || options.dryRun ) {
-        mergeObject(this._source, _backup, { recursive: false });
-        if ( error ) throw error;
+      // If any error occurred, restore the backup
+      catch(err) {
+        mergeObject(this._source, _backup);
+        throw err;
       }
 
-      // Initialize the updated data
-      if ( !options.dryRun ) this._initialize();
+      // Re-initialize the updated data
+      this._initialize();
       return _diff;
     }
 
@@ -7271,7 +5591,6 @@
 
     /**
      * Update the source data for a specific DataSchema.
-     * This method assumes that both source and changes are valid objects.
      * @param {SchemaField} schema      The data schema to update
      * @param {object} source           Source data to be updated
      * @param {object} changes          Changes to apply to the source data
@@ -7286,11 +5605,12 @@
         const field = schema.get(name);
         if ( !field ) continue;
 
-        // Skip updates where the data is unchanged
-        const prior = source[name];
-        if ( (value?.equals instanceof Function) && value.equals(prior) ) continue;  // Arrays, Sets, etc...
-        if ( (prior === value) ) continue; // Direct comparison
-        _backup[name] = deepClone(prior);
+        // Only apply differences in the cleaned data
+        const current = source[name];
+        if ( current === value ) continue; // no diff
+
+        // Record backup and diff
+        _backup[name] = current;
         _diff[name] = value;
 
         // Field-specific updating logic
@@ -7312,42 +5632,31 @@
      * @private
      */
     static #updateField(name, field, source, value, options) {
-      const {dryRun, fallback, recursive, restoreDelta, _collections, _singletons, _diff, _backup} = options;
-      const current = source?.[name];   // The current value may be null or undefined
+      const {fallback, recursive, _collections, _diff} = options;
+      const current = source[name];
 
       // Special Case: Update Embedded Collection
       if ( field instanceof EmbeddedCollectionField ) {
-        if ( dryRun ) _backup[name] = current;
-        else _collections[name].update(value, {fallback, recursive, restoreDelta});
-        return;
-      }
-
-      // Special Case: Update Embedded Document
-      if ( (field instanceof EmbeddedDocumentField) && _singletons[name] ) {
-        _diff[name] = _singletons[name].updateSource(value, {dryRun, fallback, recursive, restoreDelta});
-        if ( isEmpty(_diff[name]) ) delete _diff[name];
-        return;
+        return _collections[name].update(value, {fallback, recursive});
       }
 
       // Special Case: Inner Data Schema
       let innerSchema;
       if ( (field instanceof SchemaField) || (field instanceof EmbeddedDataField) ) innerSchema = field;
-      else if ( field instanceof TypeDataField ) {
+      else if ( field instanceof SystemDataField ) {
         const cls = field.getModelForType(source.type);
         if ( cls ) innerSchema = cls.schema;
       }
-      if ( innerSchema && current && value ) {
+      if ( innerSchema ) {
         _diff[name] = {};
         const recursiveOptions = {fallback, recursive, _backup: current, _collections, _diff: _diff[name]};
-        this.#updateData(innerSchema, current, value, recursiveOptions);
-        if ( isEmpty(_diff[name]) ) delete _diff[name];
+        return this.#updateData(innerSchema, current, value, recursiveOptions);
       }
 
       // Special Case: Object Field
-      else if ( (field instanceof ObjectField) && current && value && (recursive !== false) ) {
-        _diff[name] = diffObject(current, value);
-        mergeObject(current, value, {insertKeys: true, insertValues: true, performDeletions: true});
-        if ( isEmpty(_diff[name]) ) delete _diff[name];
+      if ( field instanceof ObjectField ) {
+        if ( recursive === false ) source[name] = value;
+        else mergeObject(current, value, {insertKeys: true, insertValues: true, performDeletions: true});
       }
 
       // Standard Case: Update Directly
@@ -7384,9 +5693,9 @@
     /**
      * Create a new instance of this DataModel from a source record.
      * The source is presumed to be trustworthy and is not strictly validated.
-     * @param {object} source                    Initial document data which comes from a trusted source.
-     * @param {DataValidationOptions} [context]  Model construction context
-     * @param {boolean} [context.strict=false]   Models created from trusted source data are validated non-strictly
+     * @param {object} source       Initial document data which comes from a trusted source.
+     * @param {object} [context]    Model construction context
+     * @param {boolean} [context.strict=false]  Models created from trusted source data are validated non-strictly
      * @returns {DataModel}
      */
     static fromSource(source, {strict=false, ...context}={}) {
@@ -7414,8 +5723,20 @@
      * @returns {object}                Migrated source data, if necessary
      */
     static migrateData(source) {
-      if ( !source ) return source;
-      this.schema.migrateSource(source, source);
+      const schema = this.schema;
+      for ( const [name, value] of Object.entries(source) ) {
+        const field = schema.get(name);
+        if ( !field ) continue;
+        if ( field instanceof EmbeddedDataField ) {
+          source[name] = field.model.migrateDataSafe(value || {});
+        }
+        else if ( field instanceof EmbeddedCollectionField ) {
+          (value || []).forEach(d => field.model.migrateDataSafe(d));
+        } else if ( field instanceof SystemDataField ) {
+          const cls = field.getModelForType(source.type);
+          if ( cls ) source[name] = cls.migrateDataSafe(value);
+        }
+      }
       return source;
     }
 
@@ -7478,94 +5799,6 @@
   }
 
   /**
-   * A specialized subclass of DataModel, intended to represent a Document's type-specific data.
-   * Systems or Modules that provide DataModel implementations for sub-types of Documents (such as Actors or Items)
-   * should subclass this class instead of the base DataModel class.
-   *
-   * @see {@link Document}
-   * @extends {DataModel}
-   * @abstract
-   *
-   * @example Registering a custom sub-type for a Module.
-   *
-   * **module.json**
-   * ```json
-   * {
-   *   "id": "my-module",
-   *   "esmodules": ["main.mjs"],
-   *   "documentTypes": {
-   *     "Actor": {
-   *       "sidekick": {},
-   *       "villain": {}
-   *     },
-   *     "JournalEntryPage": {
-   *       "dossier": {},
-   *       "quest": {
-   *         "htmlFields": ["description"]
-   *       }
-   *     }
-   *   }
-   * }
-   * ```
-   *
-   * **main.mjs**
-   * ```js
-   * Hooks.on("init", () => {
-   *   Object.assign(CONFIG.Actor.dataModels, {
-   *     "my-module.sidekick": SidekickModel,
-   *     "my-module.villain": VillainModel
-   *   });
-   *   Object.assign(CONFIG.JournalEntryPage.dataModels, {
-   *     "my-module.dossier": DossierModel,
-   *     "my-module.quest": QuestModel
-   *   });
-   * });
-   *
-   * class QuestModel extends foundry.abstract.TypeDataModel {
-   *   static defineSchema() {
-   *     const fields = foundry.data.fields;
-   *     return {
-   *       description: new fields.HTMLField({required: false, blank: true, initial: ""}),
-   *       steps: new fields.ArrayField(new fields.StringField())
-   *     };
-   *   }
-   *
-   *   prepareDerivedData() {
-   *     this.totalSteps = this.steps.length;
-   *   }
-   * }
-   * ```
-   */
-  class TypeDataModel extends DataModel {
-
-    /** @inheritdoc */
-    constructor(data={}, options={}) {
-      super(data, options);
-
-      /**
-       * The package that is providing this DataModel for the given sub-type.
-       * @type {System|Module|null}
-       */
-      Object.defineProperty(this, "modelProvider", {value: TypeDataField.getModelProvider(this), writable: false});
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Prepare data related to this DataModel itself, before any derived data is computed.
-     */
-    prepareBaseData() {}
-
-    /* -------------------------------------------- */
-
-    /**
-     * Apply transformations of derivations to the values of the source data object.
-     * Compute data fields whose values are not stored to the database.
-     */
-    prepareDerivedData() {}
-  }
-
-  /**
    * An extension of the base DataModel which defines a Document.
    * Documents are special in that they are persisted to the database and referenced by _id.
    * @extends abstract.DataModel
@@ -7578,15 +5811,7 @@
   class Document extends DataModel {
 
     /** @override */
-    _configure({pack=null, parentCollection=null}={}) {
-      /**
-       * An immutable reverse-reference to the name of the collection that this Document exists in on its parent, if any.
-       * @type {string|null}
-       */
-      Object.defineProperty(this, "parentCollection", {
-        value: this._getParentCollection(parentCollection),
-        writable: false
-      });
+    _configure({pack=null}={}) {
 
       /**
        * An immutable reference to a containing Compendium collection to which this Document belongs.
@@ -7604,10 +5829,10 @@
 
       // Construct Embedded Collections
       const collections = {};
-      for ( const [fieldName, field] of Object.entries(this.constructor.hierarchy) ) {
-        if ( !field.constructor.implementation ) continue;
+      for ( const fieldName of Object.values(this.constructor.metadata.embedded) ) {
+        const field = this.schema.get(fieldName);
         const data = this._source[fieldName];
-        const c = collections[fieldName] = new field.constructor.implementation(fieldName, this, data);
+        const c = collections[fieldName] = new EmbeddedCollection(this, data, field.element.implementation);
         Object.defineProperty(this, fieldName, {value: c, writable: false});
       }
 
@@ -7616,44 +5841,6 @@
        * @type {Object<EmbeddedCollection>}
        */
       Object.defineProperty(this, "collections", {value: Object.seal(collections), writable: false});
-    }
-
-    /* -------------------------------------------- */
-
-    /** @inheritdoc */
-    _initialize(options={}) {
-      super._initialize(options);
-
-      const singletons = {};
-      for ( const [fieldName, field] of Object.entries(this.constructor.hierarchy) ) {
-        if ( field instanceof foundry.data.fields.EmbeddedDocumentField ) {
-          Object.defineProperty(singletons, fieldName, { get: () => this[fieldName] });
-        }
-      }
-
-      /**
-       * A mapping of singleton embedded Documents which exist in this model.
-       * @type {Object<Document>}
-       */
-      Object.defineProperty(this, "singletons", {value: Object.seal(singletons), configurable: true});
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static *_initializationOrder() {
-      const hierarchy = this.hierarchy;
-
-      // Initialize non-hierarchical fields first
-      for ( const [name, field] of this.schema.entries() ) {
-        if ( name in hierarchy ) continue;
-        yield [name, field];
-      }
-
-      // Initialize hierarchical fields last
-      for ( const [name, field] of Object.entries(hierarchy) ) {
-        yield [name, field];
-      }
     }
 
     /* -------------------------------------------- */
@@ -7729,43 +5916,16 @@
     /* -------------------------------------------- */
 
     /**
-     * Does this Document support additional sub-types?
+     * Does this Document definition include a SystemDataField?
      * @type {boolean}
      */
-    static get hasTypeData() {
-      return this.schema.get("system") instanceof TypeDataField;
+    static get hasSystemData() {
+      return this.schema.get("system") instanceof SystemDataField;
     }
 
     /* -------------------------------------------- */
     /*  Model Properties                            */
     /* -------------------------------------------- */
-
-    /**
-     * The Embedded Document hierarchy for this Document.
-     * @returns {Object<DataField>}
-     */
-    static get hierarchy() {
-      const hierarchy = {};
-      for ( const [fieldName, field] of this.schema.entries() ) {
-        if ( field.constructor.hierarchical ) hierarchy[fieldName] = field;
-      }
-      Object.defineProperty(this, "hierarchy", {value: Object.freeze(hierarchy), writable: false});
-      return this.hierarchy;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Determine the collection this Document exists in on its parent, if any.
-     * @param {string} [parentCollection]  An explicitly provided parent collection name.
-     * @returns {string|null}
-     * @private
-     */
-    _getParentCollection(parentCollection) {
-      if ( !this.parent ) return null;
-      if ( parentCollection ) return parentCollection;
-      return this.parent.constructor.getCollectionName(this.documentName);
-    }
 
     /**
      * The canonical identifier for this Document.
@@ -7780,7 +5940,7 @@
      * @type {boolean}
      */
     get isEmbedded() {
-      return !!(this.parent && this.parentCollection);
+      return this.parent && (this.documentName in this.parent.constructor.metadata.embedded);
     }
 
     /* ---------------------------------------- */
@@ -7805,21 +5965,15 @@
     /* ---------------------------------------- */
 
     /**
-     * Get the explicit permission level that a User has over this Document, a value in CONST.DOCUMENT_OWNERSHIP_LEVELS.
-     * This method returns the value recorded in Document ownership, regardless of the User's role.
-     * To test whether a user has a certain capability over the document, testUserPermission should be used.
+     * Get the permission level that a specific User has over this Document, a value in CONST.DOCUMENT_OWNERSHIP_LEVELS.
      * @param {documents.BaseUser} user     The User being tested
      * @returns {number|null}               A numeric permission level from CONST.DOCUMENT_OWNERSHIP_LEVELS or null
      */
     getUserLevel(user) {
       user = user || game.user;
-
-      // Compendium content uses role-based ownership
-      if ( this.pack ) return this.compendium.getUserLevel(user);
-
-      // World content uses granular per-User ownership
-      const ownership = this["ownership"] || {};
-      return ownership[user.id] ?? ownership.default ?? null;
+      const ownership = this["ownership"];
+      if ( !ownership ) return null;
+      return ownership[user.id] ?? ownership["default"] ?? null;
     }
 
     /* ---------------------------------------- */
@@ -7833,10 +5987,16 @@
      * @return {boolean}                      Does the user have this permission level over the Document?
      */
     testUserPermission(user, permission, {exact=false}={}) {
+
+      // Get user permission
       const perms = DOCUMENT_OWNERSHIP_LEVELS;
-      const level = user.isGM ? perms.OWNER : this.getUserLevel(user);
+      const level = this.getUserLevel(user);
+
+      // Test against the target permission
       const target = (typeof permission === "string") ? (perms[permission] ?? perms.OWNER) : permission;
-      return exact ? level === target : level >= target;
+      if ( exact ) return level === target;   // Exact match
+      else if ( user.isGM ) return true;      // Game-masters can do anything
+      return level >= target;                 // Same level or higher
     }
 
     /* ---------------------------------------- */
@@ -7894,11 +6054,8 @@
      * @returns {object}              The migrated system data object
      */
     migrateSystemData() {
-      if ( !this.constructor.hasTypeData ) {
-        throw new Error(`The ${this.documentName} Document does not include a TypeDataField.`);
-      }
-      if ( (this.system instanceof DataModel) && !(this.system.modelProvider instanceof System) ) {
-        throw new Error(`The ${this.documentName} Document does not have system-provided package data.`);
+      if ( !this.constructor.hasSystemData ) {
+        throw new Error(`The ${this.documentName} Document does not include a SystemDataField.`);
       }
       const model = game.model[this.documentName]?.[this["type"]] || {};
       return mergeObject(model, this["system"], {
@@ -8114,19 +6271,11 @@
     /**
      * Get a World-level Document of this type by its id.
      * @param {string} documentId         The Document ID
-     * @param {object} [options={}]       Additional options which customize the request
      * @returns {abstract.Document|null}  The retrieved Document, or null
      */
-    static get(documentId, options={}) {
-      if ( !documentId ) return null;
-      if ( options.pack ) {
-        const pack = game.packs.get(options.pack);
-        return pack?.index.get(documentId) || null;
-      }
-      else {
-        const collection = game.collections?.get(this.documentName);
-        return collection?.get(documentId) || null;
-      }
+    static get(documentId) {
+      const collection = game.collections?.get(this.documentName);
+      return collection?.get(documentId) || null;
     }
 
     /* -------------------------------------------- */
@@ -8134,62 +6283,31 @@
     /* -------------------------------------------- */
 
     /**
-     * A compatibility method that returns the appropriate name of an embedded collection within this Document.
-     * @param {string} name    An existing collection name or a document name.
-     * @returns {string|null}  The provided collection name if it exists, the first available collection for the
-     *                         document name provided, or null if no appropriate embedded collection could be found.
-     * @example Passing an existing collection name.
-     * ```js
-     * Actor.getCollectionName("items");
-     * // returns "items"
-     * ```
-     *
-     * @example Passing a document name.
-     * ```js
-     * Actor.getCollectionName("Item");
-     * // returns "items"
-     * ```
-     */
-    static getCollectionName(name) {
-      if ( name in this.hierarchy ) return name;
-      for ( const [collectionName, field] of Object.entries(this.hierarchy) ) {
-        if ( field.model.documentName === name ) return collectionName;
-      }
-      return null;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
      * Obtain a reference to the Array of source data within the data object for a certain embedded Document name
      * @param {string} embeddedName   The name of the embedded Document type
-     * @return {DocumentCollection}   The Collection instance of embedded Documents of the requested type
+     * @return {Collection}           The Collection instance of embedded Documents of the requested type
      */
     getEmbeddedCollection(embeddedName) {
-      const collectionName = this.constructor.getCollectionName(embeddedName);
+      const collectionName = this.constructor.metadata.embedded[embeddedName];
       if ( !collectionName ) {
         throw new Error(`${embeddedName} is not a valid embedded Document within the ${this.documentName} Document`);
       }
-      const field = this.constructor.hierarchy[collectionName];
-      return field.getCollection(this);
+      return this[collectionName];
     }
 
     /* -------------------------------------------- */
 
     /**
-     * Get an embedded document by its id from a named collection in the parent document.
-     * @param {string} embeddedName              The name of the embedded Document type
-     * @param {string} id                        The id of the child document to retrieve
-     * @param {object} [options]                 Additional options which modify how embedded documents are retrieved
-     * @param {boolean} [options.strict=false]   Throw an Error if the requested id does not exist. See Collection#get
-     * @param {boolean} [options.invalid=false]  Allow retrieving an invalid Embedded Document.
-     * @return {Document}                        The retrieved embedded Document instance, or undefined
-     * @throws If the embedded collection does not exist, or if strict is true and the Embedded Document could not be
-     *         found.
+     * Get an embedded document by it's id from a named collection in the parent document.
+     * @param {string} embeddedName   The name of the embedded Document type
+     * @param {string} id             The id of the child document to retrieve
+     * @param {object} [options]      Additional options which modify how embedded documents are retrieved
+     * @param {boolean} [options.strict=false] Throw an Error if the requested id does not exist. See Collection#get
+     * @return {Document}             The retrieved embedded Document instance, or undefined
      */
-    getEmbeddedDocument(embeddedName, id, {invalid=false, strict=false}={}) {
+    getEmbeddedDocument(embeddedName, id, {strict=false}={}) {
       const collection = this.getEmbeddedCollection(embeddedName);
-      return collection.get(id, {invalid, strict});
+      return collection.get(id, {strict});
     }
 
     /* -------------------------------------------- */
@@ -8324,7 +6442,6 @@
      * @param {object} data               The initial data object provided to the document creation request
      * @param {object} options            Additional options which modify the creation request
      * @param {documents.BaseUser} user   The User requesting the document creation
-     * @returns {Promise<boolean|void>}   A return value of false indicates the creation operation should be cancelled.
      * @protected
      */
     async _preCreate(data, options, user) {}
@@ -8335,7 +6452,6 @@
      * @param {object} changed            The differential data that is changed relative to the documents prior values
      * @param {object} options            Additional options which modify the update request
      * @param {documents.BaseUser} user   The User requesting the document update
-     * @returns {Promise<boolean|void>}   A return value of false indicates the update operation should be cancelled.
      * @protected
      */
     async _preUpdate(changed, options, user) {}
@@ -8345,7 +6461,6 @@
      * Pre-delete operations only occur for the client which requested the operation.
      * @param {object} options            Additional options which modify the deletion request
      * @param {documents.BaseUser} user   The User requesting the document deletion
-     * @returns {Promise<boolean|void>}   A return value of false indicates the deletion operation should be cancelled.
      * @protected
      */
     async _preDelete(options, user) {}
@@ -8443,18 +6558,6 @@
         data[k] = this[k];
       }
       return this.constructor.shimData(data, {embedded: false});
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * @deprecated since v11
-     * @ignore
-     */
-    static get hasSystemData() {
-      foundry.utils.logCompatibilityWarning(`You are accessing ${this.name}.hasSystemData which is deprecated. `
-      + `Please use ${this.name}.hasTypeData instead.`, {since: 11, until: 13});
-      return this.hasTypeData;
     }
 
     /* ---------------------------------------- */
@@ -8555,33 +6658,34 @@
     /**
      * Retrieve Documents based on provided query parameters
      * @param {Function} documentClass        The Document definition
-     * @param {object} context                Context for the requested operation
+     * @param {object} request                The requested operation
      * @param {BaseUser} [user]               The requesting User
      * @returns {Promise<Document[]>}         The created Document instances
      */
-    async get(documentClass, context, user) {
-      context = await this._getArgs(context);
-      return this._getDocuments(documentClass, context, user);
+    async get(documentClass, request, user) {
+      const parent = await this._getParent(request);
+      request = this._getArgs(request);
+      if ( parent ) return this._getEmbeddedDocuments(documentClass, parent, request, user);
+      else return this._getDocuments(documentClass, request, user);
     }
 
     /* -------------------------------------------- */
 
     /**
      * Validate the arguments passed to the get operation
-     * @param {object} context                The requested operation
-     * @param {object} [context.query={}]     A document search query to execute
-     * @param {object} [context.options={}]   Operation options
-     * @param {string} [context.pack]         A Compendium pack identifier
+     * @param {object} request                The requested operation
+     * @param {object} [request.query={}]     A document search query to execute
+     * @param {object} [request.options={}]   Operation options
+     * @param {string} [request.pack]         A Compendium pack identifier
      * @private
      */
-    async _getArgs({query={}, options={}, pack, ...context}={}) {
-      const parent = await this._getParent(context);
+    _getArgs({query={}, options={}, pack}={}) {
       options = mergeObject({index: false}, options);
       if ( pack && !this.getCompendiumScopes().includes(pack) ) {
         throw new Error(`Compendium pack ${pack} is not a valid Compendium identifier`);
       }
       options.broadcast = false; // never broadcast get requests
-      return {query, options, pack, parent, parentUuid: context.parentUuid};
+      return {query, options, pack};
     }
 
     /* -------------------------------------------- */
@@ -8595,17 +6699,25 @@
     /* -------------------------------------------- */
 
     /**
-     * Get the parent Document (if any) associated with a request context.
-     * @param {object} context                The requested operation
+     * Get embedded Document instances
+     * @protected
+     */
+    async _getEmbeddedDocuments(documentClass, parent, request, user) {}
+
+    /* -------------------------------------------- */
+
+    /**
+     * Get the parent Document (if any) associated with a request
+     * @param {object} request                The requested operation
      * @return {Promise<Document|null>}       The parent Document, or null
      * @private
      */
-    async _getParent(context) {
-      if ( !context.parent ) return null;
-      if ( !(context.parent instanceof Document) ) {
+    async _getParent(request) {
+      if ( !request.parent ) return null;
+      if ( !(request.parent instanceof Document) ) {
         throw new Error("A parent Document provided to the database operation must be a Document instance");
       }
-      return context.parent;
+      return request.parent;
     }
 
     /* -------------------------------------------- */
@@ -8615,36 +6727,37 @@
     /**
      * Perform document creation operations
      * @param {Function} documentClass        The Document definition
-     * @param {object} context                Context for the requested operation
+     * @param {object} request                The requested operation
      * @param {BaseUser} [user]               The requesting User
      * @returns {Promise<Document[]>}         The created Document instances
      */
-    async create(documentClass, context, user) {
-      context = await this._createArgs(context);
-      return this._createDocuments(documentClass, context, user);
+    async create(documentClass, request, user) {
+      const parent = await this._getParent(request);
+      request = this._createArgs(request);
+      if ( parent ) return this._createEmbeddedDocuments(documentClass, parent, request, user);
+      else return this._createDocuments(documentClass, request, user);
     }
 
     /* -------------------------------------------- */
 
     /**
      * Validate the arguments passed to the create operation
-     * @param {object} context                The requested operation
-     * @param {object[]} context.data         An array of document data
-     * @param {object} [context.options={}]   Operation options
-     * @param {string} [context.pack]         A Compendium pack identifier
+     * @param {object} request                The requested operation
+     * @param {object[]} request.data         An array of document data
+     * @param {object} [request.options={}]   Operation options
+     * @param {string} [request.pack]         A Compendium pack identifier
      * @private
      */
-    async _createArgs({data=[], options={}, pack, ...context}={}) {
+    _createArgs({data=[], options={}, pack}={}) {
       if ( !(data instanceof Array) ) {
         throw new Error("The data provided to the DatabaseBackend#create operation must be an array of data objects");
       }
-      const parent = await this._getParent(context);
       options = mergeObject({temporary: false, renderSheet: false, render: true}, options);
       if ( pack && !this.getCompendiumScopes().includes(pack) ) {
         throw new Error(`Compendium pack ${pack} is not a valid Compendium identifier`);
       }
       if ( options.temporary ) options.noHook = true;
-      return {data, options, pack, parent, parentUuid: context.parentUuid};
+      return {data, options, pack};
     }
 
     /* -------------------------------------------- */
@@ -8654,7 +6767,16 @@
      * @returns {Promise<Document[]>}
      * @protected
      */
-    async _createDocuments(documentClass, context, user) {}
+    async _createDocuments(documentClass, request, user) {}
+
+    /* -------------------------------------------- */
+
+    /**
+     * Create embedded Document instances
+     * @returns {Promise<Document[]>}
+     * @protected
+     */
+    async _createEmbeddedDocuments(documentClass, parent, request, user) {}
 
     /* -------------------------------------------- */
     /*  Update Operations                           */
@@ -8663,35 +6785,36 @@
     /**
      * Perform document update operations
      * @param {Function} documentClass        The Document definition
-     * @param {object} context                Context for the requested operation
+     * @param {object} request                The requested operation
      * @param {BaseUser} [user]               The requesting User
      * @returns {Promise<Document[]>}         The updated Document instances
      */
-    async update(documentClass, context, user) {
-      context = await this._updateArgs(context);
-      return this._updateDocuments(documentClass, context, user);
+    async update(documentClass, request, user) {
+      const parent = await this._getParent(request);
+      request = this._updateArgs(request);
+      if ( parent ) return this._updateEmbeddedDocuments(documentClass, parent, request, user);
+      else return this._updateDocuments(documentClass, request, user);
     }
 
     /* -------------------------------------------- */
 
     /**
      * Validate the arguments passed to the update operation
-     * @param {object} context                The requested operation
-     * @param {object[]} context.updates      An array of document data
-     * @param {object} [context.options={}]   Operation options
-     * @param {string} [context.pack]         A Compendium pack identifier
+     * @param {object} request                The requested operation
+     * @param {object[]} request.updates      An array of document data
+     * @param {object} [request.options={}]   Operation options
+     * @param {string} [request.pack]         A Compendium pack identifier
      * @private
      */
-    async _updateArgs({updates=[], options={}, pack, ...context}={}) {
+    _updateArgs({updates=[], options={}, pack}={}) {
       if ( !(updates instanceof Array) ) {
         throw new Error("The updates provided to the DatabaseBackend#update operation must be an array of data objects");
       }
-      const parent = await this._getParent(context);
       options = mergeObject({diff: true, render: true}, options);
       if ( pack && !this.getCompendiumScopes().includes(pack) ) {
         throw new Error(`Compendium pack ${pack} is not a valid Compendium identifier`);
       }
-      return {updates, options, pack, parent, parentUuid: context.parentUuid};
+      return {updates, options, pack};
     }
 
     /* -------------------------------------------- */
@@ -8701,8 +6824,19 @@
      * @returns {Promise<Document[]>}
      * @protected
      */
-    async _updateDocuments(documentClass, context, user) {
+    async _updateDocuments(documentClass, request, user) {
       throw new Error("An implementation of the DatabaseBackend must define the _updateDocuments method");
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Update embedded Document instances
+     * @returns {Promise<Document[]>}
+     * @protected
+     */
+    async _updateEmbeddedDocuments(documentClass, parent, request, user) {
+      throw new Error("An implementation of the DatabaseBackend must define the _updateEmbeddedDocuments method");
     }
 
     /* -------------------------------------------- */
@@ -8712,35 +6846,36 @@
     /**
      * Perform document deletion operations
      * @param {Function} documentClass        The Document definition
-     * @param {object} context                Context for the requested operation
+     * @param {object} request                The requested operation
      * @param {BaseUser} [user]               The requesting User
      * @returns {Promise<Document[]>}         The deleted Document instances
      */
-    async delete(documentClass, context, user) {
-      context = await this._deleteArgs(context);
-      return this._deleteDocuments(documentClass, context, user);
+    async delete(documentClass, request, user) {
+      const parent = await this._getParent(request);
+      request = this._deleteArgs(request);
+      if ( parent ) return this._deleteEmbeddedDocuments(documentClass, parent, request, user);
+      else return this._deleteDocuments(documentClass, request, user);
     }
 
     /* -------------------------------------------- */
 
     /**
      * Validate the arguments passed to the delete operation
-     * @param {object} context                The requested operation
-     * @param {string[]} context.ids          An array of document ids
-     * @param {object} [context.options={}]   Operation options
-     * @param {string} [context.pack]         A Compendium pack identifier
+     * @param {object} request                The requested operation
+     * @param {string[]} request.ids          An array of document ids
+     * @param {object} [request.options={}]   Operation options
+     * @param {string} [request.pack]         A Compendium pack identifier
      * @private
      */
-    async _deleteArgs({ids=[], options={}, pack, ...context}={}) {
+    _deleteArgs({ids=[], options={}, pack}={}) {
       if ( !(ids instanceof Array) ) {
         throw new Error("The document ids provided to the DatabaseBackend#delete operation must be an array of strings");
       }
-      const parent = await this._getParent(context);
       options = mergeObject({render: true}, options);
       if ( pack && !this.getCompendiumScopes().includes(pack) ) {
         throw new Error(`Compendium pack ${pack} is not a valid Compendium identifier`);
       }
-      return {ids, options, pack, parent, parentUuid: context.parentUuid};
+      return {ids, options, pack};
     }
 
     /* -------------------------------------------- */
@@ -8750,7 +6885,16 @@
      * @returns {Promise<Document[]>}
      * @protected
      */
-    async _deleteDocuments(documentClass, context, user) {}
+    async _deleteDocuments(documentClass, request, user) {}
+
+    /* -------------------------------------------- */
+
+    /**
+     * Delete embedded Document instances
+     * @returns {Promise<Document[]>}
+     * @protected
+     */
+    async _deleteEmbeddedDocuments(documentClass, parent, request, user) {}
 
     /* -------------------------------------------- */
     /*  Helper Methods                              */
@@ -8852,29 +6996,24 @@
 
   var abstract = /*#__PURE__*/Object.freeze({
     __proto__: null,
-    DataModel: DataModel,
-    DatabaseBackend: DatabaseBackend,
-    Document: Document,
     DocumentData: DocumentData,
+    Document: Document,
+    DatabaseBackend: DatabaseBackend,
     EmbeddedCollection: EmbeddedCollection,
-    EmbeddedCollectionDelta: EmbeddedCollectionDelta,
-    SingletonEmbeddedCollection: SingletonEmbeddedCollection,
-    TypeDataModel: TypeDataModel
+    DataModel: DataModel
   });
 
   /**
    * @typedef {Object} ActiveEffectData
    * @property {string} _id                 The _id which uniquely identifies the ActiveEffect within a parent Actor or Item
-   * @property {string} name                The name of the which describes the name of the ActiveEffect
+   * @property {string} label               A text label which describes the name of the ActiveEffect
    * @property {EffectChangeData[]} changes The array of EffectChangeData objects which the ActiveEffect applies
    * @property {boolean} [disabled=false]   Is this ActiveEffect currently disabled?
    * @property {EffectDurationData} [duration] An EffectDurationData object which describes the duration of the ActiveEffect
-   * @property {string} [description]       The HTML text description for this ActiveEffect document.
    * @property {string} [icon]              An icon image path used to depict the ActiveEffect
    * @property {string} [origin]            A UUID reference to the document from which this ActiveEffect originated
    * @property {string} [tint=null]         A color string which applies a tint to the ActiveEffect icon
    * @property {boolean} [transfer=false]   Does this ActiveEffect automatically transfer from an Item to an Actor?
-   * @property {Set<string>} [statuses]     Special status IDs that pertain to this effect
    * @property {object} [flags]             An object of optional key/value flags
    */
 
@@ -8926,7 +7065,6 @@
     static defineSchema() {
       return {
         _id: new DocumentIdField(),
-        name: new StringField({required: true, blank: false, label: "EFFECT.Name", textSearch: true}),
         changes: new ArrayField(new SchemaField({
           key: new StringField({required: true, label: "EFFECT.ChangeKey"}),
           value: new StringField({required: true, label: "EFFECT.ChangeValue"}),
@@ -8944,12 +7082,11 @@
           startRound: new NumberField({integer: true, min: 0}),
           startTurn: new NumberField({integer: true, min: 0, label: "EFFECT.StartTurns"})
         }),
-        description: new HTMLField({label: "EFFECT.Description", textSearch: true}),
         icon: new FilePathField({categories: ["IMAGE"], label: "EFFECT.Icon"}),
+        label: new StringField({required: true, label: "EFFECT.Label"}),
         origin: new StringField({nullable: true, blank: false, initial: null, label: "EFFECT.Origin"}),
         tint: new ColorField({label: "EFFECT.IconTint"}),
         transfer: new BooleanField({initial: true, label: "EFFECT.Transfer"}),
-        statuses: new SetField(new StringField({required: true, blank: false})),
         flags: new ObjectField()
       }
     }
@@ -8957,14 +7094,6 @@
     /* -------------------------------------------- */
     /*  Model Methods                               */
     /* -------------------------------------------- */
-
-    /** @inheritdoc */
-    canUserModify(user, action, data={}) {
-      if ( this.isEmbedded ) return this.parent.canUserModify(user, "update");
-      return super.canUserModify(user, action, data);
-    }
-
-    /* ---------------------------------------- */
 
     /** @inheritdoc */
     testUserPermission(user, permission, {exact=false}={}) {
@@ -8988,221 +7117,11 @@
     /* -------------------------------------------- */
 
     /** @inheritDoc */
-    _initialize(options) {
-      super._initialize(options);
-
-      /**
-       * label -> name
-       * @deprecated since v11
-       */
-      Object.defineProperty(this, "label", {
-        get() {
-          this.constructor._logDataFieldMigration("label", "name", {since: 11, until: 13});
-          return this.name;
-        },
-        configurable: true,
-        enumerable: false
-      });
-    }
-
-    /* -------------------------------------------- */
-
-    /** @inheritDoc */
     static migrateData(data) {
-
-      /**
-       * data -> system
-       * @deprecated since v10
-       */
       if ( "changes" in data ) {
         for ( const change of data.changes ) {
           change.key = change.key.replace(/^data\./, "system.");
         }
-      }
-
-      /**
-       * label -> name
-       * @deprecated since v11
-       */
-      this._addDataFieldMigration(data, "label", "name", d => d.label || "Unnamed Effect");
-
-      return data;
-    }
-
-    /* ---------------------------------------- */
-
-    /** @inheritdoc */
-    static shimData(data, options) {
-
-      // label -> name
-      this._addDataFieldShim(data, "label", "name", {since: 11, until: 13});
-
-      return super.shimData(data, options);
-    }
-  }
-
-  /**
-   * @typedef {object} ActorDeltaData
-   * @property {string} _id                              The _id which uniquely identifies this ActorDelta document.
-   * @property {string} [name]                           The name override, if any.
-   * @property {string} [type]                           The type override, if any.
-   * @property {string} [img]                            The image override, if any.
-   * @property {object} [system]                         The system data model override.
-   * @property {Collection<BaseItem>} [items]            An array of embedded item data overrides.
-   * @property {Collection<BaseActiveEffect>} [effects]  An array of embedded active effect data overrides.
-   * @property {object} [ownership]                      Ownership overrides.
-   * @property {object} [flags]                          An object of actor flag overrides.
-   */
-
-  /**
-   * The Document definition for an ActorDelta.
-   * Defines the DataSchema and common behaviors for an ActorDelta which are shared between both client and server.
-   * ActorDeltas store a delta that can be applied to a particular Actor in order to produce a new Actor.
-   * @extends abstract.Document
-   * @mixes ActorDeltaData
-   * @memberof document
-   *
-   * @param {ActorDeltaData} data                  Initial data used to construct the ActorDelta.
-   * @param {DocumentConstructionContext} context  Construction context options.
-   */
-  class BaseActorDelta extends Document {
-
-    /* -------------------------------------------- */
-    /*  Model Configuration                         */
-    /* -------------------------------------------- */
-
-    /** @inheritdoc */
-    static metadata = Object.freeze(mergeObject(super.metadata, {
-      name: "ActorDelta",
-      collection: "delta",
-      label: "DOCUMENT.ActorDelta",
-      labelPlural: "DOCUMENT.ActorDeltas",
-      isEmbedded: true,
-      embedded: {
-        Item: "items",
-        ActiveEffect: "effects"
-      }
-    }, {inplace: false}));
-
-    /** @override */
-    static defineSchema() {
-      return {
-        _id: new DocumentIdField(),
-        name: new StringField({required: false, nullable: true, initial: null}),
-        type: new StringField({required: false, nullable: true, initial: null}),
-        img: new FilePathField({categories: ["IMAGE"], nullable: true, initial: null, required: false}),
-        system: new ObjectField(),
-        items: new EmbeddedCollectionDeltaField(BaseItem$1),
-        effects: new EmbeddedCollectionDeltaField(BaseActiveEffect),
-        ownership: new DocumentOwnershipField({required: false, nullable: true, initial: null}),
-        flags: new ObjectField()
-      };
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    canUserModify(user, action, data={}) {
-      return this.parent.canUserModify(user, action, data);
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    testUserPermission(user, permission, { exact=false }={}) {
-      return this.parent.testUserPermission(user, permission, { exact });
-    }
-
-    /* -------------------------------------------- */
-    /*  Methods                                     */
-    /* -------------------------------------------- */
-
-    /**
-     * Retrieve the base actor's collection, if it exists.
-     * @param {string} collectionName  The collection name.
-     * @returns {Collection}
-     */
-    getBaseCollection(collectionName) {
-      const baseActor = this.parent?.baseActor;
-      return baseActor?.getEmbeddedCollection(collectionName);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Apply an ActorDelta to an Actor and return the resultant synthetic Actor.
-     * @param {ActorDelta} delta  The ActorDelta.
-     * @param {Actor} baseActor   The base Actor.
-     * @param {object} [context]  Context to supply to synthetic Actor instantiation.
-     * @returns {Actor|null}
-     */
-    static applyDelta(delta, baseActor, context={}) {
-      if ( !baseActor ) return null;
-      if ( delta.parent?.isLinked ) return baseActor;
-
-      // Get base actor data.
-      const cls = game?.actors?.documentClass ?? db.Actor;
-      const actorData = baseActor.toObject();
-      const deltaData = delta.toObject();
-      delete deltaData._id;
-
-      // Merge embedded collections.
-      BaseActorDelta.#mergeEmbeddedCollections(cls, actorData, deltaData);
-
-      // Merge the rest of the delta.
-      mergeObject(actorData, deltaData);
-      return new cls(actorData, {parent: delta.parent, ...context});
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Merge delta Document embedded collections with the base Document.
-     * @param {typeof Document} documentClass  The parent Document class.
-     * @param {object} baseData                The base Document data.
-     * @param {object} deltaData               The delta Document data.
-     */
-    static #mergeEmbeddedCollections(documentClass, baseData, deltaData) {
-      for ( const collectionName of Object.keys(documentClass.hierarchy) ) {
-        const baseCollection = baseData[collectionName];
-        const deltaCollection = deltaData[collectionName];
-        baseData[collectionName] = BaseActorDelta.#mergeEmbeddedCollection(baseCollection, deltaCollection);
-        delete deltaData[collectionName];
-      }
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Apply an embedded collection delta.
-     * @param {object[]} base   The base embedded collection.
-     * @param {object[]} delta  The delta embedded collection.
-     * @returns {object[]}
-     */
-    static #mergeEmbeddedCollection(base=[], delta=[]) {
-      const deltaIds = new Set();
-      const records = [];
-      for ( const record of delta ) {
-        if ( !record._tombstone ) records.push(record);
-        deltaIds.add(record._id);
-      }
-      for ( const record of base ) {
-        if ( !deltaIds.has(record._id) ) records.push(record);
-      }
-      return records;
-    }
-
-    /* -------------------------------------------- */
-    /*  Serialization                               */
-    /* -------------------------------------------- */
-
-    /** @override */
-    toObject(source=true) {
-      const data = {};
-      const value = source ? this._source : this;
-      for ( const [name, field] of this.schema.entries() ) {
-        if ( !field.required && (value[name] === null) ) continue;
-        data[name] = source ? deepClone(value[name]) : field.toObject(value[name]);
       }
       return data;
     }
@@ -9247,7 +7166,7 @@
       name: "Actor",
       collection: "actors",
       indexed: true,
-      compendiumIndexFields: ["_id", "name", "img", "type", "sort", "folder"],
+      compendiumIndexFields: ["_id", "name", "img", "type", "sort"],
       embedded: {ActiveEffect: "effects", Item: "items"},
       label: "DOCUMENT.Actor",
       labelPlural: "DOCUMENT.Actors",
@@ -9270,11 +7189,11 @@
     static defineSchema() {
       return {
         _id: new DocumentIdField(),
-        name: new StringField({required: true, blank: false, textSearch: true}),
+        name: new StringField({required: true, blank: false}),
         type: new StringField({required: true, choices: () => this.TYPES,
           validationError: "must be in the array of Actor types defined by the game system"}),
-        img: new FilePathField({categories: ["IMAGE"], initial: data => this.getDefaultArtwork(data).img}),
-        system: new TypeDataField(this),
+        img: new FilePathField({categories: ["IMAGE"], initial: () => this.DEFAULT_ICON}),
+        system: new SystemDataField(this),
         prototypeToken: new EmbeddedDataField(PrototypeToken),
         items: new EmbeddedCollectionField(BaseItem$1),
         effects: new EmbeddedCollectionField(BaseActiveEffect),
@@ -9294,22 +7213,6 @@
      */
     static DEFAULT_ICON = DEFAULT_TOKEN;
 
-    /* -------------------------------------------- */
-
-    /**
-     * Determine default artwork based on the provided actor data.
-     * @param {ActorData} actorData                      The source actor data.
-     * @returns {{img: string, texture: {src: string}}}  Candidate actor image and prototype token artwork.
-     */
-    static getDefaultArtwork(actorData) {
-      return {
-        img: this.DEFAULT_ICON,
-        texture: {
-          src: this.DEFAULT_ICON
-        }
-      };
-    }
-
     /* ---------------------------------------- */
 
     /**
@@ -9317,7 +7220,7 @@
      * @type {string[]}
      */
     static get TYPES() {
-      return game.documentTypes.Actor;
+      return game.documentTypes?.Actor || [];
     }
 
     /* ---------------------------------------- */
@@ -9381,9 +7284,8 @@
     /** @inheritdoc */
     async _preCreate(data, options, user) {
       if ( !this.prototypeToken.name ) this.prototypeToken.updateSource({name: this.name});
-      if ( !this.prototypeToken.texture.src || (this.prototypeToken.texture.src === DEFAULT_TOKEN)) {
-        const { texture } = this.constructor.getDefaultArtwork(this.toObject());
-        this.prototypeToken.updateSource("img" in data ? { img: this.img } : { texture });
+      if ( this.img && (!this.prototypeToken.texture.src || (this.prototypeToken.texture.src === DEFAULT_TOKEN))) {
+        this.prototypeToken.updateSource({"texture.src": this.img});
       }
     }
 
@@ -9393,8 +7295,7 @@
     async _preUpdate(changed, options, user) {
       await super._preUpdate(changed, options, user);
       if ( changed.img && !getProperty(changed, "prototypeToken.texture.src") ) {
-        const { texture } = this.constructor.getDefaultArtwork(foundry.utils.mergeObject(this.toObject(), changed));
-        if ( !this.prototypeToken.texture.src || (this.prototypeToken.texture.src === texture?.src) ) {
+        if ( !this.prototypeToken.texture.src || (this.prototypeToken.texture.src === DEFAULT_TOKEN) ) {
           setProperty(changed, "prototypeToken.texture.src", changed.img);
         }
       }
@@ -9480,7 +7381,7 @@
     static metadata = Object.freeze(mergeObject(super.metadata, {
       name: "Adventure",
       collection: "adventures",
-      compendiumIndexFields: ["_id", "name", "description", "img", "sort", "folder"],
+      compendiumIndexFields: ["_id", "name", "img", "sort"],
       label: "DOCUMENT.Adventure",
       labelPlural: "DOCUMENT.Adventures"
     }, {inplace: false}));
@@ -9489,10 +7390,10 @@
     static defineSchema() {
       return {
         _id: new DocumentIdField(),
-        name: new StringField({required: true, blank: false, label: "ADVENTURE.Name", hint: "ADVENTURE.NameHint", textSearch: true}),
+        name: new StringField({required: true, blank: false, label: "ADVENTURE.Name", hint: "ADVENTURE.NameHint"}),
         img: new FilePathField({categories: ["IMAGE"], label: "ADVENTURE.Image", hint: "ADVENTURE.ImageHint"}),
         caption: new HTMLField({label: "ADVENTURE.Caption", hint: "ADVENTURE.CaptionHint"}),
-        description: new HTMLField({label: "ADVENTURE.Description", hint: "ADVENTURE.DescriptionHint", textSearch: true}),
+        description: new HTMLField({label: "ADVENTURE.Description", hint: "ADVENTURE.DescriptionHint"}),
         actors: new SetField(new EmbeddedDataField(BaseActor$1)),
         combats: new SetField(new EmbeddedDataField(BaseCombat$1)),
         items: new SetField(new EmbeddedDataField(BaseItem$1)),
@@ -9503,7 +7404,6 @@
         cards: new SetField(new EmbeddedDataField(BaseCards$1)),
         playlists: new SetField(new EmbeddedDataField(BasePlaylist$1)),
         folders: new SetField(new EmbeddedDataField(BaseFolder$1)),
-        folder: new ForeignDocumentField(BaseFolder$1),
         sort: new IntegerSortField(),
         flags: new ObjectField(),
         _stats: new DocumentStatsField()
@@ -9800,8 +7700,8 @@
         name: new StringField({required: true, blank: false, label: "CARD.Name"}),
         description: new HTMLField({label: "CARD.Description"}),
         type: new StringField({required: true, label: "CARD.Type", choices: () => this.TYPES,
-          initial: () => this.TYPES[0]}),
-        system: new TypeDataField(this),
+          initial: this.TYPES[0]}),
+        system: new SystemDataField(this),
         suit: new StringField({label: "CARD.Suit"}),
         value: new NumberField({label: "CARD.Value"}),
         back: new SchemaField({
@@ -9837,7 +7737,7 @@
      * @type {string[]}
      */
     static get TYPES() {
-      return game.documentTypes.Card;
+      return game.documentTypes?.Card || [BASE_DOCUMENT_TYPE];
     }
 
     /**
@@ -9935,11 +7835,10 @@
       name: "Cards",
       collection: "cards",
       indexed: true,
-      compendiumIndexFields: ["_id", "name", "description", "img", "type", "sort", "folder"],
+      compendiumIndexFields: ["_id", "name", "img", "type", "sort"],
       embedded: {Card: "cards"},
       label: "DOCUMENT.Cards",
       labelPlural: "DOCUMENT.CardsPlural",
-      permissions: {create: "CARDS_CREATE"},
       coreTypes: ["deck", "hand", "pile"]
     }, {inplace: false}), "types", {
       get: () => {
@@ -9954,14 +7853,14 @@
     static defineSchema() {
       return {
         _id: new DocumentIdField(),
-        name: new StringField({required: true, blank: false, label: "CARDS.Name", textSearch: true}),
+        name: new StringField({required: true, blank: false, label: "CARDS.Name"}),
         type: new StringField({required: true, label: "CARDS.Type", choices: () => this.TYPES,
           initial: () => this.TYPES[0],
           validationError: "The Cards type must be in the array of types supported by the game system"}),
-        description: new HTMLField({label: "CARDS.Description", textSearch: true}),
+        description: new HTMLField({label: "CARDS.Description"}),
         img: new FilePathField({categories: ["IMAGE", "VIDEO"], initial: () => this.DEFAULT_ICON,
           label: "CARDS.Image"}),
-        system: new TypeDataField(this),
+        system: new SystemDataField(this),
         cards: new EmbeddedCollectionField(BaseCard),
         width: new NumberField({integer: true, positive: true, label: "Width"}),
         height: new NumberField({integer: true, positive: true, label: "Height"}),
@@ -9986,7 +7885,7 @@
      * @type {string[]}
      */
     static get TYPES() {
-      return game.documentTypes.Cards;
+      return game.documentTypes?.Cards || [];
     }
 
     /* -------------------------------------------- */
@@ -10084,7 +7983,7 @@
         user: new ForeignDocumentField(BaseUser$1, {nullable: false, initial: () => game?.user?.id}),
         timestamp: new NumberField({required: true, nullable: false, initial: Date.now}),
         flavor: new HTMLField(),
-        content: new HTMLField({textSearch: true}),
+        content: new HTMLField(),
         speaker: new SchemaField({
           scene: new ForeignDocumentField(BaseScene$1, {idOnly: true}),
           actor: new ForeignDocumentField(BaseActor$1, {idOnly: true}),
@@ -10430,7 +8329,7 @@
     /* ---------------------------------------- */
 
     /** @inheritdoc */
-    static validateJoint(data) {
+    _validateModel(data) {
       if ( !BaseDrawing.#validateVisibleContent(data) ) {
         throw new Error("Drawings must have visible text, a visible fill, or a visible line");
       }
@@ -10614,9 +8513,9 @@
     static defineSchema() {
       return {
         _id: new DocumentIdField(),
-        name: new StringField({required: true, blank: false, textSearch: true}),
+        name: new StringField({required: true, blank: false}),
         type: new StringField({required: true, choices: FOLDER_DOCUMENT_TYPES}),
-        description: new StringField({textSearch: true}),
+        description: new StringField(),
         folder: new ForeignDocumentField(BaseFolder),
         sorting: new StringField({required: true, initial: "a", choices: this.SORTING_MODES}),
         sort: new IntegerSortField(),
@@ -10627,7 +8526,7 @@
     }
 
     /** @inheritdoc */
-    static validateJoint(data) {
+    _validateModel(data) {
       if ( (data.folder !== null) && (data.folder === data._id) ) {
         throw new Error("A Folder may not contain itself");
       }
@@ -10659,20 +8558,6 @@
     static shimData(data, options) {
       this._addDataFieldShim(data, "parent", "folder", {since: 10, until: 12});
       return super.shimData(data, options);
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static get(documentId, options={}) {
-      if ( !documentId ) return null;
-      if ( !options.pack ) return super.get(documentId, options);
-      const pack = game.packs.get(options.pack);
-      if ( !pack ) {
-        console.error(`The ${this.name} model references a non-existent pack ${options.pack}.`);
-        return null;
-      }
-      return pack.folders.get(documentId);
     }
   }
   var BaseFolder$1 = BaseFolder;
@@ -10713,7 +8598,7 @@
       name: "Item",
       collection: "items",
       indexed: true,
-      compendiumIndexFields: ["_id", "name", "img", "type", "sort", "folder"],
+      compendiumIndexFields: ["_id", "name", "img", "type", "sort"],
       embedded: {ActiveEffect: "effects"},
       label: "DOCUMENT.Item",
       labelPlural: "DOCUMENT.Items",
@@ -10733,11 +8618,11 @@
     static defineSchema() {
       return {
         _id: new DocumentIdField(),
-        name: new StringField({required: true, blank: false, textSearch: true}),
+        name: new StringField({required: true, blank: false}),
         type: new StringField({required: true, choices: () => this.TYPES,
           validationError: "must be in the array of Item types defined by the game system"}),
-        img: new FilePathField({categories: ["IMAGE"], initial: data => this.getDefaultArtwork(data).img}),
-        system: new TypeDataField(this),
+        img: new FilePathField({categories: ["IMAGE"], initial: () => this.DEFAULT_ICON}),
+        system: new SystemDataField(this),
         effects: new EmbeddedCollectionField(BaseActiveEffect),
         folder: new ForeignDocumentField(BaseFolder$1),
         sort: new IntegerSortField(),
@@ -10755,17 +8640,6 @@
      */
     static DEFAULT_ICON = "icons/svg/item-bag.svg";
 
-    /* -------------------------------------------- */
-
-    /**
-     * Determine default artwork based on the provided item data.
-     * @param {ItemData} itemData  The source item data.
-     * @returns {{img: string}}    Candidate item image.
-     */
-    static getDefaultArtwork(itemData) {
-      return { img: this.DEFAULT_ICON };
-    }
-
     /* ---------------------------------------- */
 
     /**
@@ -10773,7 +8647,7 @@
      * @type {string[]}
      */
     static get TYPES() {
-      return game.documentTypes.Item;
+      return game.documentTypes?.Item || [];
     }
 
     /* ---------------------------------------- */
@@ -10856,7 +8730,7 @@
       name: "JournalEntry",
       collection: "journal",
       indexed: true,
-      compendiumIndexFields: ["_id", "name", "sort", "folder"],
+      compendiumIndexFields: ["_id", "name", "sort"],
       embedded: {JournalEntryPage: "pages"},
       label: "DOCUMENT.JournalEntry",
       labelPlural: "DOCUMENT.JournalEntries",
@@ -10869,7 +8743,7 @@
     static defineSchema() {
       return {
         _id: new DocumentIdField(),
-        name: new StringField({required: true, blank: false, textSearch: true}),
+        name: new StringField({required: true, blank: false}),
         pages: new EmbeddedCollectionField(BaseJournalEntryPage$1),
         folder: new ForeignDocumentField(BaseFolder$1),
         sort: new IntegerSortField(),
@@ -11027,7 +8901,7 @@
     static defineSchema() {
       return {
         _id: new DocumentIdField(),
-        name: new StringField({required: true, blank: false, label: "JOURNALENTRYPAGE.PageTitle", textSearch: true}),
+        name: new StringField({required: true, blank: false, label: "JOURNALENTRYPAGE.PageTitle"}),
         type: new StringField({required: true, label: "JOURNALENTRYPAGE.Type", choices: () => this.TYPES,
           initial: "text",
           validationError: "The JournalEntryPage type must be in the array of types supported by the game system."}),
@@ -11039,7 +8913,7 @@
           caption: new StringField({required: false, initial: undefined})
         }),
         text: new SchemaField({
-          content: new HTMLField({required: false, initial: undefined, textSearch: true}),
+          content: new HTMLField({required: false, initial: undefined}),
           markdown: new StringField({required: false, initial: undefined}),
           format: new NumberField({label: "JOURNALENTRYPAGE.Format",
             initial: JOURNAL_ENTRY_PAGE_FORMATS.HTML, choices: Object.values(JOURNAL_ENTRY_PAGE_FORMATS)})
@@ -11055,11 +8929,10 @@
         }),
         src: new StringField({required: false, blank: false, nullable: true, initial: null,
           label: "JOURNALENTRYPAGE.Source"}),
-        system: new TypeDataField(this),
+        system: new SystemDataField(this),
         sort: new IntegerSortField(),
         ownership: new DocumentOwnershipField({initial: {default: DOCUMENT_OWNERSHIP_LEVELS.INHERIT}}),
-        flags: new ObjectField(),
-        _stats: new DocumentStatsField()
+        flags: new ObjectField()
       };
     }
 
@@ -11068,7 +8941,7 @@
      * @type {string[]}
      */
     static get TYPES() {
-      return game.documentTypes.JournalEntryPage;
+      return game.documentTypes?.JournalEntryPage || [];
     }
 
     /** @inheritdoc */
@@ -11118,7 +8991,7 @@
       name: "Macro",
       collection: "macros",
       indexed: true,
-      compendiumIndexFields: ["_id", "name", "img", "sort", "folder"],
+      compendiumIndexFields: ["_id", "name", "img", "sort"],
       label: "DOCUMENT.Macro",
       labelPlural: "DOCUMENT.Macros",
       coreTypes: Array.from(Object.values(MACRO_TYPES)),
@@ -11129,7 +9002,7 @@
     static defineSchema() {
       return {
         _id: new DocumentIdField(),
-        name: new StringField({required: true, blank: false, label: "Name", textSearch: true}),
+        name: new StringField({required: true, blank: false, label: "Name"}),
         type: new StringField({required: true, choices: Object.values(MACRO_TYPES),
           initial: MACRO_TYPES.CHAT, validationError: "must be a value in CONST.MACRO_TYPES", label: "Type"}),
         author: new ForeignDocumentField(BaseUser$1, {initial: () => game?.user?.id}),
@@ -11265,6 +9138,17 @@
       }
     }
 
+    /** @inheritdoc */
+    _validateModel(data) {
+      const scene = this.parent;
+      if ( !scene ) return;
+      const max = Math.hypot(scene.width, scene.height);
+      for ( let f of ["distance", "width"] ) {
+        const px = data[f] * (scene.grid.size / scene.grid.distance);
+        if ( px > max ) throw new Error(`Invalid MeasuredTemplate ${f} which exceeds maximum dimensions for the Scene`);
+      }
+    }
+
     /* ---------------------------------------- */
 
     /**
@@ -11366,7 +9250,7 @@
         texture: new TextureData({}, {categories: ["IMAGE"], initial: () => this.DEFAULT_ICON, label: "NOTE.EntryIcon"}),
         iconSize: new NumberField({required: true, integer: true, min: 32, initial: 40,
           validationError: "must be an integer greater than 32", label: "NOTE.IconSize"}),
-        text: new StringField({label: "NOTE.TextLabel", textSearch: true}),
+        text: new StringField({label: "NOTE.TextLabel"}),
         fontFamily: new StringField({required: true, label: "NOTE.FontFamily",
           initial: () => globalThis.CONFIG?.defaultFontFamily || "Signika"}),
         fontSize: new NumberField({required: true, integer: true, min: 8, max: 128, initial: 32,
@@ -11472,7 +9356,7 @@
       name: "Playlist",
       collection: "playlists",
       indexed: true,
-      compendiumIndexFields: ["_id", "name", "description", "sort", "folder"],
+      compendiumIndexFields: ["_id", "name", "sort"],
       embedded: {PlaylistSound: "sounds"},
       label: "DOCUMENT.Playlist",
       labelPlural: "DOCUMENT.Playlists",
@@ -11482,8 +9366,8 @@
     static defineSchema() {
       return {
         _id: new DocumentIdField(),
-        name: new StringField({required: true, blank: false, textSearch: true}),
-        description: new StringField({textSearch: true}),
+        name: new StringField({required: true, blank: false}),
+        description: new StringField(),
         sounds: new EmbeddedCollectionField(BasePlaylistSound$1),
         mode: new NumberField({required: true, choices: Object.values(PLAYLIST_MODES),
           initial: PLAYLIST_MODES.SEQUENTIAL, validationError: "must be a value in CONST.PLAYLIST_MODES"}),
@@ -11626,7 +9510,7 @@
       name: "RollTable",
       collection: "tables",
       indexed: true,
-      compendiumIndexFields: ["_id", "name", "description", "img", "sort", "folder"],
+      compendiumIndexFields: ["_id", "name", "img", "sort"],
       embedded: {TableResult: "results"},
       label: "DOCUMENT.RollTable",
       labelPlural: "DOCUMENT.RollTables"
@@ -11636,9 +9520,9 @@
     static defineSchema() {
       return {
         _id: new DocumentIdField(),
-        name: new StringField({required: true, blank: false, textSearch: true}),
+        name: new StringField({required: true, blank: false}),
         img: new FilePathField({categories: ["IMAGE"], initial: () => this.DEFAULT_ICON}),
-        description: new HTMLField({textSearch: true}),
+        description: new StringField(),
         results: new EmbeddedCollectionField(BaseTableResult$1),
         formula: new StringField(),
         replacement: new BooleanField({initial: true}),
@@ -11768,7 +9652,7 @@
       name: "Scene",
       collection: "scenes",
       indexed: true,
-      compendiumIndexFields: ["_id", "name", "thumb", "sort", "folder"],
+      compendiumIndexFields: ["_id", "name", "thumb", "sort"],
       embedded: {
         AmbientLight: "lights",
         AmbientSound: "sounds",
@@ -11788,13 +9672,13 @@
     static defineSchema() {
       return {
         _id: new DocumentIdField(),
-        name: new StringField({required: true, blank: false, textSearch: true}),
+        name: new StringField({required: true, blank: false}),
 
         // Navigation
         active: new BooleanField(),
         navigation: new BooleanField({initial: true}),
         navOrder: new NumberField({required: true, nullable: false, integer: true, initial: 0}),
-        navName: new HTMLField({textSearch: true}),
+        navName: new HTMLField(),
 
         // Canvas Dimensions
         background: new TextureData(),
@@ -12026,11 +9910,11 @@
         _id: new DocumentIdField(),
         type: new NumberField({required: true, choices: Object.values(TABLE_RESULT_TYPES),
           initial: TABLE_RESULT_TYPES.TEXT, validationError: "must be a value in CONST.TABLE_RESULT_TYPES"}),
-        text: new HTMLField({textSearch: true}),
+        text: new HTMLField(),
         img: new FilePathField({categories: ["IMAGE"]}),
         documentCollection: new StringField(),
         documentId: new ForeignDocumentField(Document, {idOnly: true}),
-        weight: new NumberField({required: true, integer: true, positive: true, nullable: false, initial: 1}),
+        weight: new NumberField({required: true, integer: true, positive: true}),
         range: new ArrayField(new NumberField({integer: true}), {
           validate: r => (r.length === 2) && (r[1] >= r[0]),
           validationError: "must be a length-2 array of ascending integers"
@@ -12161,8 +10045,8 @@
         overhead: new BooleanField(),
         roof: new BooleanField(),
         occlusion: new SchemaField({
-          mode: new NumberField({choices: Object.values(OCCLUSION_MODES),
-            initial: OCCLUSION_MODES.FADE,
+          mode: new NumberField({choices: Object.values(TILE_OCCLUSION_MODES),
+            initial: TILE_OCCLUSION_MODES.FADE,
             validationError: "must be a value in CONST.TILE_OCCLUSION_MODES"}),
           alpha: new AlphaField({initial: 0}),
           radius: new NumberField({positive: true})
@@ -12248,8 +10132,7 @@
    * @property {number} [displayName=0]     The display mode of the Token nameplate, from CONST.TOKEN_DISPLAY_MODES
    * @property {string|null} actorId        The _id of an Actor document which this Token represents
    * @property {boolean} [actorLink=false]  Does this Token uniquely represent a singular Actor, or is it one of many?
-   * @property {BaseActorDelta} [delta]     The ActorDelta embedded document which stores the differences between this
-   *                                        token and the base actor it represents.
+   * @property {object} [actorData]         Token-level data which overrides the base data of the associated Actor
    * @property {TextureData} texture        The token's texture on the canvas.
    * @property {number} [width=1]           The width of the Token in grid units
    * @property {number} [height=1]          The height of the Token in grid units
@@ -12296,9 +10179,6 @@
       label: "DOCUMENT.Token",
       labelPlural: "DOCUMENT.Tokens",
       isEmbedded: true,
-      embedded: {
-        ActorDelta: "delta"
-      },
       permissions: {
         create: "TOKEN_CREATE",
         update: this.#canUpdate,
@@ -12317,9 +10197,7 @@
         }),
         actorId: new ForeignDocumentField(BaseActor$1, {idOnly: true}),
         actorLink: new BooleanField(),
-        delta: new ActorDeltaField(BaseActorDelta),
-        appendNumber: new BooleanField(),
-        prependAdjective: new BooleanField(),
+        actorData: new ObjectField(),
         texture: new TextureData({}, {initial: () => this.DEFAULT_ICON, wildcard: true}),
         width: new NumberField({positive: true, initial: 1, label: "Width"}),
         height: new NumberField({positive: true, initial: 1, label: "Height"}),
@@ -12351,7 +10229,7 @@
         light: new EmbeddedDataField(LightData),
         sight: new SchemaField({
           enabled: new BooleanField({initial: data => Number(data?.sight?.range) > 0}),
-          range: new NumberField({required: true, nullable: false, min: 0, step: 0.01, initial: 0}),
+          range: new NumberField({required: true, min: 0, step: 0.01}),
           angle: new AngleField({initial: 360, base: 360}),
           visionMode: new StringField({required: true, blank: false, initial: "basic",
             label: "TOKEN.VisionMode", hint: "TOKEN.VisionModeHint"}),
@@ -12367,7 +10245,7 @@
         detectionModes: new ArrayField(new SchemaField({
           id: new StringField(),
           enabled: new BooleanField({initial: true}),
-          range: new NumberField({required: true, nullable: false, min: 0, step: 0.01, initial: 0})
+          range: new NumberField({required: true, min: 0, step: 0.01, initial: 0})
         }), {
           validate: BaseToken.#validateDetectionModes
         }),
@@ -12420,6 +10298,18 @@
     }
 
     /* -------------------------------------------- */
+
+    /** @inheritDoc */
+    static cleanData(source={}, options={}) {
+      const cleaned = super.cleanData(source, options);
+      if ( "actorData" in cleaned ) {  // Prevent actor data overrides from circularly referencing the prototype token
+        delete cleaned.actorData["token"];
+        delete cleaned.actorData["prototypeToken"];
+      }
+      return cleaned;
+    }
+
+    /* -------------------------------------------- */
     /*  Deprecations and Compatibility              */
     /* -------------------------------------------- */
 
@@ -12427,27 +10317,18 @@
     static migrateData(data) {
       const keys = new Set(Object.keys(data));
 
-      if ( keys.has("actorData") ) {
-        /**
-         * Migration of actor data to system data
-         * @deprecated since v10
-         */
+      /**
+       * Migration of actor data to system data
+       * @deprecated since v10
+       */
+      if ( data.actorData ) {
         foundry.documents.BaseActor.migrateData(data.actorData);
-        if ( data.actorData?.items ) {
-          for ( const item of data.actorData.items ) foundry.documents.BaseItem.migrateData(item);
-        }
-        if ( data.actorData?.effects ) {
-          for ( const effect of data.actorData.effects ) foundry.documents.BaseActiveEffect.migrateData(effect);
-        }
-
-        /**
-         * Migration of actorData field to ActorDelta document.
-         * @deprecated since v11
-         */
-        if ( !data.delta ) {
-          data.delta = data.actorData;
-          if ( "_id" in data ) data.delta._id = data._id;
-        }
+      }
+      if ( data.actorData?.items ) {
+        for ( const item of data.actorData.items ) foundry.documents.BaseItem.migrateData(item);
+      }
+      if ( data.actorData?.effects ) {
+        for ( const effect of data.actorData.effects ) foundry.documents.BaseActiveEffect.migrateData(effect);
       }
 
       /**
@@ -12524,7 +10405,6 @@
         if ( oldBrightSight >= oldDimSight ) brightness = 1;
         setProperty(data, "sight.brightness", brightness);
       }
-
       // Parent class migrations
       return super.migrateData(data);
     }
@@ -12557,46 +10437,9 @@
           enumerable: false
         });
       }
-      this._addDataFieldShim(data, "actorData", "delta", {value: data.delta, since: 11, until: 13});
       return super.shimData(data, options);
     }
-
-    /* -------------------------------------------- */
-    /*  Serialization                               */
-    /* -------------------------------------------- */
-
-    /** @inheritdoc */
-    toObject(source=true) {
-      const obj = super.toObject(source);
-      obj.delta = this.delta ? this.delta.toObject(source) : null;
-      return obj;
-    }
   }
-
-  /**
-   * A special subclass of EmbeddedDocumentField which allows construction of the ActorDelta to be lazily evaluated.
-   */
-  class ActorDeltaField extends EmbeddedDocumentField {
-    /** @inheritdoc */
-    initialize(value, model, options = {}) {
-      if ( !value ) return value;
-      const descriptor = Object.getOwnPropertyDescriptor(model, this.name);
-      if ( (descriptor === undefined) || (!descriptor.get && !descriptor.value) ) {
-        return () => {
-          Object.defineProperty(model, this.name, {
-            value: new this.model(value, {...options, parent: model, parentCollection: this.name}),
-            configurable: true,
-            writable: true
-          });
-          return model[this.name];
-        };
-      }
-      else if ( descriptor.get instanceof Function ) return descriptor.get;
-      model[this.name]._initialize(options);
-      return model[this.name];
-    }
-  }
-
   var BaseToken$1 = BaseToken;
 
   /**
@@ -12650,17 +10493,16 @@
     static defineSchema() {
       return {
         _id: new DocumentIdField(),
-        name: new StringField({required: true, blank: false, textSearch: true}),
+        name: new StringField({required: true, blank: false}),
         role: new NumberField({required: true, choices: Object.values(USER_ROLES),
           initial: USER_ROLES.PLAYER, readonly: true}),
-        password: new StringField({required: true, blank: true}),
+        password: new StringField(),
         passwordSalt: new StringField(),
         avatar: new FilePathField({categories: ["IMAGE"]}),
         character: new ForeignDocumentField(BaseActor$1),
         color: new ColorField({required: true, nullable: false,
           initial: () => Color.fromHSV([Math.random(), 0.8, 0.8]).css
         }),
-        pronouns: new StringField({required: true}),
         hotbar: new ObjectField({required: true, validate: BaseUser.#validateHotbar,
           validationError: "must be a mapping of slots to macro identifiers"}),
         permissions: new ObjectField({required: true, validate: BaseUser.#validatePermissions,
@@ -12796,20 +10638,15 @@
      * @private
      */
     static #canUpdate(user, doc, changes) {
-      const roles = USER_ROLES;
-      if ( user.role === roles.GAMEMASTER ) return true; // Full GMs can do everything
-      if ( user.role === roles.NONE ) return false; // Banned users can do nothing
+      if ( user.hasRole(USER_ROLES.GAMEMASTER) ) return true;
+      const reserved = new Set(["permissions", "name", "passwordSalt"]); // Non-GMs cannot update certain fields.
+      if ( Object.keys(changes).some(k => reserved.has(k)) ) return false;
 
-      // Non-GMs cannot update certain fields.
-      const restricted = ["permissions", "passwordSalt"];
-      if ( user.role < roles.ASSISTANT ) restricted.push("name", "role");
-      if ( doc.role === roles.GAMEMASTER ) restricted.push("password");
-      if ( restricted.some(k => k in changes) ) return false;
+      // Assistant GMs cannot increase the role of other players to eclipse their own
+      if ( ("role" in changes) && (!user.isGM || !user.hasRole(changes.role)) ) return false;
 
-      // Role changes may not escalate
-      if ( ("role" in changes) && !user.hasRole(changes.role) ) return false;
-
-      // Assistant GMs may modify other users. Players may only modify themselves
+      // Users may only change their own password
+      if ( ("password" in changes) && (user.id !== doc.id) ) return false; // A user can only update their own password.
       return user.isGM || (user.id === doc.id);
     }
 
@@ -12830,14 +10667,6 @@
   var BaseUser$1 = BaseUser;
 
   /**
-   * @typedef {Object} WallThresholdData
-   * @property {number} [light=0]           Minimum distance from a light source for which this wall blocks light
-   * @property {number} [sight=0]           Minimum distance from a vision source for which this wall blocks vision
-   * @property {number} [sound=0]           Minimum distance from a sound source for which this wall blocks sound
-   * @property {boolean} [attenuation=true] Whether to attenuate the source radius when passing through the wall
-   */
-
-  /**
    * @typedef {Object} WallData
    * @property {string} _id                 The _id which uniquely identifies the embedded Wall document
    * @property {number[]} c                 The wall coordinates, a length-4 array of finite numbers [x0,y0,x1,y1]
@@ -12848,7 +10677,6 @@
    * @property {number} [dir=0]             The direction of effect imposed by this wall
    * @property {number} [door=0]            The type of door which this wall contains, if any
    * @property {number} [ds=0]              The state of the door this wall contains, if any
-   * @property {WallThresholdData} threshold  Configuration of threshold data for this wall
    * @property {object} [flags]             An object of optional key/value flags
    */
 
@@ -12907,15 +10735,8 @@
         ds: new NumberField({required: true, choices: Object.values(WALL_DOOR_STATES),
           initial: WALL_DOOR_STATES.CLOSED,
           validationError: "must be a value in CONST.WALL_DOOR_STATES"}),
-        doorSound: new StringField({required: false, blank: true, initial: undefined}),
-        threshold: new SchemaField({
-          light: new NumberField({required: true, nullable: true, initial: null, positive: true}),
-          sight: new NumberField({required: true, nullable: true, initial: null, positive: true}),
-          sound: new NumberField({required: true, nullable: true, initial: null, positive: true}),
-          attenuation: new BooleanField()
-        }),
         flags: new ObjectField()
-      };
+      }
     }
 
     /**
@@ -12966,7 +10787,6 @@
     __proto__: null,
     BaseActiveEffect: BaseActiveEffect,
     BaseActor: BaseActor$1,
-    BaseActorDelta: BaseActorDelta,
     BaseAdventure: BaseAdventure,
     BaseAmbientLight: BaseAmbientLight,
     BaseAmbientSound: BaseAmbientSound,
@@ -13150,7 +10970,7 @@
      * @param {DataFieldOptions} options          Options which are forwarded to the SchemaField constructor
      * @param {FilePathFieldOptions} srcOptions   Additional options for the src field
      */
-    constructor(options={}, {categories=["IMAGE", "VIDEO"], initial=null, wildcard=false, label=""}={}) {
+    constructor(options={}, {categories=["IMAGE", "VIDEO"], initial=null, wildcard=false, label}={}) {
       super({
         src: new FilePathField({categories, initial, label, wildcard}),
         scaleX: new NumberField({nullable: false, initial: 1}),
@@ -13172,16 +10992,9 @@
    * @property {boolean} randomImg      Does the prototype token use a random wildcard image?
    */
   class PrototypeToken extends DataModel {
-    constructor(data={}, options={}) {
-      super(data, options);
-      Object.defineProperty(this, "apps", {value: {}});
-    }
-
-    /* -------------------------------------------- */
-
     static defineSchema() {
       const schema = BaseToken$1.defineSchema();
-      const excluded = ["_id", "actorId", "delta", "x", "y", "elevation", "effects", "overlayEffect", "hidden"];
+      const excluded = ["_id", "actorId", "actorData", "x", "y", "elevation", "effects", "overlayEffect", "hidden"];
       for ( let x of excluded ) {
         delete schema[x];
       }
@@ -13289,29 +11102,6 @@
   /* -------------------------------------------- */
 
   /**
-   * A minimal data model used to represent a tombstone entry inside an {@link EmbeddedCollectionDelta}.
-   * @see {EmbeddedCollectionDelta}
-   * @extends DataModel
-   * @memberof data
-   *
-   * @property {string} _id              The _id of the base Document that this tombstone represents.
-   * @property {boolean} _tombstone      A property that identifies this entry as a tombstone.
-   * @property {DocumentStats} [_stats]  An object of creation and access information.
-   */
-  class TombstoneData extends DataModel {
-    /** @override */
-    static defineSchema() {
-      return {
-        _id: new DocumentIdField(),
-        _tombstone: new BooleanField({initial: true, validate: v => v === true, validationError: "must be true"}),
-        _stats: new DocumentStatsField()
-      };
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * @deprecated since v10
    * @see PrototypeToken
    * @ignore
@@ -13326,15 +11116,13 @@
 
   var data = /*#__PURE__*/Object.freeze({
     __proto__: null,
+    validators: validators,
+    fields: fields,
     LightData: LightData,
     PrototypeToken: PrototypeToken,
     PrototypeTokenData: PrototypeTokenData,
     ShapeData: ShapeData,
-    TextureData: TextureData,
-    TombstoneData: TombstoneData,
-    fields: fields,
-    validation: validationFailure,
-    validators: validators
+    TextureData: TextureData
   });
 
   /**
@@ -13484,13 +11272,13 @@
    */
 
   /**
-   * Determine the intersection between a line segment and a circle.
+   * Determine the intersection between a candidate wall and the circular radius of the polygon.
    * @memberof helpers
    *
-   * @param {Point} a                   The first vertex of the segment
-   * @param {Point} b                   The second vertex of the segment
-   * @param {Point} center              The center of the circle
-   * @param {number} radius             The radius of the circle
+   * @param {Point} a                   The initial vertex of the candidate edge
+   * @param {Point} b                   The second vertex of the candidate edge
+   * @param {Point} center              The center of the bounding circle
+   * @param {number} radius             The radius of the bounding circle
    * @param {number} epsilon            A small tolerance for floating point precision
    *
    * @returns {LineCircleIntersection}  The intersection of the segment AB with the circle
@@ -13501,15 +11289,17 @@
 
     // Test whether endpoint A is contained
     const ar2 = Math.pow(a.x - center.x, 2) + Math.pow(a.y - center.y, 2);
-    const aInside = ar2 < r2 - epsilon;
+    const aInside = ar2 <= r2 + epsilon;
 
     // Test whether endpoint B is contained
     const br2 = Math.pow(b.x - center.x, 2) + Math.pow(b.y - center.y, 2);
-    const bInside = br2 < r2 - epsilon;
+    const bInside = br2 <= r2 + epsilon;
 
     // Find quadratic intersection points
     const contained = aInside && bInside;
-    if ( !contained ) intersections = quadraticIntersection(a, b, center, radius, epsilon);
+    if ( !contained ) {
+      intersections = quadraticIntersection(a, b, center, radius, epsilon);
+    }
 
     // Return the intersection data
     return {
@@ -13575,13 +11365,13 @@
     const c = Math.pow(p0.x - center.x, 2) + Math.pow(p0.y - center.y, 2) - Math.pow(radius, 2);
 
     // Discriminant
-    let disc2 = Math.pow(b, 2) - (4 * a * c);
-    if ( disc2.almostEqual(0) ) disc2 = 0; // segment endpoint touches the circle; 1 intersection
-    else if ( disc2 < 0 ) return []; // no intersections
+    const disc2 = Math.pow(b, 2) - (4 * a * c);
+    if ( disc2 <= 0 ) return []; // no intersections
 
     // Roots
     const disc = Math.sqrt(disc2);
     const t1 = (-b - disc) / (2 * a);
+    const t2 = (-b + disc) / (2 * a);
 
     // If t1 hits (between 0 and 1) it indicates an "entry"
     const intersections = [];
@@ -13591,10 +11381,8 @@
         y: p0.y + (dy * t1)
       });
     }
-    if ( !disc2 ) return intersections; // 1 intersection
 
     // If t2 hits (between 0 and 1) it indicates an "exit"
-    const t2 = (-b + disc) / (2 * a);
     if ( t2.between(0-epsilon, 1+epsilon) ) {
       intersections.push({
         x: p0.x + (dx * t2),
@@ -13636,13 +11424,7 @@
     try {
       response = await fetch(url, data);
     } catch(err) {
-      if ( timedOut ) {
-        const timeoutS = Math.round(timeoutMs / 1000);
-        const msg = game.i18n
-          ? game.i18n.format("SETUP.ErrorTimeout", { url, timeout: timeoutS })
-          : `The request to ${url} timed out after ${timeoutS}s.`;
-        throw new HttpError("Timed Out", 408, msg);
-      }
+      if ( timedOut ) throw new HttpError("Timed Out", 408, `The request to ${url} timed out after ${timeoutMs} ms`);
       throw err;
     } finally {
       if ( enforceTimeout ) clearTimeout(timeout);
@@ -13682,226 +11464,6 @@
       super(statusText);
       this.code = code;
       this.displayMessage = displayMessage;
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    toString() {
-      return this.displayMessage;
-    }
-  }
-
-  /**
-   * Stores a map of objects with weak references to the keys, allowing them to be garbage collected. Both keys and values
-   * can be iterated over, unlike a WeakMap.
-   */
-  class IterableWeakMap extends WeakMap {
-    /**
-     * @typedef {object} IterableWeakMapHeldValue
-     * @property {Set<WeakRef<any>>} set  The set to be cleaned.
-     * @property {WeakRef<any>} ref       The ref to remove.
-     */
-
-    /**
-     * @typedef {object} IterableWeakMapValue
-     * @property {any} value         The value.
-     * @property {WeakRef<any>} ref  The weak ref of the key.
-     */
-
-    /**
-     * A set of weak refs to the map's keys, allowing enumeration.
-     * @type {Set<WeakRef<any>>}
-     */
-    #refs = new Set();
-
-    /**
-     * A FinalizationRegistry instance to clean up the ref set when objects are garbage collected.
-     * @type {FinalizationRegistry<IterableWeakMapHeldValue>}
-     */
-    #finalizer = new FinalizationRegistry(IterableWeakMap.#cleanup);
-
-    /**
-     * @param {Iterable<[any, any]>} [entries]  The initial entries.
-     */
-    constructor(entries=[]) {
-      super();
-      for ( const [key, value] of entries ) this.set(key, value);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Clean up the corresponding ref in the set when its value is garbage collected.
-     * @param {IterableWeakMapHeldValue} heldValue  The value held by the finalizer.
-     */
-    static #cleanup({ set, ref }) {
-      set.delete(ref);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Remove a key from the map.
-     * @param {any} key  The key to remove.
-     * @returns {boolean}
-     */
-    delete(key) {
-      const entry = super.get(key);
-      if ( !entry ) return false;
-      super.delete(key);
-      this.#refs.delete(entry.ref);
-      this.#finalizer.unregister(key);
-      return true;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Retrieve a value from the map.
-     * @param {any} key  The value's key.
-     * @returns {any}
-     */
-    get(key) {
-      const entry = super.get(key);
-      return entry && entry.value;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Place a value in the map.
-     * @param {any} key    The key.
-     * @param {any} value  The value.
-     * @returns {IterableWeakMap}
-     */
-    set(key, value) {
-      const entry = super.get(key);
-      if ( entry ) this.#refs.delete(entry.ref);
-      const ref = new WeakRef(key);
-      super.set(key, { value, ref });
-      this.#refs.add(ref);
-      this.#finalizer.register(key, { ref, set: this.#refs }, key);
-      return this;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Enumerate the entries.
-     * @returns {Generator<[any, any], void, any>}
-     */
-    *[Symbol.iterator]() {
-      for ( const ref of this.#refs ) {
-        const key = ref.deref();
-        if ( !key ) continue;
-        const { value } = super.get(key);
-        yield [key, value];
-      }
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Enumerate the entries.
-     * @returns {Generator<[any, any], void, any>}
-     */
-    entries() {
-      return this[Symbol.iterator]();
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Enumerate the keys.
-     * @returns {Generator<any, void, any>}
-     */
-    *keys() {
-      for ( const [key] of this ) yield key;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Enumerate the values.
-     * @returns {Generator<any, void, any>}
-     */
-    *values() {
-      for ( const [, value] of this ) yield value;
-    }
-  }
-
-  /**
-   * Stores a set of objects with weak references to them, allowing them to be garbage collected. Can be iterated over,
-   * unlike a WeakSet.
-   */
-  class IterableWeakSet extends WeakSet {
-    /**
-     * The backing iterable weak map.
-     * @type {IterableWeakMap<any, any>}
-     */
-    #map = new IterableWeakMap();
-
-    /**
-     * @param {Iterable<any>} [entries]  The initial entries.
-     */
-    constructor(entries=[]) {
-      super();
-      for ( const entry of entries ) this.add(entry);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Enumerate the values.
-     * @returns {Generator<any, void, any>}
-     */
-    [Symbol.iterator]() {
-      return this.values();
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Add a value to the set.
-     * @param {any} value  The value to add.
-     * @returns {IterableWeakSet}
-     */
-    add(value) {
-      this.#map.set(value, value);
-      return this;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Delete a value from the set.
-     * @param {any} value  The value to delete.
-     * @returns {boolean}
-     */
-    delete(value) {
-      return this.#map.delete(value);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Whether this set contains the given value.
-     * @param {any} value  The value to test.
-     * @returns {boolean}
-     */
-    has(value) {
-      return this.#map.has(value);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Enumerate the collection.
-     * @returns {Generator<any, void, any>}
-     */
-    values() {
-      return this.#map.values();
     }
   }
 
@@ -14022,56 +11584,51 @@
     __proto__: null,
     Collection: Collection,
     Color: Color,
-    HttpError: HttpError,
-    IterableWeakMap: IterableWeakMap,
-    IterableWeakSet: IterableWeakSet,
     Semaphore: Semaphore,
-    benchmark: benchmark,
+    orient2dFast: orient2dFast,
+    lineSegmentIntersects: lineSegmentIntersects,
+    lineLineIntersection: lineLineIntersection,
+    lineSegmentIntersection: lineSegmentIntersection,
+    lineCircleIntersection: lineCircleIntersection,
     closestPointToSegment: closestPointToSegment,
-    colorStringToHex: colorStringToHex,
+    quadraticIntersection: quadraticIntersection,
+    benchmark: benchmark,
+    threadLock: threadLock,
     debounce: debounce,
     debouncedReload: debouncedReload,
     deepClone: deepClone,
     diffObject: diffObject,
+    objectsEqual: objectsEqual,
     duplicate: duplicate,
+    isSubclass: isSubclass,
     encodeURL: encodeURL,
     expandObject: expandObject,
-    fetchJsonWithTimeout: fetchJsonWithTimeout,
-    fetchWithTimeout: fetchWithTimeout,
     filterObject: filterObject,
     flattenObject: flattenObject,
-    formatFileSize: formatFileSize,
-    getDefiningClass: getDefiningClass,
     getParentClasses: getParentClasses,
-    getProperty: getProperty,
     getRoute: getRoute,
     getType: getType,
     hasProperty: hasProperty,
-    hexToRGB: hexToRGB,
-    hexToRGBAString: hexToRGBAString,
-    hsvToRgb: hsvToRgb,
+    getProperty: getProperty,
+    setProperty: setProperty,
     invertObject: invertObject,
-    isEmpty: isEmpty,
     isNewerVersion: isNewerVersion,
     isObjectEmpty: isObjectEmpty,
-    isSubclass: isSubclass,
-    lineCircleIntersection: lineCircleIntersection,
-    lineLineIntersection: lineLineIntersection,
-    lineSegmentIntersection: lineSegmentIntersection,
-    lineSegmentIntersects: lineSegmentIntersects,
-    logCompatibilityWarning: logCompatibilityWarning,
+    isEmpty: isEmpty,
     mergeObject: mergeObject,
-    objectsEqual: objectsEqual,
-    orient2dFast: orient2dFast,
     parseS3URL: parseS3URL,
-    parseUuid: parseUuid,
-    quadraticIntersection: quadraticIntersection,
     randomID: randomID,
-    rgbToHex: rgbToHex,
+    timeSince: timeSince,
     rgbToHsv: rgbToHsv,
-    setProperty: setProperty,
-    threadLock: threadLock,
-    timeSince: timeSince
+    hsvToRgb: hsvToRgb,
+    rgbToHex: rgbToHex,
+    hexToRGB: hexToRGB,
+    hexToRGBAString: hexToRGBAString,
+    colorStringToHex: colorStringToHex,
+    fetchWithTimeout: fetchWithTimeout,
+    fetchJsonWithTimeout: fetchJsonWithTimeout,
+    HttpError: HttpError,
+    logCompatibilityWarning: logCompatibilityWarning
   });
 
   /**
@@ -14086,27 +11643,6 @@
         minimum: new StringField({required: false, blank: false, initial: undefined}),
         verified: new StringField({required: false, blank: false, initial: undefined}),
         maximum: new StringField({required: false, blank: false, initial: undefined})
-      }, options);
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * A custom SchemaField for defining package relationships.
-   * @property {RelatedPackage[]} systems     Systems that this Package supports
-   * @property {RelatedPackage[]} requires    Packages that are required for base functionality
-   * @property {RelatedPackage[]} recommends  Packages that are recommended for optimal functionality
-   */
-  class PackageRelationships extends SchemaField {
-    /** @inheritdoc */
-    constructor(options) {
-      super({
-        systems: new SetField(new RelatedPackage({packageType: "system"})),
-        requires: new SetField(new RelatedPackage()),
-        recommends: new SetField(new RelatedPackage()),
-        conflicts: new SetField(new RelatedPackage()),
-        flags: new ObjectField()
       }, options);
     }
   }
@@ -14134,133 +11670,6 @@
   /* -------------------------------------------- */
 
   /**
-   * A custom SchemaField for defining the folder structure of the included compendium packs.
-   */
-  class PackageCompendiumFolder extends SchemaField {
-    constructor({depth=1, ...options}={}) {
-      const schema = {
-        name: new StringField({required: true, blank: false}),
-        sorting: new StringField({required: false, blank: false, initial: undefined,
-          choices: BaseFolder$1.SORTING_MODES}),
-        color: new ColorField(),
-        packs: new SetField(new StringField({required: true, blank: false}))
-      };
-      if ( depth < 4 ) schema.folders = new SetField(new PackageCompendiumFolder(
-        {depth: depth+1, options}));
-      super(schema, options);
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * A special ObjectField which captures a mapping of USER_ROLES to DOCUMENT_OWNERSHIP_LEVELS.
-   */
-  class CompendiumOwnershipField extends ObjectField {
-
-    /** @inheritdoc */
-    static get _defaults() {
-      return mergeObject(super._defaults, {
-        initial: {PLAYER: "OBSERVER", ASSISTANT: "OWNER"},
-        validationError: "is not a mapping of USER_ROLES to DOCUMENT_OWNERSHIP_LEVELS"
-      });
-    }
-
-    /** @override */
-    _validateType(value, options) {
-      for ( let [k, v] of Object.entries(value) ) {
-        if ( !(k in USER_ROLES) ) throw new Error(`Compendium ownership key "${k}" is not a valid choice in USER_ROLES`);
-        if ( !(v in DOCUMENT_OWNERSHIP_LEVELS) ) throw new Error(`Compendium ownership value "${v}" is not a valid 
-      choice in DOCUMENT_OWNERSHIP_LEVELS`);
-      }
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * A special SetField which provides additional validation and initialization behavior specific to compendium packs.
-   */
-  class PackageCompendiumPacks extends SetField {
-
-    /** @override */
-    _cleanType(value, options) {
-      return value.map(v => {
-        v = this.element.clean(v, options);
-        if ( v.path ) v.path = v.path.replace(/\.db$/, ""); // Strip old NEDB extensions
-        else v.path = `packs/${v.name}`; // Auto-populate a default pack path
-        return v;
-      })
-    }
-
-    /* ---------------------------------------- */
-
-    /** @override */
-    initialize(value, model, options={}) {
-      const packs = new Set();
-      const packageName = model._source.id;
-      for ( let v of value ) {
-        try {
-          const pack = this.element.initialize(v, model, options);
-          pack.packageType = model.constructor.type;
-          pack.packageName = packageName;
-          pack.id = `${model.constructor.type === "world" ? "world" : packageName}.${pack.name}`;
-          packs.add(pack);
-        } catch(err) {
-          logger.warn(err.message);
-        }
-      }
-      return packs;
-    }
-
-    /* ---------------------------------------- */
-
-    /**
-     * Extend the logic for validating the complete set of packs to ensure uniqueness.
-     * @inheritDoc
-     */
-    _validateElements(value, options) {
-      const packNames = new Set();
-      const duplicateNames = new Set();
-      const packPaths = new Set();
-      const duplicatePaths = new Set();
-      for ( const pack of value ) {
-        if ( packNames.has(pack.name) ) duplicateNames.add(pack.name);
-        packNames.add(pack.name);
-        if ( pack.path ) {
-          if ( packPaths.has(pack.path) ) duplicatePaths.add(pack.path);
-          packPaths.add(pack.path);
-        }
-      }
-      return super._validateElements(value, {...options, duplicateNames, duplicatePaths});
-    }
-
-    /* ---------------------------------------- */
-
-    /**
-     * Validate each individual compendium pack, ensuring its name and path are unique.
-     * @inheritDoc
-     */
-    _validateElement(value, {duplicateNames, duplicatePaths, ...options}={}) {
-      if ( duplicateNames.has(value.name) ) {
-        return new DataModelValidationFailure({
-          invalidValue: value.name,
-          message: `Duplicate Compendium name "${value.name}" already declared by some other pack`
-        });
-      }
-      if ( duplicatePaths.has(value.path) ) {
-        return new DataModelValidationFailure({
-          invalidValue: value.path,
-          message: `Duplicate Compendium path "${value.path}" already declared by some other pack`
-        });
-      }
-      return this.element.validate(value, options);
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * The data schema used to define a Package manifest.
    * Specific types of packages extend this schema with additional fields.
    */
@@ -14270,14 +11679,20 @@
      * @param {object} [options={}]       Options which affect DataModel construction
      */
     constructor(data, options={}) {
-      const {availability, locked, exclusive, owned, tags, hasStorage} = data;
+      const {availability, unavailable, locked, exclusive, owned, tags} = data;
       super(data, options);
 
       /**
        * An availability code in PACKAGE_AVAILABILITY_CODES which defines whether this package can be used.
        * @type {number}
        */
-      this.availability = availability ?? this.constructor.testAvailability(this);
+      this.availability = availability ?? PACKAGE_AVAILABILITY_CODES.UNKNOWN;
+
+      /**
+       * A flag which defines whether this package is unavailable to be used.
+       * @type {boolean}
+       */
+      this.unavailable = unavailable ?? this.availability > PACKAGE_AVAILABILITY_CODES.REQUIRES_UPDATE;
 
       /**
        * A flag which tracks whether this package is currently locked.
@@ -14302,12 +11717,6 @@
        * @type {string[]}
        */
       this.tags = tags ?? [];
-
-      /**
-       * A flag which tracks if this package has files stored in the persistent storage folder
-       * @type {boolean}
-       */
-      this.hasStorage = hasStorage ?? false;
     }
 
     /**
@@ -14338,32 +11747,6 @@
     }
 
     /**
-     * A flag which defines whether this package is unavailable to be used.
-     * @type {boolean}
-     */
-    get unavailable() {
-      return this.availability > PACKAGE_AVAILABILITY_CODES.UNVERIFIED_GENERATION;
-    }
-
-    /**
-     * Is this Package incompatible with the currently installed core Foundry VTT software version?
-     * @type {boolean}
-     */
-    get incompatibleWithCoreVersion() {
-      return this.constructor.isIncompatibleWithCoreVersion(this.availability);
-    }
-
-    /**
-     * Test if a given availability is incompatible with the core version.
-     * @param {number} availability  The availability value to test.
-     * @returns {boolean}
-     */
-    static isIncompatibleWithCoreVersion(availability) {
-      const codes = CONST.PACKAGE_AVAILABILITY_CODES;
-      return (availability >= codes.REQUIRES_CORE_DOWNGRADE) && (availability <= codes.REQUIRES_CORE_UPGRADE_UNSTABLE);
-    }
-
-    /**
      * The named collection to which this package type belongs
      * @type {string}
      */
@@ -14384,7 +11767,7 @@
       return {
 
         // Package metadata
-        id: new StringField({required: true, blank: false, validate: this.validateId}),
+        id: new StringField({required: true, blank: false, validate: BasePackage.#validateId}),
         title: new StringField({required: true, blank: false}),
         description: new StringField({required: true}),
         authors: new SetField(new SchemaField({
@@ -14421,181 +11804,63 @@
           lang: new StringField({required: true, blank: false, validate: Intl.getCanonicalLocales,
             validationError: "must be supported by the Intl.getCanonicalLocales function"
           }),
-          name: new StringField({required: false}),
+          name: new StringField(),
           path: new StringField({required: true, blank: false}),
           system: new StringField(optionalString),
           module: new StringField(optionalString),
           flags: new ObjectField(),
         })),
-        packs: new PackageCompendiumPacks(new SchemaField({
+        packs: new SetField(new SchemaField({
           name: new StringField({required: true, blank: false, validate: n => !n.includes("."),
             validationError: "may not contain periods"}),
           label: new StringField({required: true, blank: false}),
-          banner: new StringField(optionalString),
-          path: new StringField({required: false}),
+          path: new StringField({required: true, blank: false}),
+          private: new BooleanField(),
           type: new StringField({required: true, blank: false, choices: COMPENDIUM_DOCUMENT_TYPES,
             validationError: "must be a value in CONST.COMPENDIUM_DOCUMENT_TYPES"}),
           system: new StringField(optionalString),
-          ownership: new CompendiumOwnershipField(),
           flags: new ObjectField(),
-        }, {validate: BasePackage.#validatePack})),
-        packFolders: new SetField(new PackageCompendiumFolder()),
+        }, {
+          validate: BasePackage.#validatePack
+        })),
 
         // Package relationships
-        relationships: new PackageRelationships(),
+        relationships: new SchemaField({
+          systems: new SetField(new RelatedPackage({packageType: "system"})),
+          requires: new SetField(new RelatedPackage()),
+          conflicts: new SetField(new RelatedPackage()),
+          flags: new ObjectField(),
+        }),
         socket: new BooleanField(),
 
         // Package downloading
         manifest: new StringField(),
         download: new StringField({required: false, blank: false, initial: undefined}),
         protected: new BooleanField(),
-        exclusive: new BooleanField(),
-        persistentStorage: new BooleanField(),
+        exclusive: new BooleanField()
       }
     }
 
     /* -------------------------------------------- */
 
-    /**
-     * Check the given compatibility data against the current installation state and determine its availability.
-     * @param {Partial<PackageManifestData>} data  The compatibility data to test.
-     * @param {ReleaseData} [release]              A specific software release for which to test availability.
-     *                                             Tests against the current release by default.
-     * @returns {number}
-     */
-    static testAvailability({ compatibility }, release) {
-      release ??= globalThis.release ?? game.release;
-      const codes = CONST.PACKAGE_AVAILABILITY_CODES;
-      const {minimum, maximum, verified} = compatibility;
-      const isGeneration = version => Number.isInteger(Number(version));
-
-      // Require a certain minimum core version.
-      if ( minimum && isNewerVersion(minimum, release.version) ) {
-        const generation = Number(minimum.split(".").shift());
-        const isStable = generation <= release.maxStableGeneration;
-        const exists = generation <= release.maxGeneration;
-        if ( isStable ) return codes.REQUIRES_CORE_UPGRADE_STABLE;
-        return exists ? codes.REQUIRES_CORE_UPGRADE_UNSTABLE : codes.UNKNOWN;
-      }
-
-      // Require a certain maximum core version.
-      if ( maximum ) {
-        const compatible = isGeneration(maximum)
-          ? release.generation <= Number(maximum)
-          : !isNewerVersion(release.version, maximum);
-        if ( !compatible ) return codes.REQUIRES_CORE_DOWNGRADE;
-      }
-
-      // Require a certain compatible core version.
-      if ( verified ) {
-        const compatible = isGeneration(verified)
-          ? Number(verified) >= release.generation
-          : !isNewerVersion(release.version, verified);
-        const sameGeneration = release.generation === Number(verified.split(".").shift());
-        if ( compatible ) return codes.VERIFIED;
-        return sameGeneration ? codes.UNVERIFIED_BUILD : codes.UNVERIFIED_GENERATION;
-      }
-
-      // No compatible version is specified.
-      return codes.UNKNOWN;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Test that the dependencies of a package are satisfied as compatible.
-     * This method assumes that all packages in modulesCollection have already had their own availability tested.
-     * @param {Collection<string,Module>} modulesCollection   A collection which defines the set of available modules
-     * @returns {Promise<boolean>}                            Are all required dependencies satisfied?
-     * @internal
-     */
-    async _testRequiredDependencies(modulesCollection) {
-      const requirements = this.relationships.requires;
-      for ( const {id, type, manifest, compatibility} of requirements ) {
-        if ( type !== "module" ) continue; // Only test modules
-        let pkg;
-
-        // If the requirement specifies an explicit remote manifest URL, we need to load it
-        if ( manifest ) {
-          try {
-            pkg = await this.constructor.fromRemoteManifest(manifest, {strict: true});
-          } catch(err) {
-            return false;
-          }
-        }
-
-        // Otherwise the dependency must belong to the known modulesCollection
-        else pkg = modulesCollection.get(id);
-        if ( !pkg ) return false;
-
-        // Ensure that the package matches the required compatibility range
-        if ( !this.constructor.testDependencyCompatibility(compatibility, pkg) ) return false;
-
-        // Test compatibility of the dependency
-        if ( pkg.availability > PACKAGE_AVAILABILITY_CODES.UNVERIFIED_GENERATION ) return false;
-      }
-      return true;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     *
-     * @param {PackageCompatibility} compatibility      The compatibility range declared for the dependency, if any
-     * @param {BasePackage} dependency                  The known dependency package
-     * @returns {boolean}                               Is the dependency compatible with the required range?
-     */
-    static testDependencyCompatibility(compatibility, dependency) {
-      if ( !compatibility ) return true;
-      const {minimum, maximum} = compatibility;
-      if ( minimum && isNewerVersion(minimum, dependency.version) ) return false;
-      if ( maximum && isNewerVersion(dependency.version, maximum) ) return false;
-      return true;
-    }
-
-    /* -------------------------------------------- */
-
-    /** @inheritDoc */
-    static cleanData(source={}, { installed, ...options }={}) {
+    /** @inheritdoc */
+    _initializeSource(data, options) {
+      super._initializeSource(data, options);
 
       // Auto-assign language name
-      for ( let l of source.languages || [] ) {
+      for ( let l of data.languages ) {
         l.name = l.name ?? l.lang;
       }
 
-      // Identify whether this package depends on a single game system
+      // Auto-assign system compatibility to compendium packs
       let systemId = undefined;
-      if ( this.type === "system" ) systemId = source.id;
-      else if ( this.type === "world" ) systemId = source.system;
-      else if ( source.relationships?.systems?.length === 1 ) systemId = source.relationships.systems[0].id;
-
-      // Auto-configure some package data
-      for ( const pack of source.packs || [] ) {
-        if ( !pack.system && systemId ) pack.system = systemId; // System dependency
-        if ( typeof pack.ownership === "string" ) pack.ownership = {PLAYER: pack.ownership};
+      if ( this.type === "system" ) systemId = data.id;
+      else if ( this.type === "world" ) systemId = data.system;
+      else if ( data.relationships?.systems?.length === 1 ) systemId = data.relationships.systems[0].id;
+      for ( const pack of data.packs ) {
+        if ( !pack.system ) pack.system = systemId;
       }
-
-      /**
-       * Clean unsupported non-module dependencies in requires or recommends.
-       * @deprecated since v11
-       */
-      ["requires", "recommends"].forEach(rel => {
-        const pkgs = source.relationships?.[rel];
-        if ( !Array.isArray(pkgs) ) return;
-        const clean = [];
-        for ( const pkg of pkgs ) {
-          if ( !pkg.type || (pkg.type === "module") ) clean.push(pkg);
-        }
-        const diff = pkgs.length - clean.length;
-        if ( diff ) {
-          source.relationships[rel] = clean;
-          this._logWarning(
-            source.id,
-            `The ${this.type} "${source.id}" has a ${rel} relationship on a non-module, which is not supported.`,
-            { since: 11, until: 12, stack: false, installed });
-        }
-      });
-      return super.cleanData(source, options);
+      return data;
     }
 
     /* -------------------------------------------- */
@@ -14605,7 +11870,7 @@
      * @param {string} id     The candidate ID
      * @throws                An error if the candidate ID is invalid
      */
-    static validateId(id) {
+    static #validateId(id) {
       const allowed = /^[A-Za-z0-9-_]+$/;
       if ( !allowed.test(id) ) throw new Error("Package IDs may only be alphanumeric with hyphens or underscores.");
       const prohibited = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
@@ -14614,11 +11879,7 @@
 
     /* -------------------------------------------- */
 
-    /**
-     * Validate a single compendium pack object
-     * @param {PackageCompendiumData} packData  Candidate compendium packs data
-     * @throws                                  An error if the data is invalid
-     */
+    /** @override */
     static #validatePack(packData) {
       if ( SYSTEM_SPECIFIC_COMPENDIUM_TYPES.includes(packData.type) && !packData.system ) {
         throw new Error(`The Compendium pack "${packData.name}" of the "${packData.type}" type must declare the "system"`
@@ -14630,40 +11891,39 @@
 
     /**
      * A wrapper around the default compatibility warning logger which handles some package-specific interactions.
-     * @param {string} packageId            The package ID being logged
-     * @param {string} message              The warning or error being logged
-     * @param {object} options              Logging options passed to foundry.utils.logCompatibilityWarning
-     * @param {object} [options.installed]  Is the package installed?
-     * @internal
+     * @param {string} packageId    The package ID being logged
+     * @param {string} message      The warning or error being logged
+     * @param {object} options      Logging options passed to foundry.utils.logCompatibilityWarning
      */
-    static _logWarning(packageId, message, { installed, ...options }={}) {
+    static #logWarning(packageId, message, options) {
       logCompatibilityWarning(message, options);
-      if ( installed ) globalThis.packages?.warnings?.add(packageId, {type: this.type, level: "warning", message});
+      globalThis.packages?.warnings?.add(packageId, "warning", message);
     }
 
     /* -------------------------------------------- */
 
     /** @inheritdoc */
-    static migrateData(data, { installed }={}) {
-      this._migrateNameToId(data, {since: 10, until: 13, stack: false, installed});
-      this._migrateDependenciesNameToId(data, {since: 10, until: 13, stack: false, installed});
-      this._migrateToRelationships(data, {since: 10, until: 13, stack: false, installed});
-      this._migrateCompatibility(data, {since: 10, until: 13, stack: false, installed});
-      this._migrateMediaURL(data, {since: 11, until: 13, stack: false, installed});
-      this._migrateOwnership(data, {since: 11, until: 13, stack: false, installed});
+    static migrateData(data) {
+      this._migrateNameToId(data, {since: 10, until: 13});
+      this._migrateCompendiumEntityToType(data, {since: 9, until: 11});
+      this._migrateAuthorToAuthors(data, {since: 9, until: 11});
+      this._migrateDependenciesNameToId(data, {since: 10, until: 13});
+      this._migrateToRelationships(data, {since: 10, until: 13});
+      this._migrateStringAuthors(data, {since: 9, until: 11});
+      this._migrateCompatibility(data, {since: 10, until: 13});
       return super.migrateData(data);
     }
 
     /* -------------------------------------------- */
 
     /** @internal */
-    static _migrateNameToId(data, logOptions) {
+    static _migrateNameToId(data, {since, until}) {
       if ( data.name && !data.id ) {
         data.id = data.name;
         delete data.name;
         if ( this.type !== "world" ) {
           const warning = `The ${this.type} "${data.id}" is using "name" which is deprecated in favor of "id"`;
-          this._logWarning(data.id, warning, logOptions);
+          BasePackage.#logWarning(data.id, warning, {since, until, stack: false});
         }
       }
     }
@@ -14671,7 +11931,40 @@
     /* -------------------------------------------- */
 
     /** @internal */
-    static _migrateDependenciesNameToId(data, logOptions) {
+    static _migrateCompendiumEntityToType(data, {since, until}) {
+      let hasEntity = false;
+      for ( let p of data.packs || [] ) {
+        if ( ("entity" in p) && !p.type ) {
+          hasEntity = true;
+          p.type = p.entity;
+        }
+      }
+      if ( hasEntity ) {
+        const msg = `The ${this.type} "${data.id}" contains compendium pack data which uses the deprecated "entity" field `
+          + `which must be migrated to "type"`;
+        BasePackage.#logWarning(data.id, msg, {mode: CONST.COMPATIBILITY_MODES.WARNING, since, until, stack: false});
+      }
+    }
+
+    /* -------------------------------------------- */
+
+    /** @internal */
+    static _migrateAuthorToAuthors(data, {since, until}) {
+      if ( data.author && !data.authors ) {
+        if ( this.type !== "world" ) {
+          const warning = `The ${this.type} "${data.id}" is using "author" which is deprecated in favor of "authors"`;
+          BasePackage.#logWarning(data.id, warning, {since, until, stack: false});
+        }
+        data.authors = data.authors || [];
+        data.authors.push({name: data.author});
+        delete data.author;
+      }
+    }
+
+    /* -------------------------------------------- */
+
+    /** @internal */
+    static _migrateDependenciesNameToId(data, {since, until}) {
       if ( data.relationships ) return;
       if ( data.dependencies ) {
         let hasDependencyName = false;
@@ -14684,7 +11977,7 @@
         }
         if ( hasDependencyName ) {
           const msg = `The ${this.type} "${data.id}" contains dependencies using "name" which is deprecated in favor of "id"`;
-          this._logWarning(data.id, msg, logOptions);
+          BasePackage.#logWarning(data.id, msg, {since, until, stack: false});
         }
       }
     }
@@ -14692,7 +11985,7 @@
     /* -------------------------------------------- */
 
     /** @internal */
-    static _migrateToRelationships(data, logOptions) {
+    static _migrateToRelationships(data, {since, until}) {
       if ( data.relationships ) return;
       data.relationships = {
         requires: [],
@@ -14713,8 +12006,17 @@
           d.type === "system" ? data.relationships.systems.push(relationship) : data.relationships.requires.push(relationship);
         }
         const msg = `The ${this.type} "${data.id}" contains "dependencies" which is deprecated in favor of "relationships.requires"`;
-        this._logWarning(data.id, msg, logOptions);
+        BasePackage.#logWarning(data.id, msg, {since, until, stack: false});
         delete data.dependencies;
+      }
+
+      // Pre-V9: systems -> relationships.systems
+      if ( data.systems ) {
+        const newSystems = data.systems.map(id => ({id})).filter(s => !data.relationships.systems.find(x => x.id === s.id));
+        data.relationships.systems = data.relationships.systems.concat(newSystems);
+        const msg = `${this.type} "${data.id}" contains the "systems" field which is deprecated in favor of "relationships.systems"`;
+        BasePackage.#logWarning(data.id, msg, {since: 9, until: 11, stack: false});
+        delete data.systems;
       }
 
       // V9: system -> relationships.systems
@@ -14723,7 +12025,7 @@
         const newSystems = data.system.map(id => ({id})).filter(s => !data.relationships.systems.find(x => x.id === s.id));
         data.relationships.systems = data.relationships.systems.concat(newSystems);
         const msg = `${this.type} "${data.id}" contains "system" which is deprecated in favor of "relationships.systems"`;
-        this._logWarning(data.id, msg, logOptions);
+        BasePackage.#logWarning(data.id, msg, {since, until, stack: false});
         delete data.system;
       }
     }
@@ -14731,11 +12033,32 @@
     /* -------------------------------------------- */
 
     /** @internal */
-    static _migrateCompatibility(data, logOptions) {
+    static _migrateStringAuthors(data, {since, until}) {
+      let stringAuthors = false;
+      if ( typeof data.authors === "string" ) data.authors = [data.authors];
+      data.authors = (data.authors || []).map(a => {
+        if ( typeof a === "string" ) {
+          stringAuthors = true;
+          return {name: a}
+        }
+        return a;
+      });
+      if ( stringAuthors ) {
+        const msg = `The ${this.type} "${data.id}" provides an "authors" array containing string ` +
+          "elements which is deprecated in favor of using PackageAuthorData objects";
+        BasePackage.#logWarning(data.id, msg, {mode: CONST.COMPATIBILITY_MODES.WARNING, since, until, stack: false});
+      }
+    }
+
+    /* -------------------------------------------- */
+
+    /** @internal */
+    static _migrateCompatibility(data, {since, until}) {
       if ( !data.compatibility && (data.minimumCoreVersion || data.compatibleCoreVersion) ) {
-        this._logWarning(data.id, `The ${this.type} "${data.id}" is using the old flat core compatibility fields which `
+        BasePackage.#logWarning(data.id, `The ${this.type} "${data.id}" is using the old flat core compatibility fields which `
           + `are deprecated in favor of the new "compatibility" object`,
-          logOptions);
+          {since, until, stack: false});
+
         data.compatibility = {
           minimum: data.minimumCoreVersion,
           verified: data.compatibleCoreVersion
@@ -14743,45 +12066,6 @@
         delete data.minimumCoreVersion;
         delete data.compatibleCoreVersion;
       }
-    }
-
-    /* -------------------------------------------- */
-
-    /** @internal */
-    static _migrateMediaURL(data, logOptions) {
-      if ( !data.media ) return;
-      let hasMediaLink = false;
-      for ( const media of data.media ) {
-        if ( "link" in media ) {
-          hasMediaLink = true;
-          media.url = media.link;
-          delete media.link;
-        }
-      }
-      if ( hasMediaLink ) {
-        const msg = `${this.type} "${data.id}" declares media.link which is unsupported, media.url should be used`;
-        this._logWarning(data.id, msg, logOptions);
-      }
-    }
-
-    /* -------------------------------------------- */
-
-    /** @internal */
-    static _migrateOwnership(data, logOptions) {
-      if ( !data.packs ) return;
-      let hasPrivatePack = false;
-      for ( const pack of data.packs ) {
-        if ( pack.private && !("ownership" in pack) ) {
-          pack.ownership = {PLAYER: "LIMITED", ASSISTANT: "OWNER"};
-          hasPrivatePack = true;
-        }
-        delete pack.private;
-      }
-      if ( hasPrivatePack ) {
-        const msg = `${this.type} "${data.id}" uses pack.private which has been replaced with pack.ownership`;
-        this._logWarning(data.id, msg, logOptions);
-      }
-      return data;
     }
 
     /* -------------------------------------------- */
@@ -14809,7 +12093,6 @@
    * @property {string} [nextSession]     An ISO datetime string when the next game session is scheduled to occur
    * @property {boolean} [resetKeys]      Should user access keys be reset as part of the next launch?
    * @property {boolean} [safeMode]       Should the world launch in safe mode?
-   * @property {string} [joinTheme]       The theme to use for this world's join page.
    */
   class BaseWorld extends BasePackage {
 
@@ -14817,14 +12100,9 @@
     static defineSchema() {
       return Object.assign({}, super.defineSchema(), {
         system: new StringField({required: true, blank: false}),
-        background: new StringField({required: false, blank: false}),
-        joinTheme: new StringField({
-          required: false, initial: undefined, nullable: false, blank: false, choices: WORLD_JOIN_THEMES
-        }),
+        background: new StringField({required: false, blank: false, initial: undefined}),
         coreVersion: new StringField({required: true, blank: false}),
         systemVersion: new StringField({required: true, blank: false, initial: "0"}),
-        lastPlayed: new StringField(),
-        playtime: new NumberField({integer: true, min: 0, initial: 0}),
         nextSession: new StringField({blank: false, nullable: true, initial: null}),
         resetKeys: new BooleanField({required: false, initial: undefined}),
         safeMode: new BooleanField({required: false, initial: undefined}),
@@ -14835,58 +12113,15 @@
     /** @override */
     static type = "world";
 
-    /**
-     * The default icon used for this type of Package.
-     * @type {string}
-     */
-    static icon = "fa-globe-asia";
-
     /** @inheritDoc */
     static migrateData(data) {
       super.migrateData(data);
-
-      // Legacy compatibility strings
       data.compatibility = data.compatibility || {};
       if ( data.compatibility.maximum === "1.0.0" ) data.compatibility.maximum = undefined;
       if ( data.coreVersion && !data.compatibility.verified ) {
         data.compatibility.minimum = data.compatibility.verified = data.coreVersion;
       }
       return data;
-    }
-
-    /* -------------------------------------------- */
-
-    /** @inheritdoc */
-    static testAvailability(data, release) {
-      const systems = globalThis.packages?.System ?? game.systems;
-      const modules = globalThis.packages?.Module ?? game.modules;
-      const { relationships } = data;
-      const codes = CONST.PACKAGE_AVAILABILITY_CODES;
-
-      // If the World itself is incompatible for some reason, report that directly.
-      const wa = super.testAvailability(data, release);
-      if ( this.isIncompatibleWithCoreVersion(wa) ) return wa;
-
-      // If the System is missing or incompatible, report that directly.
-      const system = data.system instanceof foundry.packages.BaseSystem ? data.system : systems.get(data.system);
-      if ( !system ) return codes.MISSING_SYSTEM;
-      const sa = system.availability;
-      if ( system.incompatibleWithCoreVersion || (sa === codes.UNKNOWN) ) return sa;
-
-      // Test the availability of all required modules.
-      const checkedModules = new Set();
-      const requirements = [...relationships.requires.values(), ...system.relationships.requires.values()];
-      for ( const r of requirements ) {
-        if ( (r.type !== "module") || checkedModules.has(r.id) ) continue;
-        const module = modules.get(r.id);
-        if ( !module ) return codes.MISSING_DEPENDENCY;
-        if ( module.incompatibleWithCoreVersion ) return codes.REQUIRES_DEPENDENCY_UPDATE;
-        checkedModules.add(r.id);
-      }
-
-      // If World compatibility is unknown, use System availability.
-      if ( wa === codes.UNKNOWN ) return sa;
-      return wa;
     }
   }
 
@@ -14906,7 +12141,7 @@
     /** @inheritDoc */
     static defineSchema() {
       return Object.assign({}, super.defineSchema(), {
-        background: new StringField({required: false, blank: false}),
+        background: new StringField(),
         initiative: new StringField(),
         gridDistance: new NumberField(),
         gridUnits: new StringField(),
@@ -14917,12 +12152,6 @@
 
     /** @inheritdoc */
     static type = "system";
-
-    /**
-     * The default icon used for this type of Package.
-     * @type {string}
-     */
-    static icon = "fa-dice";
 
     /**
      * An alias for the document types available in the currently active World.
@@ -14950,44 +12179,11 @@
   }
 
   /**
-   * A special [ObjectField]{@link ObjectField} available to packages which configures any additional Document sub-types
-   * provided by the package.
-   */
-  class AdditionalTypesField extends ObjectField {
-    /** @inheritdoc */
-    static get _defaults() {
-      return mergeObject(super._defaults, {
-        required: false,
-        readonly: true,
-        validationError: "is not a valid sub-types configuration"
-      });
-    }
-
-    /** @inheritdoc */
-    _validateType(value, options={}) {
-      super._validateType(value, options);
-      const documents = foundry?.documents ? Object.values(foundry.documents) : db.documents;
-      const documentClasses = Object.fromEntries(documents.map(cls => [cls.documentName, cls]));
-      for ( const [k, v] of Object.entries(value) ) {
-        const cls = documentClasses[k];
-        if ( !cls ) throw new Error(`${this.validationError}: '${k}' is not a valid Document type`);
-        if ( !cls.hasTypeData ) {
-          throw new Error(`${this.validationError}: ${k} Documents do not support sub-types`);
-        }
-        if ( (getType(v) !== "Object") || Object.values(v).some(type => getType(type) !== "Object") ) {
-          throw new Error(`${this.validationError}: Sub-type declaration for '${k}' malformed`);
-        }
-      }
-    }
-  }
-
-  /**
    * The data schema used to define Module manifest files.
    * Extends the basic PackageData schema with some additional module-specific fields.
-   * @property {boolean} [coreTranslation]         Does this module provide a translation for the core software?
-   * @property {boolean} [library]                 A library module provides no user-facing functionality and is solely
-   *                                               for use by other modules. Loaded before any system or module scripts.
-   * @property {Object<string[]>} [documentTypes]  Additional document sub-types provided by this module.
+   * @property {boolean} [coreTranslation]     Does this module provide a translation for the core software?
+   * @property {boolean} [library]             A library module provides no user-facing functionality and is solely for
+   *                                           use by other modules. Loaded before any system or module scripts.
    */
   class BaseModule extends BasePackage {
 
@@ -14996,19 +12192,12 @@
       const parentSchema = super.defineSchema();
       return Object.assign({}, parentSchema, {
         coreTranslation: new BooleanField(),
-        library: new BooleanField(),
-        documentTypes: new AdditionalTypesField()
+        library: new BooleanField()
       });
     }
 
     /** @override */
     static type = "module";
-
-    /**
-     * The default icon used for this type of Package.
-     * @type {string}
-     */
-    static icon = "fa-plug";
   }
 
   /** @module packages */
@@ -15029,7 +12218,7 @@
    * @typedef {Object} PackageCompendiumData
    * @property {string} name        The canonical compendium name. This should contain no spaces or special characters
    * @property {string} label       The human-readable compendium name
-   * @property {string} path        The local relative path to the compendium source directory. The filename should match
+   * @property {string} path        The local relative path to the compendium source .db file. The filename should match
    *                                the name attribute
    * @property {string} type        The specific document type that is contained within this compendium pack
    * @property {string} [system]    Denote that this compendium pack requires a specific game system to function properly
@@ -15051,6 +12240,12 @@
    * @property {string} [manifest]                      An explicit manifest URL, otherwise learned from the Foundry web server
    * @property {PackageCompatibility} [compatibility]   The compatibility data with this related Package
    * @property {string} [reason]                        The reason for this relationship
+   */
+
+  /**
+   * @typedef {Object} PackageRelationships
+   * @property {RelatedPackage[]} systems     Systems that this Package supports
+   * @property {RelatedPackage[]} required    Packages that are required for base functionality
    */
 
   /**
@@ -15144,16 +12339,16 @@
 
   var packages = /*#__PURE__*/Object.freeze({
     __proto__: null,
-    BaseModule: BaseModule,
-    BasePackage: BasePackage,
-    BaseSystem: BaseSystem,
-    BaseWorld: BaseWorld,
-    ModuleData: ModuleData,
-    PackageCompatibility: PackageCompatibility,
     PackageData: PackageData,
-    RelatedPackage: RelatedPackage,
+    WorldData: WorldData,
     SystemData: SystemData,
-    WorldData: WorldData
+    ModuleData: ModuleData,
+    BasePackage: BasePackage,
+    BaseWorld: BaseWorld,
+    BaseSystem: BaseSystem,
+    BaseModule: BaseModule,
+    PackageCompatibility: PackageCompatibility,
+    RelatedPackage: RelatedPackage
   });
 
   /** @namespace config */
@@ -15194,15 +12389,9 @@
         awsConfig: new StringField({label: "SETUP.AWSLabel", hint: "SETUP.AWSHint"}),
         compressStatic: new BooleanField({initial: true, label: "SETUP.CompressStaticLabel",
           hint: "SETUP.CompressStaticHint"}),
-        compressSocket: new BooleanField({initial: true, label: "SETUP.CompressSocketLabel",
-          hint: "SETUP.CompressSocketHint"}),
-        cssTheme: new StringField({blank: false, choices: CSS_THEMES, initial: "foundry",
-          label: "SETUP.CSSTheme", hint: "SETUP.CSSThemeHint"}),
         dataPath: new StringField({label: "SETUP.DataPathLabel", hint: "SETUP.DataPathHint"}),
-        deleteNEDB: new BooleanField({label: "SETUP.DeleteNEDBLabel", hint: "SETUP.DeleteNEDBHint"}),
         fullscreen: new BooleanField({initial: false}),
         hostname: new StringField({required: true, blank: false, nullable: true, initial: null}),
-        hotReload: new BooleanField({initial: false, label: "SETUP.HotReloadLabel", hint: "SETUP.HotReloadHint"}),
         language: new StringField({required: true, blank: false, initial: "en.core",
           label: "SETUP.DefaultLanguageLabel", hint: "SETUP.DefaultLanguageHint"}),
         localHostname: new StringField({required: true, blank: false, nullable: true, initial: null}),
@@ -15215,8 +12404,6 @@
         routePrefix: new StringField({required: true, blank: false, nullable: true, initial: null}),
         sslCert: new StringField({label: "SETUP.SSLCertLabel", hint: "SETUP.SSLCertHint"}),
         sslKey: new StringField({label: "SETUP.SSLKeyLabel"}),
-        telemetry: new BooleanField({required: false, initial: undefined, label: "SETUP.Telemetry",
-          hint: "SETUP.TelemetryHint"}),
         updateChannel: new StringField({required: true, choices: SOFTWARE_UPDATE_CHANNELS, initial: "stable"}),
         upnp: new BooleanField({initial: true}),
         upnpLeaseDuration: new NumberField(),
@@ -15265,8 +12452,6 @@
    * @memberof config
    *
    * @property {number} generation        The major generation of the Release
-   * @property {number} [maxGeneration]   The maximum available generation of the software.
-   * @property {number} [maxStableGeneration]  The maximum available stable generation of the software.
    * @property {string} channel           The channel the Release belongs to, such as "stable"
    * @property {string} suffix            An optional appended string display for the Release
    * @property {number} build             The internal build number for the Release
@@ -15276,16 +12461,9 @@
    * @property {string} [download]        A temporary download URL where this version may be obtained
    */
   class ReleaseData extends DataModel {
-    /** @override */
     static defineSchema() {
       return {
         generation: new NumberField({required: true, nullable: false, integer: true, min: 1}),
-        maxGeneration: new NumberField({
-          required: false, nullable: false, integer: true, min: 1, initial: () => this.generation
-        }),
-        maxStableGeneration: new NumberField({
-          required: false, nullable: false, integer: true, min: 1, initial: () => this.generation
-        }),
         channel: new StringField({choices: SOFTWARE_UPDATE_CHANNELS, blank: false}),
         suffix: new StringField(),
         build: new NumberField({required: true, nullable: false, integer: true}),
@@ -15320,6 +12498,14 @@
      */
     get version() {
       return `${this.generation}.${this.build}`;
+    }
+
+    /**
+     * The maximum known stable generation number.
+     * @type {number}
+     */
+    get maxStableGeneration() {
+      return globalThis.config.updater.availability.maxStableGeneration || this.generation;
     }
 
     /* ----------------------------------------- */
@@ -15405,6 +12591,8 @@
   exports.documents = documents;
   exports.packages = packages;
   exports.utils = utils;
+
+  Object.defineProperty(exports, '__esModule', { value: true });
 
   return exports;
 

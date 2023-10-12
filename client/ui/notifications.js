@@ -14,12 +14,6 @@
  * ```
  */
 class Notifications extends Application {
-  /**
-   * An incrementing counter for the notification IDs.
-   * @type {number}
-   */
-  #id = 1;
-
   constructor(options) {
     super(options);
 
@@ -80,7 +74,7 @@ class Notifications extends Application {
 
   /**
    * @typedef {Object} NotifyOptions
-   * @property {boolean} [permanent=false]      Should the notification be permanently displayed until dismissed
+   * @property {boolean} [permanent=false]      Whether the notification should be permanently displayed unless otherwise dismissed
    * @property {boolean} [localize=false]       Whether to localize the message content before displaying it
    * @property {boolean} [console=true]         Whether to log the message to the console
    */
@@ -88,14 +82,14 @@ class Notifications extends Application {
   /**
    * Push a new notification into the queue
    * @param {string} message                   The content of the notification message
-   * @param {string} type                      The type of notification, "info", "warning", and "error" are supported
+   * @param {string} type                      The type of notification, currently "info", "warning", and "error" are supported
    * @param {NotifyOptions} [options={}]       Additional options which affect the notification
-   * @returns {number}                         The ID of the notification
    */
   notify(message, type="info", {localize=false, permanent=false, console=true}={}) {
     if ( localize ) message = game.i18n.localize(message);
+
+    // Construct notification data
     let n = {
-      id: this.#id++,
       message: message,
       type: ["info", "warning", "error"].includes(type) ? type : "info",
       timestamp: new Date().getTime(),
@@ -103,8 +97,9 @@ class Notifications extends Application {
       console: console
     };
     this.queue.push(n);
+
+    // Call the fetch method
     if ( this.rendered ) this.fetch();
-    return n.id;
   }
 
   /* -------------------------------------------- */
@@ -113,10 +108,10 @@ class Notifications extends Application {
    * Display a notification with the "info" type
    * @param {string} message           The content of the notification message
    * @param {NotifyOptions} options    Notification options passed to the notify function
-   * @returns {number}                 The ID of the notification
+   * @returns {void}
    */
   info(message, options) {
-    return this.notify(message, "info", options);
+    this.notify(message, "info", options);
   }
 
   /* -------------------------------------------- */
@@ -125,10 +120,10 @@ class Notifications extends Application {
    * Display a notification with the "warning" type
    * @param {string} message           The content of the notification message
    * @param {NotifyOptions} options    Notification options passed to the notify function
-   * @returns {number}                 The ID of the notification
+   * @returns {void}
    */
   warn(message, options) {
-    return this.notify(message, "warning", options);
+    this.notify(message, "warning", options);
   }
 
   /* -------------------------------------------- */
@@ -137,40 +132,10 @@ class Notifications extends Application {
    * Display a notification with the "error" type
    * @param {string} message           The content of the notification message
    * @param {NotifyOptions} options    Notification options passed to the notify function
-   * @returns {number}                 The ID of the notification
+   * @returns {void}
    */
   error(message, options) {
-    return this.notify(message, "error", options);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Remove the notification linked to the ID.
-   * @param {number} id                 The ID of the notification
-   */
-  remove(id) {
-
-    // Remove a queued notification that has not been displayed yet
-    const queued = this.queue.findSplice(n => n.id === id);
-    if ( queued ) return;
-
-    // Remove an active HTML element
-    const active = this.active.findSplice(li => li.data("id") === id);
-    if ( !active ) return;
-    active.fadeOut(66, () => active.remove());
-    this.fetch();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Clear all notifications.
-   */
-  clear() {
-    this.queue.length = 0;
-    for ( const li of this.active ) li.fadeOut(66, () => li.remove());
-    this.active.length = 0;
+    this.notify(message, "error", options);
   }
 
   /* -------------------------------------------- */
@@ -184,18 +149,19 @@ class Notifications extends Application {
     if ( !this.queue.length || (this.active.length >= 3) ) return;
     const next = this.queue.pop();
     const now = Date.now();
+    let cleared = false;
 
     // Define the function to remove the notification
     const _remove = li => {
+      if ( cleared ) return;
       li.fadeOut(66, () => li.remove());
-      const i = this.active.indexOf(li);
-      if ( i >= 0 ) this.active.splice(i, 1);
+      this.active.pop();
       return this.fetch();
     };
 
     // Construct a new notification
     const cls = ["notification", next.type, next.permanent ? "permanent" : null].filterJoin(" ");
-    const li = $(`<li class="${cls}" data-id="${next.id}">${next.message}<i class="close fas fa-times-circle"></i></li>`);
+    const li = $(`<li class="${cls}">${next.message}<i class="close fas fa-times-circle"></i></li>`);
 
     // Add click listener to dismiss
     li.click(ev => {

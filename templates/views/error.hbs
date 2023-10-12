@@ -1,18 +1,16 @@
-<article id="error" class="app flexcol">
-    <h2 class="border">{{title}}</h2>
-
-    <div class="error-details">
-        <p>{{{message}}}</p>
+<section id="setup">
+    <aside id="error" class="app">
+        <h1>{{title}}</h1>
+        <p class="error">{{{message}}}</p>
         {{#if stack}}
         <pre>
             <code>{{stack}}</code>
         </pre>
         {{/if}}
-    </div>
-
-    <footer class="form-footer">
-        <a class="button" href="{{setupUrl}}" target="_self">
-            <i class="fas fa-backward"></i> Go Back
-        </a>
-    </footer>
-</article>
+        <p>
+            <a class="button" href="./setup" title="Go Back" target="_self">
+                <i class="fas fa-backward"></i> Go Back
+            </a>
+        </p>
+    </aside>
+</section>

@@ -1,0 +1,17 @@
+{{#if package.labels.unavailable}}
+<span class="tag unavailable" data-tooltip="{{package.labels.unavailable}}"><i class="fa fa-file-slash"></i></span>
+{{/if}}
+{{#if package.packs}}
+<span class="tag compendium" data-tooltip="{{localize 'PACKAGE.TagCompendium'}}"><i class="fas fa-book"></i></span>
+{{/if}}
+{{#if package.languages}}
+<span class="tag languages" data-tooltip="{{localize 'PACKAGE.TagLocalization'}}"><i class="fas fa-language"></i></span>
+{{/if}}
+{{#if package.labels.incompatible}}
+<span class="tag unknown" data-tooltip="{{package.labels.incompatible}}">
+    <i class="fas fa-exclamation-triangle"></i> {{package.compatibility.verified}}
+</span>
+{{/if}}
+{{#if package.version}}
+<span class="tag version"><i class="fas fa-code-branch"></i> {{package.version}}</span>
+{{/if}}

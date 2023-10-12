@@ -74,12 +74,6 @@ class Ruler extends PIXI.Container {
   segments;
 
   /**
-   * The computed total distance of the Ruler.
-   * @type {number}
-   */
-  totalDistance;
-
-  /**
    * An enumeration of the possible Ruler measurement states.
    * @enum {number}
    */
@@ -89,16 +83,6 @@ class Ruler extends PIXI.Container {
     MEASURING: 2,
     MOVING: 3
   };
-
-  /* -------------------------------------------- */
-
-  /**
-   * Is the ruler ready for measure?
-   * @returns {boolean}
-   */
-  static get canMeasure() {
-    return (game.activeTool === "ruler") || game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.CONTROL);
-  }
 
   /* -------------------------------------------- */
 
@@ -130,7 +114,6 @@ class Ruler extends PIXI.Container {
   clear() {
     this._state = Ruler.STATES.INACTIVE;
     this.waypoints = [];
-    this.segments = undefined;
     this.ruler?.clear();
     this.labels.removeChildren().forEach(c => c.destroy());
     canvas.grid.clearHighlightLayer(this.name);
@@ -140,16 +123,15 @@ class Ruler extends PIXI.Container {
 
   /**
    * Measure the distance between two points and render the ruler UI to illustrate it
-   * @param {PIXI.Point} destination       The destination point to which to measure
-   * @param {boolean} [gridSpaces=true]    Restrict measurement only to grid spaces
-   * @param {boolean} [force=false]        Do the measure whatever is the destination point?
+   * @param {PIXI.Point} destination  The destination point to which to measure
+   * @param {boolean} gridSpaces      Restrict measurement only to grid spaces
    * @returns {RulerMeasurementSegment[]} The array of measured segments
    */
-  measure(destination, {gridSpaces=true, force=false}={}) {
+  measure(destination, {gridSpaces=true}={}) {
 
     // Compute the measurement destination, segments, and distance
     const d = this._getMeasurementDestination(destination);
-    if ( ( d.x === this.destination.x ) && ( d.y === this.destination.y ) && !force ) return;
+    if ( ( d.x === this.destination.x ) && ( d.y === this.destination.y ) ) return;
     this.destination = d;
     this.segments = this._getMeasurementSegments();
     this._computeDistance(gridSpaces);
@@ -215,8 +197,8 @@ class Ruler extends PIXI.Container {
       let s = this.segments[i];
       s.last = i === (this.segments.length - 1);
       s.distance = d;
+      s.text = this._getSegmentLabel(s, totalDistance);
     }
-    this.totalDistance = totalDistance;
   }
 
   /* -------------------------------------------- */
@@ -244,7 +226,7 @@ class Ruler extends PIXI.Container {
   _drawMeasuredPath() {
     const r = this.ruler.beginFill(this.color, 0.25);
     for ( const segment of this.segments ) {
-      const {ray, distance, label, last} = segment;
+      const {ray, distance, label, text, last} = segment;
       if ( distance === 0 ) continue;
 
       // Draw Line
@@ -257,15 +239,11 @@ class Ruler extends PIXI.Container {
 
       // Draw Label
       if ( label ) {
-        const text = this._getSegmentLabel(segment, this.totalDistance);
-        if ( text ) {
-          label.text = text;
-          label.alpha = last ? 1.0 : 0.5;
-          label.visible = true;
-          let labelPosition = ray.project((ray.distance + 50) / ray.distance);
-          label.position.set(labelPosition.x, labelPosition.y);
-        }
-        else label.visible = false;
+        label.text = text;
+        label.alpha = last ? 1.0 : 0.5;
+        label.visible = true;
+        let labelPosition = ray.project((ray.distance + 50) / ray.distance);
+        label.position.set(labelPosition.x, labelPosition.y);
       }
     }
     r.endFill();
@@ -338,24 +316,17 @@ class Ruler extends PIXI.Container {
     const token = this._getMovementToken();
     if ( !token ) return false;
 
-    // Verify whether the movement is allowed
-    let error;
-    try {
-      if ( !this._canMove(token) ) error = "RULER.MovementNotAllowed";
-    } catch(err) {
-      error = err.message;
-    }
-    if ( error ) {
-      ui.notifications.error(error, {localize: true});
+    // Test collision for each measured segment
+    const hasCollision = this.segments.some(s => {
+      return token.checkCollision(s.ray.B, {origin: s.ray.A, type: "move", mode: "any"});
+    });
+    if ( hasCollision ) {
+      ui.notifications.error("ERROR.TokenCollide", {localize: true, console: false});
       return false;
     }
 
-    // Animate the movement path defined by each ray segments
-    await this._preMove(token);
+    // Execute the movement path defined by each ray
     await this._animateMovement(token);
-    await this._postMove(token);
-
-    // Clear the Ruler
     this._endMeasurement();
     return true;
   }
@@ -376,23 +347,6 @@ class Ruler extends PIXI.Container {
       let pos = new PIXI.Rectangle(t.x - 1, t.y - 1, t.w + 2, t.h + 2);
       return pos.contains(x0, y0);
     });
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Test whether a Token is allowed to execute a measured movement path.
-   * @param {Token} token       The Token being tested
-   * @returns {boolean}         Whether the movement is allowed
-   * @throws                    A specific Error message used instead of returning false
-   * @protected
-   */
-  _canMove(token) {
-    const hasCollision = this.segments.some(s => {
-      return token.checkCollision(s.ray.B, {origin: s.ray.A, type: "move", mode: "any"});
-    });
-    if ( hasCollision ) throw new Error("RULER.MovementCollision");
-    return true;
   }
 
   /* -------------------------------------------- */
@@ -450,62 +404,42 @@ class Ruler extends PIXI.Container {
   }
 
   /* -------------------------------------------- */
-
-  /**
-   * An method which can be extended by a subclass of Ruler to define custom behaviors before a confirmed movement.
-   * @param {Token} token       The Token that will be moving
-   * @returns {Promise<void>}
-   * @protected
-   */
-  async _preMove(token) {}
-
-  /* -------------------------------------------- */
-
-  /**
-   * An event which can be extended by a subclass of Ruler to define custom behaviors before a confirmed movement.
-   * @param {Token} token       The Token that finished moving
-   * @returns {Promise<void>}
-   * @protected
-   */
-  async _postMove(token) {}
-
-  /* -------------------------------------------- */
   /*  Event Listeners and Handlers
   /* -------------------------------------------- */
 
   /**
    * Handle the beginning of a new Ruler measurement workflow
-   * @param {PIXI.FederatedEvent} event   The drag start event
+   * @param {PIXI.InteractionEvent} event   The drag start event
    * @see {Canvas._onDragLeftStart}
    */
   _onDragStart(event) {
     this.clear();
     this._state = Ruler.STATES.STARTING;
-    this._addWaypoint(event.interactionData.origin);
+    this._addWaypoint(event.data.origin);
   }
 
   /* -------------------------------------------- */
 
   /**
    * Handle left-click events on the Canvas during Ruler measurement.
-   * @param {PIXI.FederatedEvent} event   The pointer-down event
+   * @param {PIXI.InteractionEvent} event   The pointer-down event
    * @see {Canvas._onClickLeft}
    */
   _onClickLeft(event) {
     const isCtrl = game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.CONTROL);
-    if ( (this._state === 2) && isCtrl ) this._addWaypoint(event.interactionData.origin);
+    if ( (this._state === 2) && isCtrl ) this._addWaypoint(event.data.origin);
   }
 
   /* -------------------------------------------- */
 
   /**
    * Handle right-click events on the Canvas during Ruler measurement.
-   * @param {PIXI.FederatedEvent} event   The pointer-down event
+   * @param {PIXI.InteractionEvent} event   The pointer-down event
    * @see {Canvas._onClickRight}
    */
   _onClickRight(event) {
     if ( (this._state === 2) && (this.waypoints.length > 1) ) {
-      this._removeWaypoint(event.interactionData.origin, {snap: !event.shiftKey});
+      this._removeWaypoint(event.data.origin, {snap: !event.data.originalEvent.shiftKey});
       return canvas.mouseInteractionManager._dragRight = false;
     }
     else return this._endMeasurement();
@@ -515,15 +449,15 @@ class Ruler extends PIXI.Container {
 
   /**
    * Continue a Ruler measurement workflow for left-mouse movements on the Canvas.
-   * @param {PIXI.FederatedEvent} event   The mouse move event
+   * @param {PIXI.InteractionEvent} event   The mouse move event
    * @see {Canvas._onDragLeftMove}
    */
   _onMouseMove(event) {
     if ( this._state === Ruler.STATES.MOVING ) return;
 
     // Extract event data
-    const mt = event.interactionData._measureTime || 0;
-    const {origin, destination} = event.interactionData;
+    const mt = event._measureTime || 0;
+    const {origin, destination, originalEvent} = event.data;
     if ( !canvas.dimensions.rect.contains(destination.x, destination.y)) return;
 
     // Do not begin measuring unless we have moved at least 1/4 of a grid space
@@ -534,12 +468,12 @@ class Ruler extends PIXI.Container {
 
     // Hide any existing Token HUD
     canvas.hud.token.clear();
-    delete event.interactionData.hudState;
+    delete event.data.hudState;
 
     // Draw measurement updates
     if ( Date.now() - mt > 50 ) {
-      this.measure(destination, {gridSpaces: !event.shiftKey});
-      event.interactionData._measureTime = Date.now();
+      this.measure(destination, {gridSpaces: !originalEvent.shiftKey});
+      event._measureTime = Date.now();
       this._state = Ruler.STATES.MEASURING;
     }
   }
@@ -548,11 +482,12 @@ class Ruler extends PIXI.Container {
 
   /**
    * Conclude a Ruler measurement workflow by releasing the left-mouse button.
-   * @param {PIXI.FederatedEvent} event   The pointer-up event
+   * @param {PIXI.InteractionEvent} event   The pointer-up event
    * @see {Canvas._onDragLeftDrop}
    */
   _onMouseUp(event) {
-    const isCtrl = event.ctrlKey || event.metaKey;
+    const oe = event.data.originalEvent;
+    const isCtrl = oe.ctrlKey || oe.metaKey;
     if ( !isCtrl ) this._endMeasurement();
   }
 
@@ -580,7 +515,7 @@ class Ruler extends PIXI.Container {
   _removeWaypoint(point, {snap=true}={}) {
     this.waypoints.pop();
     if ( this.labels.children.length ) this.labels.removeChildAt(this.labels.children.length - 1).destroy();
-    this.measure(point, {gridSpaces: snap, force: true});
+    this.measure(point, {gridSpaces: snap});
   }
 
   /* -------------------------------------------- */

@@ -125,38 +125,10 @@ class VisionMode extends foundry.abstract.DataModel {
   animated = false;
 
   /**
-   * Special activation handling that could be implemented by VisionMode subclasses
-   * @param {VisionSource} source   Activate this VisionMode for a specific source
-   * @abstract
-   */
-  _activate(source) {}
-
-  /**
-   * Special deactivation handling that could be implemented by VisionMode subclasses
-   * @param {VisionSource} source   Deactivate this VisionMode for a specific source
-   * @abstract
-   */
-  _deactivate(source) {}
-
-  /**
    * Special handling which is needed when this Vision Mode is activated for a VisionSource.
    * @param {VisionSource} source   Activate this VisionMode for a specific source
    */
-  activate(source) {
-    if ( source._visionModeActivated ) return;
-    source._visionModeActivated = true;
-    this._activate(source);
-  }
-
-  /**
-   * Special handling which is needed when this Vision Mode is deactivated for a VisionSource.
-   * @param {VisionSource} source   Deactivate this VisionMode for a specific source
-   */
-  deactivate(source) {
-    if ( !source._visionModeActivated ) return;
-    source._visionModeActivated = false;
-    this._deactivate(source);
-  }
+  activate(source) {}
 
   /**
    * An animation function which runs every frame while this Vision Mode is active.
@@ -165,4 +137,10 @@ class VisionMode extends foundry.abstract.DataModel {
   animate(dt) {
     return VisionSource.prototype.animateTime.call(this, dt);
   }
+
+  /**
+   * Special handling which is needed when this Vision Mode is deactivated for a VisionSource.
+   * @param {VisionSource} source   Deactivate this VisionMode for a specific source
+   */
+  deactivate(source) {}
 }

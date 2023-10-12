@@ -23,12 +23,8 @@ class MacroConfig extends DocumentSheet {
   /** @override */
   getData(options={}) {
     const data = super.getData();
-    data.macroTypes = game.documentTypes.Macro.reduce((obj, t) => {
-      if ( t === CONST.BASE_DOCUMENT_TYPE ) return obj;
-      if ( (t === "script") && !game.user.can("MACRO_SCRIPT") ) return obj;
-      obj[t] = game.i18n.localize(CONFIG.Macro.typeLabels[t]);
-      return obj;
-    }, {});
+    data.macroTypes = foundry.utils.deepClone(game.documentTypes.Macro);
+    if ( !game.user.can("MACRO_SCRIPT") ) data.macroTypes.findSplice(t => t === "script");
     data.macroScopes = CONST.MACRO_SCOPES;
     return data;
   }
@@ -39,6 +35,7 @@ class MacroConfig extends DocumentSheet {
   activateListeners(html) {
     super.activateListeners(html);
     html.find("button.execute").click(this._onExecute.bind(this));
+    if ( this.isEditable ) html.find('img[data-edit="img"]').click(ev => this._onEditImage(ev));
   }
 
   /* -------------------------------------------- */
@@ -47,6 +44,26 @@ class MacroConfig extends DocumentSheet {
   _disableFields(form) {
     super._disableFields(form);
     if ( this.object.canExecute ) form.querySelector("button.execute").disabled = false;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Handle changing the actor profile image by opening a FilePicker
+   * @private
+   */
+  _onEditImage(event) {
+    const fp = new FilePicker({
+      type: "image",
+      current: this.object.img,
+      callback: path => {
+        event.currentTarget.src = path;
+        this._onSubmit(event, {preventClose: true});
+      },
+      top: this.position.top + 40,
+      left: this.position.left + 10
+    });
+    return fp.browse();
   }
 
   /* -------------------------------------------- */

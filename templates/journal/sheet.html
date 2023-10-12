@@ -8,7 +8,6 @@
             <div class="header-search flexrow">
                 <a class="action-button view-mode" data-action="toggleView"
                    data-tooltip="{{localize viewMode.label}}"><i class="{{viewMode.icon}}"></i></a>
-                <a class="action-button toggle-search-mode" data-action="toggleSearch" data-tooltip="{{localize searchTooltip}}"><i class="fas {{searchIcon}}"></i></a>
                 <input type="search" name="search" value="" autocomplete="off"
                        placeholder="{{localize "SIDEBAR.Search" types=(localize "DOCUMENT.JournalEntryPages")}}">
                 <a class="action-button collapse-toggle" data-action="toggleCollapse"
@@ -20,7 +19,7 @@
         <nav class="pages-list" aria-label="{{localize 'JOURNAL.NavLabel'}}" data-tooltip-direction="RIGHT">
             <ol class="directory-list scrollable">
                 {{#each toc as |page|}}
-                <li class="directory-item {{page.tocClass}}" data-page-id="{{page._id}}">
+                <li class="directory-item {{page.cssClass}}" data-page-id="{{page._id}}">
                     <div class="page-heading">
                         <span class="page-number" data-tooltip="{{page.name}}">{{page.number}}.</span>
                         <span class="page-title">{{page.name}}</span>
@@ -58,7 +57,7 @@
         <div class="journal-entry-pages {{cssClass}} {{viewMode.cls}}">
             <div class="scrollable">
                 {{#each pages as |page|}}
-                <article class="journal-entry-page {{page.viewClass}}" data-page-id="{{page._id}}">
+                <article class="journal-entry-page {{page.type}}" data-page-id="{{page._id}}">
                     {{#if page.editable}}
                     <div class="edit-container">
                         <a class="editor-edit"><i class="fas fa-edit"></i></a>

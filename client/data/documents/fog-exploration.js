@@ -4,6 +4,32 @@
  * @mixes ClientDocumentMixin
  */
 class FogExploration extends ClientDocumentMixin(foundry.documents.BaseFogExploration) {
+
+  /**
+   * Explore fog of war for a new point source position.
+   * @param {PointSource} source    The candidate source of exploration
+   * @param {boolean} [force=false] Force the position to be re-explored
+   * @returns {boolean}             Is the source position newly explored?
+   */
+  explore(source, force=false) {
+    const r = source.radius;
+    const coords = canvas.grid.getCenter(source.x, source.y).map(Math.round).join("_");
+    const position = this.positions[coords];
+
+    // Check whether the position has already been explored
+    let explored = position && (position.limit !== true) && (position.radius >= r);
+    if ( explored && !force ) return false;
+
+    // Update explored positions
+    if ( CONFIG.debug.fog ) console.debug("SightLayer | Updating fog exploration for new explored position.");
+    this.updateSource({positions: {
+      [coords]: {radius: r, limit: source.los.isConstrained}
+    }});
+    return true;
+  }
+
+  /* -------------------------------------------- */
+
   /**
    * Obtain the fog of war exploration progress for a specific Scene and User.
    * @param {object} [query]        Parameters for which FogExploration document is retrieved
@@ -45,41 +71,5 @@ class FogExploration extends ClientDocumentMixin(foundry.documents.BaseFogExplor
     if ( !this.explored ) return null;
     const bt = new PIXI.BaseTexture(this.explored);
     return new PIXI.Texture(bt);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  _onCreate(data, options, userId) {
-    super._onCreate(data, options, userId);
-    if ( (options.loadFog !== false) && (this.user === game.user) && (this.scene === canvas.scene) ) canvas.fog.load();
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  _onUpdate(data, options, userId) {
-    super._onUpdate(data, options, userId);
-    if ( (options.loadFog !== false) && (this.user === game.user) && (this.scene === canvas.scene) ) canvas.fog.load();
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  _onDelete(options, userId) {
-    super._onDelete(options, userId);
-    if ( (options.loadFog !== false) && (this.user === game.user) && (this.scene === canvas.scene) ) canvas.fog.load();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  explore(source, force=false) {
-    const msg = "explore is obsolete and always returns true. The fog exploration does not record position anymore.";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return true;
   }
 }

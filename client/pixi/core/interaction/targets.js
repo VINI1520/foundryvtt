@@ -20,33 +20,36 @@ class UserTargets extends Set {
 
   /** @override */
   add(token) {
-    if ( this.has(token) ) return this;
     super.add(token);
-    this.#hook(token, true);
-    return this;
+    this._hook(token, true);
   }
 
   /** @override */
   clear() {
     const tokens = Array.from(this);
     super.clear();
-    tokens.forEach(t => this.#hook(t, false));
+    tokens.forEach(t => this._hook(t, false));
   }
 
   /** @override */
   delete(token) {
-    if ( !this.has(token) ) return false;
     super.delete(token);
-    this.#hook(token, false);
-    return true;
+    this._hook(token, false);
   }
 
   /**
-   * Dispatch the targetToken hook whenever the user's target set changes.
-   * @param {Token} token        The targeted Token
-   * @param {boolean} targeted   Whether the Token has been targeted or untargeted
+   * Dispatch the targetToken hook whenever the user's target set changes
+   * @private
    */
-  #hook(token, targeted) {
+  _hook(token, targeted) {
+    /**
+     * A hook event that fires when a token is targeted or un-targeted.
+     * @function targetToken
+     * @memberof hookEvents
+     * @param {User} user        The User doing the targeting
+     * @param {Token} token      The targeted Token
+     * @param {boolean} targeted Whether the Token has been targeted or untargeted
+     */
     Hooks.callAll("targetToken", this.user, token, targeted);
   }
 }

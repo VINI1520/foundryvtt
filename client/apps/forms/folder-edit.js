@@ -63,7 +63,7 @@ class FolderConfig extends DocumentSheet {
     if ( this.object.id ) await this.object.update(formData);
     else {
       this.object.updateSource(formData);
-      doc = await Folder.create(this.object, { pack: this.object.pack });
+      doc = await Folder.create(this.object);
     }
     this.options.resolve?.(doc);
     return doc;

@@ -113,22 +113,17 @@ class CanvasColorManager {
     this.#configureColors(scene, {fogExploredColor, fogUnexploredColor, backgroundColor});
 
     // Update primary cached container and renderer clear color with scene background color
-    canvas.app.renderer.background.color = this.colors.rendererBackground;
+    canvas.app.renderer.backgroundColor = this.colors.rendererBackground;
     canvas.primary.clearColor = [...this.colors.sceneBackground.rgb, 1];
 
     // If darkness changed, activate some darkness handlers to refresh controls.
     if ( darknessChanged ) {
-      canvas.effects._onDarknessChange(this.#darknessLevel, priorDarknessLevel);
       canvas.lighting._onDarknessChange(this.#darknessLevel, priorDarknessLevel);
       canvas.sounds._onDarknessChange(this.#darknessLevel, priorDarknessLevel);
     }
 
     // Push a perception update to refresh lighting and sources with the new computed color values
-    canvas.perception.update({
-      refreshPrimary: true,
-      refreshLighting: true,
-      refreshVisionSources: true
-    });
+    canvas.perception.update({refreshTiles: true, refreshPrimary: true, refreshLighting: true}, true);
   }
 
   /* -------------------------------------------- */

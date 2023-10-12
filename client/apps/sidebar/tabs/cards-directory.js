@@ -1,8 +1,8 @@
 /**
  * The sidebar directory which organizes and displays world-level Cards documents.
- * @extends {DocumentDirectory}
+ * @extends {SidebarDirectory}
  */
-class CardsDirectory extends DocumentDirectory {
+class CardsDirectory extends SidebarDirectory {
 
   /** @override */
   static documentName = "Cards";

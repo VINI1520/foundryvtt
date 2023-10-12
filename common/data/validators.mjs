@@ -28,7 +28,7 @@ export function hasFileExtension(path, extensions) {
  * @return {boolean}
  */
 export function isBase64Data(data, types) {
-  if ( types === undefined ) return /^data:([a-z]+)\/([a-z0-9]+);base64,/.test(data);
+  if ( types === undefined ) return /^data:([a-z]+)\/([a-z]+);base64,/.test(data);
   return types.some(type => data.startsWith(`data:${type};base64,`))
 }
 

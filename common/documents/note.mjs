@@ -65,7 +65,7 @@ class BaseNote extends Document {
       texture: new TextureData({}, {categories: ["IMAGE"], initial: () => this.DEFAULT_ICON, label: "NOTE.EntryIcon"}),
       iconSize: new fields.NumberField({required: true, integer: true, min: 32, initial: 40,
         validationError: "must be an integer greater than 32", label: "NOTE.IconSize"}),
-      text: new fields.StringField({label: "NOTE.TextLabel", textSearch: true}),
+      text: new fields.StringField({label: "NOTE.TextLabel"}),
       fontFamily: new fields.StringField({required: true, label: "NOTE.FontFamily",
         initial: () => globalThis.CONFIG?.defaultFontFamily || "Signika"}),
       fontSize: new fields.NumberField({required: true, integer: true, min: 8, max: 128, initial: 32,

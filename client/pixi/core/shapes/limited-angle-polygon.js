@@ -120,7 +120,7 @@ class LimitedAnglePolygon extends PIXI.Polygon {
     if ( this.externalBounds?.lineSegmentIntersects(a, b, {inside: true}) ) return true;
 
     // 2. Keep edges which are contained within or collide with one of the primary angle boundary rays.
-    const roundPoint = p => ({x: Math.round(p.x), y: Math.round(p.y)});
+    const roundPoint = p => ({x: Math.roundFast(p.x), y: Math.roundFast(p.y)});
     const rMin = Ray.fromAngle(this.origin.x, this.origin.y, this.aMin, this.radius);
     roundPoint(rMin.B);
     const rMax = Ray.fromAngle(this.origin.x, this.origin.y, this.aMax, this.radius);

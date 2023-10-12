@@ -1,13 +1,13 @@
-import {deepClone, diffObject, expandObject, flattenObject, getType, isEmpty, mergeObject} from "../utils/helpers.mjs";
+import {deepClone, expandObject, flattenObject, getType, mergeObject} from "../utils/helpers.mjs";
 import {
   DataField,
   SchemaField,
   EmbeddedDataField,
   EmbeddedCollectionField,
-  ObjectField,
-  TypeDataField, EmbeddedDocumentField
+  SystemDataField,
+  ObjectField
 } from "../data/fields.mjs";
-import {DataModelValidationFailure} from "../data/validation-failure.mjs";
+import {ModelValidationError} from "../data/fields.mjs";
 
 /**
  * @typedef {Object<DataField>}  DataSchema
@@ -15,20 +15,17 @@ import {DataModelValidationFailure} from "../data/validation-failure.mjs";
 
 /**
  * @typedef {Object} DataValidationOptions
- * @property {boolean} [strict=true]     Throw an error if validation fails.
  * @property {boolean} [fallback=false]  Attempt to replace invalid values with valid defaults?
  * @property {boolean} [partial=false]   Allow partial source data, ignoring absent fields?
- * @property {boolean} [dropInvalidEmbedded=false]  If true, invalid embedded documents will emit a warning and be
- *                                                  placed in the invalidDocuments collection rather than causing the
- *                                                  parent to be considered invalid.
  */
 
 /**
  * The abstract base class which defines the data schema contained within a Document.
- * @param {object} [data={}]                    Initial data used to construct the data object. The provided object
- *                                              will be owned by the constructed model instance and may be mutated.
- * @param {DataValidationOptions} [options={}]  Options which affect DataModel construction
- * @param {Document} [options.parent]           A parent DataModel instance to which this DataModel belongs
+ * @param {object} [data={}]          Initial data used to construct the data object. The provided object will be owned
+ *                                    by the constructed model instance and may be mutated.
+ * @param {object} [options={}]       Options which affect DataModel construction
+ * @param {Document} [options.parent]     A parent DataModel instance to which this DataModel belongs
+ * @param {boolean} [options.strict=true] Control the strictness of validation for initially provided data
  * @abstract
  */
 export default class DataModel {
@@ -57,9 +54,7 @@ export default class DataModel {
     this._configure(options);
 
     // Data validation and initialization
-    const fallback = options.fallback ?? !strict;
-    const dropInvalidEmbedded = options.dropInvalidEmbedded ?? !strict;
-    this.validate({strict, fallback, dropInvalidEmbedded, fields: true, joint: true});
+    this.#valid = this.validate({strict, fallback: !strict, fields: true, joint: true});
     this._initialize({strict, ...options});
   }
 
@@ -91,6 +86,13 @@ export default class DataModel {
    */
   parent;
 
+  /**
+   * Is the current state of the DataModel valid?
+   * @type {boolean}
+   * @private
+   */
+  #valid;
+
   /* ---------------------------------------- */
   /*  Data Schema                             */
   /* ---------------------------------------- */
@@ -108,7 +110,7 @@ export default class DataModel {
   /* ---------------------------------------- */
 
   /**
-   * The Data Schema for all instances of this DataModel.
+   * Define the data schema for documents of this type.
    * @type {SchemaField}
    */
   static get schema() {
@@ -133,22 +135,11 @@ export default class DataModel {
 
   /**
    * Is the current state of this DataModel invalid?
-   * The model is invalid if there is any unresolved failure.
    * @type {boolean}
    */
   get invalid() {
-    return Object.values(this.#validationFailures).some(f => f?.unresolved);
+    return !this.#valid;
   }
-
-  /**
-   * An array of validation failure instances which may have occurred when this instance was last validated.
-   * @type {{fields: DataModelValidationFailure|null, joint: DataModelValidationFailure|null}}
-   */
-  get validationFailures() {
-    return this.#validationFailures;
-  }
-
-  #validationFailures = Object.seal({fields: null, joint: null });
 
   /* ---------------------------------------- */
   /*  Data Cleaning Methods                   */
@@ -192,31 +183,20 @@ export default class DataModel {
   /* ---------------------------------------- */
 
   /**
-   * A generator that orders the DataFields in the DataSchema into an expected initialization order.
-   * @returns {Generator<[string,DataField]>}
-   * @protected
-   */
-  static *_initializationOrder() {
-    for ( const entry of this.schema.entries() ) yield entry;
-  }
-
-  /* ---------------------------------------- */
-
-  /**
    * Initialize the instance by copying data from the source object to instance attributes.
    * This mirrors the workflow of SchemaField#initialize but with some added functionality.
    * @param {object} [options]        Options provided to the model constructor
    * @protected
    */
   _initialize(options={}) {
-    for ( let [name, field] of this.constructor._initializationOrder() ) {
+    for ( let [name, field] of this.schema.entries() ) {
       const sourceValue = this._source[name];
 
       // Field initialization
       const value = field.initialize(sourceValue, this, options);
 
       // Special handling for Document IDs.
-      if ( (name === "_id") && (!Object.getOwnPropertyDescriptor(this, "_id") || (this._id === null)) ) {
+      if ( (name === "_id") && (value === null) ) {
         Object.defineProperty(this, name, {value, writable: false, configurable: true});
       }
 
@@ -255,7 +235,7 @@ export default class DataModel {
    */
   clone(data={}, context={}) {
     data = mergeObject(this.toObject(), data, {insertKeys: false, performDeletions: true, inplace: true});
-    return new this.constructor(data, {parent: this.parent, ...context});
+    return new this.constructor(data, context);
   }
 
   /* ---------------------------------------- */
@@ -266,15 +246,12 @@ export default class DataModel {
    * Validate the data contained in the document to check for type and content
    * This function throws an error if data within the document is not valid
    *
-   * @param {object} options                    Optional parameters which customize how validation occurs.
+   * @param {object} options          Optional parameters which customize how validation occurs.
    * @param {object} [options.changes]          A specific set of proposed changes to validate, rather than the full
    *                                            source data of the model.
    * @param {boolean} [options.clean=false]     If changes are provided, attempt to clean the changes before validating
    *                                            them?
    * @param {boolean} [options.fallback=false]  Allow replacement of invalid values with valid defaults?
-   * @param {boolean} [options.dropInvalidEmbedded=false]  If true, invalid embedded documents will emit a warning and
-   *                                                       be placed in the invalidDocuments collection rather than
-   *                                                       causing the parent to be considered invalid.
    * @param {boolean} [options.strict=true]     Throw if an invalid value is encountered, otherwise log a warning?
    * @param {boolean} [options.fields=true]     Perform validation on individual fields?
    * @param {boolean} [options.joint]           Perform joint validation on the full data model?
@@ -282,11 +259,11 @@ export default class DataModel {
    *                                            Joint validation will be disabled by default if changes are passed.
    *                                            Joint validation can be performed on a complete set of changes (for
    *                                            example testing a complete data model) by explicitly passing true.
-   * @return {boolean}                          An indicator for whether the document contains valid data
+   * @return {boolean}                An indicator for whether the document contains valid data
    */
-  validate({changes, clean=false, fallback=false, dropInvalidEmbedded=false, strict=true, fields=true, joint}={}) {
+  validate({changes, clean=false, fallback=false, strict=true, fields=true, joint}={}) {
+    let isValid = true;
     const source = changes ?? this._source;
-    this.#validationFailures.fields = this.#validationFailures.joint = null; // Remove any prior failures
 
     // Determine whether we are performing partial or joint validation
     const partial = !!changes;
@@ -300,31 +277,29 @@ export default class DataModel {
 
     // Validate individual fields in the data or in a specific change-set, throwing errors if validation fails
     if ( fields ) {
-      const failure = this.schema.validate(source, {partial, fallback, dropInvalidEmbedded});
-      if ( failure ) {
+      const error = this.schema.validate(source, {partial, fallback});
+      if ( error ) {
+        isValid = false;
         const id = this._source._id ? `[${this._source._id}] ` : "";
-        failure.message = `${this.constructor.name} ${id}validation errors:`;
-        this.#validationFailures.fields = failure;
-        if ( strict && failure.unresolved ) throw failure.asError();
-        else logger.warn(failure.asError());
+        error.message = `${this.constructor.name} ${id}${error.message}`;
+        if ( strict ) throw error;
+        else logger.warn(error);
       }
     }
 
     // Perform joint document-level validations which consider all fields together
     if ( joint ) {
       try {
-        this.schema._validateModel(source);     // Validate inner models
-        this.constructor.validateJoint(source); // Validate this model
+        this._validateModel(source);
       } catch (err) {
-        const id = this._source._id ? `[${this._source._id}] ` : "";
-        const message = [this.constructor.name, id, `Joint Validation Error:\n${err.message}`].filterJoin(" ");
-        const failure = new DataModelValidationFailure({message, unresolved: true});
-        this.#validationFailures.joint = failure;
-        if ( strict ) throw failure.asError();
-        else logger.warn(failure.asError());
+        isValid = false;
+        const prefix = this["_id"] ? `[${this["_id"]}] ` : "";
+        const e = new ModelValidationError(`${prefix}Model Validation Error:\n${err.message}`)
+        if ( strict ) throw e;
+        else logger.warn(e);
       }
     }
-    return !this.invalid;
+    return isValid;
   }
 
   /* ---------------------------------------- */
@@ -349,24 +324,12 @@ export default class DataModel {
   /* ---------------------------------------- */
 
   /**
-   * Evaluate joint validation rules which apply validation conditions across multiple fields of the model.
-   * Field-specific validation rules should be defined as part of the DataSchema for the model.
-   * This method allows for testing aggregate rules which impose requirements on the overall model.
-   * @param {object} data     Candidate data for the model
+   * Jointly validate the overall data model after each field has been individually validated.
+   * @param {object} data     The candidate data object to validate
    * @throws                  An error if a validation failure is detected
+   * @protected
    */
-  static validateJoint(data) {
-    /**
-     * @deprecated since v11
-     * @ignore
-     */
-    if ( this.prototype._validateModel instanceof Function ) {
-      const msg = `${this.name} defines ${this.name}.prototype._validateModel instance method which should now be`
-                + ` declared as ${this.name}.validateJoint static method.`
-      foundry.utils.logCompatibilityWarning(msg, {from: 11, until: 13});
-      return this.prototype._validateModel.call(this, data);
-    }
-  }
+  _validateModel(data) {}
 
   /* ---------------------------------------- */
   /*  Data Management                         */
@@ -388,7 +351,6 @@ export default class DataModel {
     const _diff = {};
     const _backup = {};
     const _collections = this.collections;
-    const _singletons = this.singletons;
 
     // Expand the object, if dot-notation keys are provided
     if ( Object.keys(changes).some(k => /\./.test(k)) ) changes = expandObject(changes);
@@ -397,22 +359,19 @@ export default class DataModel {
     this.validate({changes, clean: true, fallback: options.fallback, strict: true, fields: true, joint: false});
 
     // Update the source data for all fields and validate the final combined model
-    let error;
     try {
-      DataModel.#updateData(schema, source, changes, {_backup, _collections, _singletons, _diff, ...options});
-      this.validate({fields: this.invalid, joint: true, strict: true});
-    } catch(err) {
-      error = err;
+      DataModel.#updateData(schema, source, changes, {_backup, _collections, _diff, ...options});
+      this.#valid = this.validate({fields: !this.#valid, joint: true, strict: true});
     }
 
-    // Restore the backup data
-    if ( error || options.dryRun ) {
-      mergeObject(this._source, _backup, { recursive: false });
-      if ( error ) throw error;
+    // If any error occurred, restore the backup
+    catch(err) {
+      mergeObject(this._source, _backup);
+      throw err;
     }
 
-    // Initialize the updated data
-    if ( !options.dryRun ) this._initialize();
+    // Re-initialize the updated data
+    this._initialize();
     return _diff;
   }
 
@@ -420,7 +379,6 @@ export default class DataModel {
 
   /**
    * Update the source data for a specific DataSchema.
-   * This method assumes that both source and changes are valid objects.
    * @param {SchemaField} schema      The data schema to update
    * @param {object} source           Source data to be updated
    * @param {object} changes          Changes to apply to the source data
@@ -435,11 +393,12 @@ export default class DataModel {
       const field = schema.get(name);
       if ( !field ) continue;
 
-      // Skip updates where the data is unchanged
-      const prior = source[name];
-      if ( (value?.equals instanceof Function) && value.equals(prior) ) continue;  // Arrays, Sets, etc...
-      if ( (prior === value) ) continue; // Direct comparison
-      _backup[name] = deepClone(prior);
+      // Only apply differences in the cleaned data
+      const current = source[name];
+      if ( current === value ) continue; // no diff
+
+      // Record backup and diff
+      _backup[name] = current;
       _diff[name] = value;
 
       // Field-specific updating logic
@@ -461,42 +420,31 @@ export default class DataModel {
    * @private
    */
   static #updateField(name, field, source, value, options) {
-    const {dryRun, fallback, recursive, restoreDelta, _collections, _singletons, _diff, _backup} = options;
-    const current = source?.[name];   // The current value may be null or undefined
+    const {fallback, recursive, _collections, _diff} = options;
+    const current = source[name];
 
     // Special Case: Update Embedded Collection
     if ( field instanceof EmbeddedCollectionField ) {
-      if ( dryRun ) _backup[name] = current;
-      else _collections[name].update(value, {fallback, recursive, restoreDelta});
-      return;
-    }
-
-    // Special Case: Update Embedded Document
-    if ( (field instanceof EmbeddedDocumentField) && _singletons[name] ) {
-      _diff[name] = _singletons[name].updateSource(value, {dryRun, fallback, recursive, restoreDelta});
-      if ( isEmpty(_diff[name]) ) delete _diff[name];
-      return;
+      return _collections[name].update(value, {fallback, recursive});
     }
 
     // Special Case: Inner Data Schema
     let innerSchema;
     if ( (field instanceof SchemaField) || (field instanceof EmbeddedDataField) ) innerSchema = field;
-    else if ( field instanceof TypeDataField ) {
+    else if ( field instanceof SystemDataField ) {
       const cls = field.getModelForType(source.type);
       if ( cls ) innerSchema = cls.schema;
     }
-    if ( innerSchema && current && value ) {
+    if ( innerSchema ) {
       _diff[name] = {};
       const recursiveOptions = {fallback, recursive, _backup: current, _collections, _diff: _diff[name]};
-      this.#updateData(innerSchema, current, value, recursiveOptions);
-      if ( isEmpty(_diff[name]) ) delete _diff[name];
+      return this.#updateData(innerSchema, current, value, recursiveOptions);
     }
 
     // Special Case: Object Field
-    else if ( (field instanceof ObjectField) && current && value && (recursive !== false) ) {
-      _diff[name] = diffObject(current, value);
-      mergeObject(current, value, {insertKeys: true, insertValues: true, performDeletions: true});
-      if ( isEmpty(_diff[name]) ) delete _diff[name];
+    if ( field instanceof ObjectField ) {
+      if ( recursive === false ) source[name] = value;
+      else mergeObject(current, value, {insertKeys: true, insertValues: true, performDeletions: true});
     }
 
     // Standard Case: Update Directly
@@ -533,9 +481,9 @@ export default class DataModel {
   /**
    * Create a new instance of this DataModel from a source record.
    * The source is presumed to be trustworthy and is not strictly validated.
-   * @param {object} source                    Initial document data which comes from a trusted source.
-   * @param {DataValidationOptions} [context]  Model construction context
-   * @param {boolean} [context.strict=false]   Models created from trusted source data are validated non-strictly
+   * @param {object} source       Initial document data which comes from a trusted source.
+   * @param {object} [context]    Model construction context
+   * @param {boolean} [context.strict=false]  Models created from trusted source data are validated non-strictly
    * @returns {DataModel}
    */
   static fromSource(source, {strict=false, ...context}={}) {
@@ -563,8 +511,20 @@ export default class DataModel {
    * @returns {object}                Migrated source data, if necessary
    */
   static migrateData(source) {
-    if ( !source ) return source;
-    this.schema.migrateSource(source, source);
+    const schema = this.schema;
+    for ( const [name, value] of Object.entries(source) ) {
+      const field = schema.get(name);
+      if ( !field ) continue;
+      if ( field instanceof EmbeddedDataField ) {
+        source[name] = field.model.migrateDataSafe(value || {});
+      }
+      else if ( field instanceof EmbeddedCollectionField ) {
+        (value || []).forEach(d => field.model.migrateDataSafe(d));
+      } else if ( field instanceof SystemDataField ) {
+        const cls = field.getModelForType(source.type);
+        if ( cls ) source[name] = cls.migrateDataSafe(value);
+      }
+    }
     return source;
   }
 

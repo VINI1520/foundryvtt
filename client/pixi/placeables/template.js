@@ -24,6 +24,7 @@ class MeasuredTemplate extends PlaceableObject {
    */
   template;
 
+
   /**
    * The template control icon
    * @type {ControlIcon}
@@ -39,24 +40,12 @@ class MeasuredTemplate extends PlaceableObject {
   /**
    * Internal property used to configure the control border thickness
    * @type {number}
-   * @protected
+   * @private
    */
   _borderThickness = 3;
 
   /** @inheritdoc */
   static embeddedName = "MeasuredTemplate";
-
-  /** @override */
-  static RENDER_FLAGS = {
-    redraw: {propagate: ["refresh"]},
-    refresh: {propagate: ["refreshState", "refreshShape"], alias: true},
-    refreshState: {},
-    refreshShape: {propagate: ["refreshPosition", "refreshGrid", "refreshText", "refreshTemplate"]},
-    refreshTemplate: {},
-    refreshPosition: {propagate: ["refreshGrid"]},
-    refreshGrid: {},
-    refreshText: {}
-  };
 
   /* -------------------------------------------- */
   /*  Properties                                  */
@@ -77,7 +66,7 @@ class MeasuredTemplate extends PlaceableObject {
    * @returns {number}
    */
   get borderColor() {
-    return this.document.borderColor ? Color.fromString(this.document.borderColor).valueOf() : 0x000000;
+    return this.document.borderColor ? this.document.borderColor.replace("#", "0x") : 0x000000;
   }
 
   /* -------------------------------------------- */
@@ -87,7 +76,7 @@ class MeasuredTemplate extends PlaceableObject {
    * @returns {number}
    */
   get fillColor() {
-    return this.document.fillColor ? Color.fromString(this.document.fillColor).valueOf() : 0x000000;
+    return this.document.fillColor ? this.document.fillColor.replace("#", "0x") : 0x000000;
   }
 
   /* -------------------------------------------- */
@@ -107,7 +96,7 @@ class MeasuredTemplate extends PlaceableObject {
    * @type {boolean}
    */
   get isVisible() {
-    return !this.document.hidden || this.owner;
+    return this.owner || !this.document.hidden;
   }
 
   /* -------------------------------------------- */
@@ -117,32 +106,27 @@ class MeasuredTemplate extends PlaceableObject {
    * @type {string}
    */
   get highlightId() {
-    return this.objectId;
+    return `${this.document.documentName}.${this.document.id}`;
   }
 
   /* -------------------------------------------- */
-  /*  Initial Drawing                             */
+  /*  Rendering
   /* -------------------------------------------- */
 
   /** @override */
   async _draw() {
 
-    // Load Fill Texture
+    // Load the texture
     if ( this.document.texture ) {
       this.texture = await loadTexture(this.document.texture, {fallback: "icons/svg/hazard.svg"});
     } else {
       this.texture = null;
     }
 
-    // Template Shape
+    // Draw template components
     this.template = this.addChild(new PIXI.Graphics());
-
-    // Control Icon
-    this.controlIcon = this.addChild(this.#createControlIcon());
-    await this.controlIcon.draw();
-
-    // Ruler Text
-    this.ruler = this.addChild(this.#drawRulerText());
+    this.controlIcon = this.addChild(this._drawControlIcon());
+    this.ruler = this.addChild(this._drawRulerText());
 
     // Enable highlighting for this template
     canvas.grid.addHighlightLayer(this.highlightId);
@@ -150,11 +134,20 @@ class MeasuredTemplate extends PlaceableObject {
 
   /* -------------------------------------------- */
 
+  /** @override */
+  _destroy(options) {
+    if ( !this.isPreview ) canvas.grid.destroyHighlightLayer(this.highlightId);
+    this.texture?.destroy();
+  }
+
+  /* -------------------------------------------- */
+
   /**
    * Draw the ControlIcon for the MeasuredTemplate
    * @returns {ControlIcon}
+   * @private
    */
-  #createControlIcon() {
+  _drawControlIcon() {
     const size = Math.max(Math.round((canvas.dimensions.size * 0.5) / 20) * 20, 40);
     let icon = new ControlIcon({texture: CONFIG.controlIcons.template, size: size});
     icon.x -= (size * 0.5);
@@ -167,8 +160,9 @@ class MeasuredTemplate extends PlaceableObject {
   /**
    * Draw the Text label used for the MeasuredTemplate
    * @returns {PreciseText}
+   * @private
    */
-  #drawRulerText() {
+  _drawRulerText() {
     const style = CONFIG.canvasTextStyle.clone();
     style.fontSize = Math.max(Math.round(canvas.dimensions.size * 0.36 * 12) / 12, 36);
     const text = new PreciseText(null, style);
@@ -179,125 +173,52 @@ class MeasuredTemplate extends PlaceableObject {
   /* -------------------------------------------- */
 
   /** @override */
-  _destroy(options) {
-    canvas.grid.destroyHighlightLayer(this.highlightId);
-    this.texture?.destroy();
-  }
-
-  /* -------------------------------------------- */
-  /*  Incremental Refresh                         */
-  /* -------------------------------------------- */
-
-  /** @override */
-  _applyRenderFlags(flags) {
-    if ( flags.refreshState ) this.#refreshState();
-    if ( flags.refreshPosition ) this.#refreshPosition();
-    if ( flags.refreshShape ) this.#refreshShape();
-    if ( flags.refreshTemplate ) this._refreshTemplate();
-    if ( flags.refreshGrid ) this.highlightGrid();
-    if ( flags.refreshText ) this._refreshRulerText();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the displayed state of the MeasuredTemplate.
-   * This refresh occurs when the user interaction state changes.
-   */
-  #refreshState() {
-
-    // Template Visibility
-    this.visible = this.isVisible && !this.hasPreview;
-
-    // Control Icon Visibility
-    const isHidden = this.document.hidden;
-    this.controlIcon.refresh({
-      visible: this.visible && this.layer.active && this.document.isOwner,
-      iconColor: isHidden ? 0xFF3300 : 0xFFFFFF,
-      borderColor: isHidden ? 0xFF3300 : 0xFF5500,
-      borderVisible: this.hover || this.layer.highlightObjects
-    });
-
-    // Alpha transparency
-    const alpha = isHidden ? 0.5 : 1;
-    this.template.alpha = alpha;
-    this.ruler.alpha = alpha;
-    const highlightLayer = canvas.grid.getHighlightLayer(this.highlightId);
-    highlightLayer.visible = this.visible;
-    highlightLayer.alpha = alpha;
-    this.alpha = this._getTargetAlpha();
-
-    // Ruler Visibility
-    this.ruler.visible = this.visible && this.layer.active;
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  _getTargetAlpha() {
-    return this.isPreview ? 0.8 : 1.0;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the position of the MeasuredTemplate
-   */
-  #refreshPosition() {
-    let {x, y} = this.document;
-    this.position.set(x, y);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the underlying geometric shape of the MeasuredTemplate.
-   */
-  #refreshShape() {
-    let {x, y, direction, distance} = this.document;
-    distance *= canvas.dimensions.distancePixels;
+  _refresh(options) {
+    let {x, y, direction, distance, angle, width} = this.document;
+    let d = canvas.dimensions;
+    distance *= (d.size / d.distance);
+    width *= (d.size / d.distance);
     direction = Math.toRadians(direction);
 
-    // Create a Ray from origin to endpoint
+    // Template position
+    this.position.set(x, y);
+
+    // Create ray and bounding rectangle
     this.ray = Ray.fromAngle(x, y, direction, distance);
 
     // Get the Template shape
-    this.shape = this._computeShape();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Compute the geometry for the template using its document data.
-   * Subclasses can override this method to take control over how different shapes are rendered.
-   * @returns {PIXI.Circle|PIXI.Rectangle|PIXI.Polygon}
-   * @protected
-   */
-  _computeShape() {
-    let {angle, width, t} = this.document;
-    const {angle: direction, distance} = this.ray;
-    width *= canvas.dimensions.distancePixels;
-    switch ( t ) {
+    switch ( this.document.t ) {
       case "circle":
-        return this.constructor.getCircleShape(distance);
+        this.shape = this._getCircleShape(distance);
+        break;
       case "cone":
-        return this.constructor.getConeShape(direction, angle, distance);
+        this.shape = this._getConeShape(direction, angle, distance);
+        break;
       case "rect":
-        return this.constructor.getRectShape(direction, distance);
+        this.shape = this._getRectShape(direction, distance);
+        break;
       case "ray":
-        return this.constructor.getRayShape(direction, distance, width);
+        this.shape = this._getRayShape(direction, distance, width);
     }
+
+    // Draw the template shape and highlight the grid
+    this._refreshTemplate();
+    this.highlightGrid();
+
+    // Update the HUD
+    this._refreshControlIcon();
+    this._refreshRulerText();
   }
 
   /* -------------------------------------------- */
 
   /**
    * Refresh the display of the template outline and shape.
-   * Subclasses may override this method to take control over how the template is visually rendered.
    * @protected
    */
   _refreshTemplate() {
     const t = this.template.clear();
+    if ( !this.isVisible ) return;
 
     // Draw the Template outline
     t.lineStyle(this._borderThickness, this.borderColor, 0.75).beginFill(0x000000, 0.0);
@@ -320,11 +241,27 @@ class MeasuredTemplate extends PlaceableObject {
   /* -------------------------------------------- */
 
   /**
+   * Refresh the display of the ControlIcon for this MeasuredTemplate object.
+   * @protected
+   */
+  _refreshControlIcon() {
+    const ci = this.controlIcon;
+    const isHidden = this.document.hidden;
+    this.controlIcon.tintColor = isHidden ? 0xFF3300 : 0xFFFFFF;
+    this.controlIcon.borderColor = isHidden ? 0xFF3300 : 0xFF5500;
+    ci.draw();
+    ci.visible = this.layer.active && this.isVisible;
+    ci.border.visible = this.hover;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
    * Get a Circular area of effect given a radius of effect
    * @param {number} distance
-   * @returns {PIXI.Circle}
+   * @private
    */
-  static getCircleShape(distance) {
+  _getCircleShape(distance) {
     return new PIXI.Circle(0, 0, distance);
   }
 
@@ -335,9 +272,9 @@ class MeasuredTemplate extends PlaceableObject {
    * @param {number} direction
    * @param {number} angle
    * @param {number} distance
-   * @returns {PIXI.Polygon}
+   * @private
    */
-  static getConeShape(direction, angle, distance) {
+  _getConeShape(direction, angle, distance) {
     angle = angle || 90;
     const coneType = game.settings.get("core", "coneTemplateType");
 
@@ -368,14 +305,14 @@ class MeasuredTemplate extends PlaceableObject {
    * Get a Rectangular area of effect given a width and height
    * @param {number} direction
    * @param {number} distance
-   * @returns {PIXI.Rectangle}
+   * @private
    */
-  static getRectShape(direction, distance) {
+  _getRectShape(direction, distance) {
     let d = canvas.dimensions;
     let r = Ray.fromAngle(0, 0, direction, distance);
     let dx = Math.round(r.dx / (d.size / 2)) * (d.size / 2);
     let dy = Math.round(r.dy / (d.size / 2)) * (d.size / 2);
-    return new PIXI.Rectangle(0, 0, dx, dy).normalize();
+    return new PIXI.Rectangle(0, 0, dx + Math.sign(dx), dy + Math.sign(dy)).normalize();
   }
 
   /* -------------------------------------------- */
@@ -385,16 +322,16 @@ class MeasuredTemplate extends PlaceableObject {
    * @param {number} direction
    * @param {number} distance
    * @param {number} width
-   * @returns {PIXI.Polygon}
+   * @private
    */
-  static getRayShape(direction, distance, width) {
+  _getRayShape(direction, distance, width) {
     let up = Ray.fromAngle(0, 0, direction - Math.toRadians(90), (width / 2)+1);
     let down = Ray.fromAngle(0, 0, direction + Math.toRadians(90), (width / 2)+1);
     let l1 = Ray.fromAngle(up.B.x, up.B.y, direction, distance+1);
     let l2 = Ray.fromAngle(down.B.x, down.B.y, direction, distance+1);
 
     // Create Polygon shape and draw
-    const points = [down.B.x, down.B.y, up.B.x, up.B.y, l1.B.x, l1.B.y, l2.B.x, l2.B.y];
+    const points = [down.B.x, down.B.y, up.B.x, up.B.y, l1.B.x, l1.B.y, l2.B.x, l2.B.y, down.B.x, down.B.y];
     return new PIXI.Polygon(points);
   }
 
@@ -402,13 +339,12 @@ class MeasuredTemplate extends PlaceableObject {
 
   /**
    * Update the displayed ruler tooltip text
-   * @protected
+   * @private
    */
   _refreshRulerText() {
     let text;
-    const {distance, t} = this.document;
     let u = canvas.scene.grid.units;
-    if ( t === "rect" ) {
+    if ( this.document.t === "rect" ) {
       let d = canvas.dimensions;
       let dx = Math.round(this.ray.dx) * (d.distance / d.size);
       let dy = Math.round(this.ray.dy) * (d.distance / d.size);
@@ -416,11 +352,12 @@ class MeasuredTemplate extends PlaceableObject {
       let h = Math.round(dy * 10) / 10;
       text = `${w}${u} x ${h}${u}`;
     } else {
-      let d = Math.round(distance * 10) / 10;
+      let d = Math.round(this.document.distance * 10) / 10;
       text = `${d}${u}`;
     }
     this.ruler.text = text;
     this.ruler.position.set(this.ray.dx + 10, this.ray.dy + 5);
+    this.ruler.visible = this.layer.active && this.isVisible;
   }
 
   /* -------------------------------------------- */
@@ -429,7 +366,7 @@ class MeasuredTemplate extends PlaceableObject {
    * Highlight the grid squares which should be shown under the area of effect
    */
   highlightGrid() {
-    if ( !this.visible ) return;
+    if ( !this.id || !this.shape ) return;
 
     // Clear the existing highlight layer
     const grid = canvas.grid;
@@ -526,34 +463,11 @@ class MeasuredTemplate extends PlaceableObject {
   }
 
   /* -------------------------------------------- */
-  /*  Document Event Handlers                     */
-  /* -------------------------------------------- */
-
-  /** @override */
-  _onUpdate(data, options, userId) {
-    super._onUpdate(data, options, userId);
-
-    // Full re-draw
-    const changed = new Set(Object.keys(data));
-    if ( changed.has("texture") ) return this.renderFlags.set({redraw: true});
-
-    // Incremental Refresh
-    this.renderFlags.set({
-      refreshState: changed.has("hidden"),
-      refreshShape: ["angle", "direction", "distance", "width", "t"].some(k => changed.has(k)),
-      refreshTemplate: changed.has("borderColor"),
-      refreshPosition: ["x", "y"].some(k => changed.has(k)),
-      refreshGrid: ["hidden", "borderColor", "fillColor"].some(k => changed.has(k))
-    });
-  }
-
-  /* -------------------------------------------- */
   /*  Interactivity                               */
   /* -------------------------------------------- */
 
   /** @override */
   _canControl(user, event) {
-    if ( !this.layer.active || this.isPreview ) return false;
     return user.isGM || (user === this.document.user);
   }
 
@@ -576,4 +490,31 @@ class MeasuredTemplate extends PlaceableObject {
   _onClickRight(event) {
     this.document.update({hidden: !this.document.hidden});
   }
+
+  /** @inheritDoc */
+  _onDragStart() {
+    super._onDragStart();
+    if ( this.isPreview ) this._original.renderable = false;
+  }
+
+  /** @inheritDoc */
+  _onDragEnd() {
+    super._onDragEnd();
+    if ( this.isPreview ) this._original.renderable = true;
+  }
+
+  /* -------------------------------------------- */
+  /*  Socket Listeners and Handlers               */
+  /* -------------------------------------------- */
+
+  /** @override */
+  _onUpdate(data, options, userId) {
+    const changed = new Set(Object.keys(data));
+    if ( changed.has("texture") ) {
+      this.draw();
+      options.skipRefresh = true;
+    }
+    super._onUpdate(data, options, userId);
+  }
 }
+

@@ -23,29 +23,12 @@
  * ```
  */
 class Actor extends ClientDocumentMixin(foundry.documents.BaseActor) {
-  /** @inheritdoc */
-  _configure(options={}) {
-    super._configure(options);
-
-    /**
-     * Maintain a list of Token Documents that represent this Actor, stored by Scene.
-     * @type {IterableWeakMap<Scene, IterableWeakSet<TokenDocument>>}
-     * @private
-     */
-    Object.defineProperty(this, "_dependentTokens", { value: new foundry.utils.IterableWeakMap() });
-  }
 
   /**
    * An object that tracks which tracks the changes to the data model which were applied by active effects
    * @type {object}
    */
-  overrides = this.overrides ?? {};
-
-  /**
-   * The statuses that are applied to this actor by active effects
-   * @type {Set<string>}
-   */
-  statuses = this.statuses ?? new Set();
+  overrides = {};
 
   /**
    * A cached array of image paths which can be used for this Actor's token.
@@ -101,29 +84,11 @@ class Actor extends ClientDocumentMixin(foundry.documents.BaseActor) {
   /* -------------------------------------------- */
 
   /**
-   * Retrieve the list of ActiveEffects that are currently applied to this Actor.
-   * @type {ActiveEffect[]}
-   */
-  get appliedEffects() {
-    const effects = [];
-    for ( const effect of this.allApplicableEffects() ) {
-      if ( effect.active ) effects.push(effect);
-    }
-    return effects;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * An array of ActiveEffect instances which are present on the Actor which have a limited duration.
    * @type {ActiveEffect[]}
    */
   get temporaryEffects() {
-    const effects = [];
-    for ( const effect of this.allApplicableEffects() ) {
-      if ( effect.active && effect.isTemporary ) effects.push(effect);
-    }
-    return effects;
+    return this.effects.filter(e => e.isTemporary && !e.disabled);
   }
 
   /* -------------------------------------------- */
@@ -138,12 +103,29 @@ class Actor extends ClientDocumentMixin(foundry.documents.BaseActor) {
 
   /* -------------------------------------------- */
 
+  /** @inheritdoc */
+  get uuid() {
+    if ( this.isToken ) return this.token.uuid;
+    return super.uuid;
+  }
+
+  /* -------------------------------------------- */
+
   /**
-   * Whether the Actor has at least one Combatant in the active Combat that represents it.
-   * @returns {boolean}
+   * Request wildcard token images from the server and return them.
+   * @param {string} actorId         The actor whose prototype token contains the wildcard image path.
+   * @param {object} [options]
+   * @param {string} [options.pack]  The name of the compendium the actor is in.
+   * @returns {Promise<string[]>}    The list of filenames to token images that match the wildcard search.
+   * @private
    */
-  get inCombat() {
-    return !!game.combat?.getCombatantByActor(this);
+  static _requestTokenImages(actorId, options={}) {
+    return new Promise((resolve, reject) => {
+      game.socket.emit("requestTokenImages", actorId, options, result => {
+        if ( result.error ) return reject(new Error(result.error));
+        resolve(result.files);
+      });
+    });
   }
 
   /* -------------------------------------------- */
@@ -156,26 +138,16 @@ class Actor extends ClientDocumentMixin(foundry.documents.BaseActor) {
   applyActiveEffects() {
     const overrides = {};
 
-    this.statuses ??= new Set();
-    // Identify which special statuses had been active
-    const specialStatuses = new Map();
-    for ( const statusId of Object.values(CONFIG.specialStatusEffects) ) {
-      specialStatuses.set(statusId, this.statuses.has(statusId));
-    }
-    this.statuses.clear();
-
     // Organize non-disabled effects by their application priority
-    const changes = [];
-    for ( const effect of this.allApplicableEffects() ) {
-      if ( !effect.active ) continue;
-      changes.push(...effect.changes.map(change => {
-        const c = foundry.utils.deepClone(change);
-        c.effect = effect;
+    const changes = this.effects.reduce((changes, e) => {
+      if ( e.disabled || e.isSuppressed ) return changes;
+      return changes.concat(e.changes.map(c => {
+        c = foundry.utils.duplicate(c);
+        c.effect = e;
         c.priority = c.priority ?? (c.mode * 10);
         return c;
       }));
-      for ( const statusId of effect.statuses ) this.statuses.add(statusId);
-    }
+    }, []);
     changes.sort((a, b) => a.priority - b.priority);
 
     // Apply all changes
@@ -187,15 +159,6 @@ class Actor extends ClientDocumentMixin(foundry.documents.BaseActor) {
 
     // Expand the set of final overrides
     this.overrides = foundry.utils.expandObject(overrides);
-
-    // Apply special statuses that changed to active tokens
-    let tokens;
-    for ( const [statusId, wasActive] of specialStatuses ) {
-      const isActive = this.statuses.has(statusId);
-      if ( isActive === wasActive ) continue;
-      tokens ??= this.getActiveTokens();
-      for ( const token of tokens ) token._onApplyStatusEffect(statusId, isActive);
-    }
   }
 
   /* -------------------------------------------- */
@@ -208,39 +171,24 @@ class Actor extends ClientDocumentMixin(foundry.documents.BaseActor) {
    * @param {boolean} [linked=false]    Limit results to Tokens which are linked to the Actor. Otherwise, return all
    *                                    Tokens even those which are not linked.
    * @param {boolean} [document=false]  Return the Document instance rather than the PlaceableObject
-   * @returns {Array<TokenDocument|Token>} An array of Token instances in the current Scene which reference this Actor.
+   * @returns {Token[]}                 An array of Token instances in the current Scene which reference this Actor.
    */
   getActiveTokens(linked=false, document=false) {
     if ( !canvas.ready ) return [];
+
+    // Synthetic token actors are, themselves, active tokens
+    if ( this.isToken ) {
+      if ( this.token.parent !== canvas.scene ) return [];
+      return document ? [this.token] : [this.token.object];
+    }
+
+    // Otherwise, find tokens within the current scene
     const tokens = [];
-    for ( const t of this.getDependentTokens({ linked, scenes: canvas.scene }) ) {
-      if ( t !== canvas.scene.tokens.get(t.id) ) continue;
-      if ( document ) tokens.push(t);
-      else if ( t.rendered ) tokens.push(t.object);
+    for ( let t of canvas.scene.tokens ) {
+      if ( t.actorId !== this.id ) continue;
+      if ( !linked || t.actorLink ) tokens.push(document ? t : t.object);
     }
     return tokens;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Get all ActiveEffects that may apply to this Actor.
-   * If CONFIG.ActiveEffect.legacyTransferral is true, this is equivalent to actor.effects.contents.
-   * If CONFIG.ActiveEffect.legacyTransferral is false, this will also return all the transferred ActiveEffects on any
-   * of the Actor's owned Items.
-   * @yields {ActiveEffect}
-   * @returns {Generator<ActiveEffect, void, void>}
-   */
-  *allApplicableEffects() {
-    for ( const effect of this.effects ) {
-      yield effect;
-    }
-    if ( CONFIG.ActiveEffect.legacyTransferral ) return;
-    for ( const item of this.items ) {
-      for ( const effect of item.effects ) {
-        if ( effect.transfer ) yield effect;
-      }
-    }
   }
 
   /* -------------------------------------------- */
@@ -272,24 +220,6 @@ class Actor extends ClientDocumentMixin(foundry.documents.BaseActor) {
       const image = images[Math.floor(Math.random() * images.length)];
       tokenData.texture.src = this._lastWildcard = image;
     }
-
-    if ( !tokenData.actorLink ) {
-      if ( tokenData.appendNumber ) {
-        // Count how many tokens are already linked to this actor
-        const tokens = canvas.scene.tokens.filter(t => t.actorId === this.id);
-        const n = tokens.length + 1;
-        tokenData.name = `${tokenData.name} (${n})`;
-      }
-
-      if ( tokenData.prependAdjective ) {
-        const adjectives = Object.values(
-          foundry.utils.getProperty(game.i18n.translations, CONFIG.Token.adjectivesPrefix)
-          || foundry.utils.getProperty(game.i18n._fallback, CONFIG.Token.adjectivesPrefix) || {});
-        const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
-        tokenData.name = `${adjective} ${tokenData.name}`;
-      }
-    }
-
     foundry.utils.mergeObject(tokenData, data);
     const cls = getDocumentClass("Token");
     return new cls(tokenData, {actor: this});
@@ -340,6 +270,18 @@ class Actor extends ClientDocumentMixin(foundry.documents.BaseActor) {
       if ( isDelta ) value = Number(current) + value;
       updates = {[`system.${attribute}`]: value};
     }
+
+    /**
+     * A hook event that fires when a token's resource bar attribute has been modified.
+     * @function modifyTokenAttribute
+     * @memberof hookEvents
+     * @param {object} data           An object describing the modification
+     * @param {string} data.attribute The attribute path
+     * @param {number} data.value     The target attribute value
+     * @param {boolean} data.isDelta  Does number represents a relative change (true) or an absolute change (false)
+     * @param {boolean} data.isBar    Whether the new value is part of an attribute bar, or just a direct value
+     * @param {objects} updates       The update delta that will be applied to the Token's actor
+     */
     const allowed = Hooks.call("modifyTokenAttribute", {attribute, value, isDelta, isBar}, updates);
     return allowed !== false ? this.update(updates) : this;
   }
@@ -398,8 +340,7 @@ class Actor extends ClientDocumentMixin(foundry.documents.BaseActor) {
 
     // Roll initiative for combatants
     const combatants = combat.combatants.reduce((arr, c) => {
-      if ( this.isToken && (c.token !== this.token) ) return arr;
-      if ( !this.isToken && (c.actor !== this) ) return arr;
+      if ( c.actor.id !== this.id ) return arr;
       if ( !rerollInitiative && (c.initiative !== null) ) return arr;
       arr.push(c.id);
       return arr;
@@ -407,99 +348,6 @@ class Actor extends ClientDocumentMixin(foundry.documents.BaseActor) {
 
     await combat.rollInitiative(combatants, initiativeOptions);
     return combat;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Request wildcard token images from the server and return them.
-   * @param {string} actorId         The actor whose prototype token contains the wildcard image path.
-   * @param {object} [options]
-   * @param {string} [options.pack]  The name of the compendium the actor is in.
-   * @returns {Promise<string[]>}    The list of filenames to token images that match the wildcard search.
-   * @private
-   */
-  static _requestTokenImages(actorId, options={}) {
-    return new Promise((resolve, reject) => {
-      game.socket.emit("requestTokenImages", actorId, options, result => {
-        if ( result.error ) return reject(new Error(result.error));
-        resolve(result.files);
-      });
-    });
-  }
-
-  /* -------------------------------------------- */
-  /*  Tokens                                      */
-  /* -------------------------------------------- */
-
-  /**
-   * Get this actor's dependent tokens.
-   * If the actor is a synthetic token actor, only the exact Token which it represents will be returned.
-   * @param {object} [options]
-   * @param {Scene|Scene[]} [options.scenes]  A single Scene, or list of Scenes to filter by.
-   * @param {boolean} [options.linked]        Limit the results to tokens that are linked to the actor.
-   * @returns {TokenDocument[]}
-   */
-  getDependentTokens({ scenes, linked=false }={}) {
-    if ( this.isToken && !scenes ) return [this.token];
-    if ( scenes ) scenes = Array.isArray(scenes) ? scenes : [scenes];
-    else scenes = Array.from(this._dependentTokens.keys());
-
-    if ( this.isToken ) {
-      const parent = this.token.parent;
-      return scenes.includes(parent) ? [this.token] : [];
-    }
-
-    const allTokens = [];
-    for ( const scene of scenes ) {
-      if ( !scene ) continue;
-      const tokens = this._dependentTokens.get(scene);
-      for ( const token of (tokens ?? []) ) {
-        if ( !linked || token.actorLink ) allTokens.push(token);
-      }
-    }
-
-    return allTokens;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Register a token as a dependent of this actor.
-   * @param {TokenDocument} token  The token.
-   * @internal
-   */
-  _registerDependentToken(token) {
-    if ( !token?.parent ) return;
-    if ( !this._dependentTokens.has(token.parent) ) {
-      this._dependentTokens.set(token.parent, new foundry.utils.IterableWeakSet());
-    }
-    const tokens = this._dependentTokens.get(token.parent);
-    tokens.add(token);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Remove a token from this actor's dependents.
-   * @param {TokenDocument} token  The token.
-   * @internal
-   */
-  _unregisterDependentToken(token) {
-    if ( !token?.parent ) return;
-    const tokens = this._dependentTokens.get(token.parent);
-    tokens?.delete(token);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Prune a whole scene from this actor's dependent tokens.
-   * @param {Scene} scene  The scene.
-   * @internal
-   */
-  _unregisterDependentScene(scene) {
-    this._dependentTokens.delete(scene);
   }
 
   /* -------------------------------------------- */
@@ -541,26 +389,29 @@ class Actor extends ClientDocumentMixin(foundry.documents.BaseActor) {
 
   /** @override */
   _onUpdate(data, options, userId) {
-    // Update prototype token config references to point to the new PrototypeToken object.
-    Object.values(this.apps).forEach(app => {
-      if ( !(app instanceof TokenConfig) ) return;
-      app.object = this.prototypeToken;
-      app._previewChanges(data.prototypeToken ?? {});
-    });
-
     super._onUpdate(data, options, userId);
+
+    // Update references to original state so that resetting the preview does not clobber these updates in-memory.
+    Object.values(ui.windows).forEach(app => {
+      if ( !(app.object instanceof foundry.data.PrototypeToken) || (app.object.parent !== this) ) return;
+      app.original = this.prototypeToken.toObject();
+    });
 
     // Get the changed attributes
     const keys = Object.keys(data).filter(k => k !== "_id");
     const changed = new Set(keys);
 
-    // Additional options only apply to base Actors
+    // Additional options only apply to Actors which are not synthetic Tokens
     if ( this.isToken ) return;
-
-    this._updateDependentTokens(data, options);
 
     // If the prototype token was changed, expire any cached token images
     if ( changed.has("prototypeToken") ) this._tokenImages = null;
+
+    // Update the active TokenDocument instances which represent this Actor
+    const tokens = this.getActiveTokens(false, true);
+    for ( let t of tokens ) {
+      t._onUpdateBaseActor(data, options);
+    }
 
     // If ownership changed for the actor reset token control
     if ( changed.has("permission") && tokens.length ) {
@@ -572,51 +423,50 @@ class Actor extends ClientDocumentMixin(foundry.documents.BaseActor) {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onCreateDescendantDocuments(parent, collection, documents, data, options, userId) {
-    super._onCreateDescendantDocuments(parent, collection, documents, data, options, userId);
-    this._onEmbeddedDocumentChange();
-    if ( !CONFIG.ActiveEffect.legacyTransferral && (parent instanceof Item) ) this.reset();
+  _onCreateEmbeddedDocuments(embeddedName, ...args) {
+    super._onCreateEmbeddedDocuments(embeddedName, ...args);
+    this._onEmbeddedDocumentChange(embeddedName);
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onUpdateDescendantDocuments(parent, collection, documents, changes, options, userId) {
-    super._onUpdateDescendantDocuments(parent, collection, documents, changes, options, userId);
-    this._onEmbeddedDocumentChange();
-    if ( !CONFIG.ActiveEffect.legacyTransferral && (parent instanceof Item) ) this.reset();
+  _onUpdateEmbeddedDocuments(embeddedName, ...args) {
+    super._onUpdateEmbeddedDocuments(embeddedName, ...args);
+    this._onEmbeddedDocumentChange(embeddedName);
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onDeleteDescendantDocuments(parent, collection, documents, ids, options, userId) {
-    super._onDeleteDescendantDocuments(parent, collection, documents, ids, options, userId);
-    this._onEmbeddedDocumentChange();
-    if ( !CONFIG.ActiveEffect.legacyTransferral && (parent instanceof Item) ) this.reset();
+  _onDeleteEmbeddedDocuments(embeddedName, ...args) {
+    super._onDeleteEmbeddedDocuments(embeddedName, ...args);
+    this._onEmbeddedDocumentChange(embeddedName);
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Additional workflows to perform when any descendant document within this Actor changes.
-   * @protected
+   * Perform various actions on active tokens if embedded documents were changed.
+   * @param {string} embeddedName  The type of embedded document that was modified.
+   * @private
    */
-  _onEmbeddedDocumentChange() {
-    if ( !this.isToken ) this._updateDependentTokens();
-  }
+  _onEmbeddedDocumentChange(embeddedName) {
 
-  /* -------------------------------------------- */
+    // Refresh the display of the CombatTracker UI
+    let refreshCombat = false;
+    if ( this.isToken ) refreshCombat = this.token.inCombat;
+    else if ( game.combat?.getCombatantByActor(this.id) ) refreshCombat = true;
+    if ( refreshCombat ) ui.combat.render();
 
-  /**
-   * Update the active TokenDocument instances which represent this Actor.
-   * @param {object} [update]                        The update delta.
-   * @param {DocumentModificationContext} [options]  The update context.
-   * @protected
-   */
-  _updateDependentTokens(update={}, options={}) {
-    for ( const token of this.getDependentTokens() ) {
-      token._onUpdateBaseActor(update, options);
+    // Refresh the display of active Tokens
+    const tokens = this.getActiveTokens();
+    for ( let token of tokens ) {
+      if ( token.hasActiveHUD ) canvas.tokens.hud.render();
+      if ( token.document.parent.isView ) {
+        token.drawEffects();
+        token.drawBars();
+      }
     }
   }
 

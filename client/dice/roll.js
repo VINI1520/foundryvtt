@@ -54,7 +54,7 @@ class Roll {
      * Store the original cleaned formula for the Roll, prior to any internal evaluation or simplification
      * @type {string}
      */
-    this._formula = this.resetFormula();
+    this._formula = this.constructor.getFormula(this.terms);
 
     /**
      * Track whether this Roll instance has been evaluated or not. Once evaluated the Roll is immutable.
@@ -74,11 +74,7 @@ class Roll {
    * A Proxy environment for safely evaluating a string using only available Math functions
    * @type {Math}
    */
-  static MATH_PROXY = new Proxy(Math, {
-    has: () => true, // Include everything
-    get: (t, k) => k === Symbol.unscopables ? undefined : t[k],
-    set: () => console.error("You may not set properties of the Roll.MATH_PROXY environment") // No-op
-  });
+  static MATH_PROXY = new Proxy(Math, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : t[k]});
 
   /**
    * The HTML template path used to render a complete Roll object to the chat log
@@ -111,7 +107,7 @@ class Roll {
 
   /**
    * Return an Array of the individual DiceTerm instances contained within this Roll.
-   * @type {DiceTerm[]}
+   * @return {DiceTerm[]}
    */
   get dice() {
     return this._dice.concat(this.terms.reduce((dice, t) => {
@@ -125,7 +121,7 @@ class Roll {
 
   /**
    * Return a standardized representation for the displayed formula associated with this Roll.
-   * @type {string}
+   * @return {string}
    */
   get formula() {
     return this.constructor.getFormula(this.terms);
@@ -135,7 +131,7 @@ class Roll {
 
   /**
    * The resulting arithmetic expression after rolls have been evaluated
-   * @type {string}
+   * @return {string}
    */
   get result() {
     return this.terms.map(t => t.total).join("");
@@ -170,7 +166,7 @@ class Roll {
    * @param {number} multiply   A factor to multiply. Dice are multiplied before any additions.
    * @param {number} add        A number of dice to add. Dice are added after multiplication.
    * @param {boolean} [multiplyNumeric]  Apply multiplication factor to numeric scalar terms
-   * @returns {Roll}            The altered Roll expression
+   * @return {Roll}             The altered Roll expression
    */
   alter(multiply, add, {multiplyNumeric=false}={}) {
     if ( this._evaluated ) throw new Error("You may not alter a Roll which has already been evaluated");
@@ -183,7 +179,7 @@ class Roll {
     });
 
     // Update the altered formula and return the altered Roll
-    this.resetFormula();
+    this._formula = this.constructor.getFormula(this.terms);
     return this;
   }
 
@@ -191,7 +187,7 @@ class Roll {
 
   /**
    * Clone the Roll instance, returning a new Roll instance that has not yet been evaluated.
-   * @returns {Roll}
+   * @return {Roll}
    */
   clone() {
     return new this.constructor(this._formula, this.data, this.options);
@@ -204,7 +200,8 @@ class Roll {
    * @param {object} [options={}]     Options which inform how the Roll is evaluated
    * @param {boolean} [options.minimize=false]    Minimize the result, obtaining the smallest possible value.
    * @param {boolean} [options.maximize=false]    Maximize the result, obtaining the largest possible value.
-   * @param {boolean} [options.async=true]        Evaluate the roll asynchronously. false is deprecated
+   * @param {boolean} [options.async=true]        Evaluate the roll asynchronously, receiving a Promise as the returned value.
+   *                                              This will become the default behavior in version 10.x
    * @returns {Roll|Promise<Roll>}    The evaluated Roll instance
    *
    * @example Evaluate a Roll expression
@@ -215,7 +212,7 @@ class Roll {
    * console.log(r.total);  // 11
    * ```
    */
-  evaluate({minimize=false, maximize=false, async=true}={}) {
+  evaluate({minimize=false, maximize=false, async}={}) {
     if ( this._evaluated ) {
       throw new Error(`The ${this.constructor.name} has already been evaluated and is now immutable`);
     }
@@ -332,7 +329,6 @@ class Roll {
 
   /**
    * Alias for evaluate.
-   * @param {object} options    Options passed to Roll#evaluate
    * @see {Roll#evaluate}
    */
   roll(options={}) {
@@ -345,21 +341,11 @@ class Roll {
    * Create a new Roll object using the original provided formula and data.
    * Each roll is immutable, so this method returns a new Roll instance using the same data.
    * @param {object} [options={}]     Evaluation options passed to Roll#evaluate
-   * @returns {Roll}                  A new Roll object, rolled using the same formula and data
+   * @return {Roll}                   A new Roll object, rolled using the same formula and data
    */
   reroll(options={}) {
     const r = this.clone();
     return r.evaluate(options);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Recompile the formula string that represents this Roll instance from its component terms.
-   * @returns {string}                The re-compiled formula
-   */
-  resetFormula() {
-    return this._formula = this.constructor.getFormula(this.terms);
   }
 
   /* -------------------------------------------- */
@@ -371,7 +357,7 @@ class Roll {
    * @param {string} formula        The formula used to create the Roll instance
    * @param {object} [data={}]      The data object which provides component data for the formula
    * @param {object} [options={}]   Additional options which modify or describe this Roll
-   * @returns {Roll}                The constructed Roll instance
+   * @return {Roll}                 The constructed Roll instance
    */
   static create(formula, data={}, options={}) {
     const cls = CONFIG.Dice.rolls[0];
@@ -409,17 +395,17 @@ class Roll {
   static safeEval(expression) {
     let result;
     try {
-      // eslint-disable-next-line no-new-func
-      const evl = new Function("sandbox", `with (sandbox) { return ${expression}}`);
+      const src = 'with (sandbox) { return ' + expression + '}';
+      const evl = new Function('sandbox', src);
       result = evl(this.MATH_PROXY);
-    } catch(err) {
+    } catch {
       result = undefined;
     }
     if ( !Number.isNumeric(result) ) {
       throw new Error(`Roll.safeEval produced a non-numeric result from expression "${expression}"`);
     }
     return result;
-  }
+  };
 
   /* -------------------------------------------- */
 
@@ -477,7 +463,7 @@ class Roll {
    * Simulate a roll and evaluate the distribution of returned results
    * @param {string} formula      The Roll expression to simulate
    * @param {number} n            The number of simulations
-   * @returns {Promise<number[]>} The rolled totals
+   * @return {Promise<number[]>}  The rolled totals
    */
   static async simulate(formula, n=10000) {
     const results = await Promise.all([...Array(n)].map(async () => {
@@ -548,14 +534,13 @@ class Roll {
    *
    * @param {string} formula          The original formula within which to replace
    * @param {object} data             The data object which provides replacements
-   * @param {object} [options]        Options which modify formula replacement
-   * @param {string} [options.missing]      The value that should be assigned to any unmatched keys.
-   *                                        If null, the unmatched key is left as-is.
-   * @param {boolean} [options.warn=false]  Display a warning notification when encountering an un-matched key.
+   * @param {string} [missing]        The value that should be assigned to any unmatched keys.
+   *                                  If null, the unmatched key is left as-is.
+   * @param {boolean} [warn]          Display a warning notification when encountering an un-matched key.
    * @static
    */
   static replaceFormulaData(formula, data, {missing, warn=false}={}) {
-    let dataRgx = new RegExp(/@([a-z.0-9_-]+)/gi);
+    let dataRgx = new RegExp(/@([a-z.0-9_\-]+)/gi);
     return formula.replace(dataRgx, (match, term) => {
       let value = foundry.utils.getProperty(data, term);
       if ( value == null ) {
@@ -571,12 +556,12 @@ class Roll {
   /**
    * Validate that a provided roll formula can represent a valid
    * @param {string} formula    A candidate formula to validate
-   * @returns {boolean}         Is the provided input a valid dice formula?
+   * @return {boolean}          Is the provided input a valid dice formula?
    */
   static validate(formula) {
 
     // Replace all data references with an arbitrary number
-    formula = formula.replace(/@([a-z.0-9_-]+)/gi, "1");
+    formula = formula.replace(/@([a-z.0-9_\-]+)/gi, "1");
 
     // Attempt to evaluate the roll
     try {
@@ -631,8 +616,7 @@ class Roll {
 
   /**
    * Handle closing of a parenthetical term to create a MathTerm expression with a function and arguments
-   * @param {string} expression   The expression to split
-   * @returns {MathTerm[]}        An array of evaluated MathTerm instances
+   * @returns {MathTerm[]}
    * @private
    */
   static _splitMathArgs(expression) {
@@ -654,7 +638,7 @@ class Roll {
   /* -------------------------------------------- */
 
   /**
-   * Split a formula by identifying its outermost dice pool terms.
+   * Split a formula by identifying its outer-most dice pool terms
    * @param {string} _formula      The raw formula to split
    * @returns {string[]}          An array of terms, split on parenthetical terms
    * @private
@@ -671,20 +655,15 @@ class Roll {
         const options = { flavor: group.flavor ? group.flavor.slice(1, -1) : undefined };
         return [new PoolTerm({terms, modifiers, options})];
       }
-    });
+    })
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Split a formula by identifying its outermost groups using a certain group symbol like parentheses or brackets.
+   * Split a formula by identifying its outer-most groups using a certain group symbol like parentheses or brackets.
    * @param {string} _formula     The raw formula to split
    * @param {object} options      Options that configure how groups are split
-   * @param {RegExp} [options.openRegexp]   A regular expression that identifies opening groups
-   * @param {RegExp} [options.closeRegexp]  A regular expression that identifies closing groups
-   * @param {string} [options.openSymbol]   The string symbol that opens a group
-   * @param {string} [options.closeSymbol]  The string symbol that closes a group
-   * @param {Function} [options.onClose]    A callback function invoked when a group is closed
    * @returns {string[]}          An array of terms, split on dice pool terms
    * @private
    */
@@ -782,10 +761,10 @@ class Roll {
     return parts.reduce((terms, t) => {
       t = t.trim();
       if ( !t ) return terms;
-      const isOperator = OperatorTerm.OPERATORS.includes(t);
+      const isOperator = OperatorTerm.OPERATORS.includes(t)
       terms.push(isOperator ? new OperatorTerm({operator: t}) : this._restoreFlavor(t, flavors));
       return terms;
-    }, []);
+    },[]);
   }
 
   /* -------------------------------------------- */
@@ -811,9 +790,9 @@ class Roll {
 
   /**
    * Restore flavor text to a string term
-   * @param {string} term             The string term possibly containing flavor symbols
-   * @param {Object<string>} flavors  The extracted flavors object
-   * @returns {string}                The restored term containing flavor text
+   * @param {string} term         The string term possibly containing flavor symbols
+   * @param {object} flavors      The extracted flavors object
+   * @returns {string}            The restored term containing flavor text
    * @private
    */
   static _restoreFlavor(term, flavors) {
@@ -864,7 +843,7 @@ class Roll {
 
   /**
    * Render the tooltip HTML for a Roll instance
-   * @returns {Promise<string>}     The rendered HTML tooltip as a string
+   * @return {Promise<string>}      The rendered HTML tooltip as a string
    */
   async getTooltip() {
     const parts = this.dice.map(d => d.getTooltipData());
@@ -888,7 +867,7 @@ class Roll {
       flavor: isPrivate ? null : flavor,
       user: game.user.id,
       tooltip: isPrivate ? "" : await this.getTooltip(),
-      total: isPrivate ? "?" : Math.round(this.total * 100) / 100
+      total: isPrivate ? "?" : Math.round(this.total * 100) / 100,
     };
     return renderTemplate(template, chatData);
   }
@@ -938,7 +917,7 @@ class Roll {
   /* -------------------------------------------- */
 
   /**
-   * Expand an inline roll element to display its contained dice result as a tooltip.
+   * Expand an inline roll element to display it's contained dice result as a tooltip
    * @param {HTMLAnchorElement} a     The inline-roll button
    * @returns {Promise<void>}
    */
@@ -952,8 +931,7 @@ class Roll {
     tip.innerHTML = await roll.getTooltip();
 
     // Add the tooltip
-    const tooltip = tip.querySelector(".dice-tooltip");
-    if ( !tooltip ) return;
+    const tooltip = tip.children[0];
     a.appendChild(tooltip);
     a.classList.add("expanded");
 
@@ -964,16 +942,12 @@ class Roll {
     tooltip.style.top = `${Math.min(pa.y + pa.height + 3, window.innerHeight - (pt.height + 3))}px`;
     const zi = getComputedStyle(a).zIndex;
     tooltip.style.zIndex = Number.isNumeric(zi) ? zi + 1 : 100;
-
-    // Disable tooltip while expanded
-    delete a.dataset.tooltip;
-    game.tooltip.deactivate();
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Collapse an expanded inline roll to conceal its tooltip.
+   * Collapse an expanded inline roll to conceal it's tooltip
    * @param {HTMLAnchorElement} a     The inline-roll button
    */
   static collapseInlineResult(a) {
@@ -981,8 +955,6 @@ class Roll {
     if ( !a.classList.contains("expanded") ) return;
     const tooltip = a.querySelector(".dice-tooltip");
     if ( tooltip ) tooltip.remove();
-    const roll = this.fromJSON(unescape(a.dataset.roll));
-    a.dataset.tooltip = roll.formula;
     return a.classList.remove("expanded");
   }
 
@@ -993,16 +965,15 @@ class Roll {
    * @param {object} [options]                  Additional options to configure how the link is constructed.
    * @param {string} [options.label]            A custom label for the total.
    * @param {object<string>} [options.attrs]    Attributes to set on the link.
-   * @param {object<string>} [options.dataset]  Custom data attributes to set on the link.
-   * @param {string[]} [options.classes]        Additional classes to add to the link. The classes `inline-roll`
-   *                                            and `inline-result` are added by default.
+   * @param {object<string>} [options.dataset]  Custom data- attributes to set on the link.
+   * @param {string[]} [options.classes]        Classes to add to the link.
    * @param {string} [options.icon]             A font-awesome icon class to use as the icon instead of a d20.
    * @returns {HTMLAnchorElement}
    */
   toAnchor({attrs={}, dataset={}, classes=[], label, icon}={}) {
     dataset = foundry.utils.mergeObject({roll: escape(JSON.stringify(this))}, dataset);
     const a = document.createElement("a");
-    a.classList.add("inline-roll", "inline-result", ...classes);
+    a.classList.add(...classes);
     a.dataset.tooltip = this.formula;
     Object.entries(attrs).forEach(([k, v]) => a.setAttribute(k, v));
     Object.entries(dataset).forEach(([k, v]) => a.dataset[k] = v);
@@ -1053,7 +1024,7 @@ class Roll {
     // Expand terms
     roll.terms = data.terms.map(t => {
       if ( t.class ) {
-        if ( t.class === "DicePool" ) t.class = "PoolTerm"; // Backwards compatibility
+        if ( t.class === "DicePool" ) t.class = "PoolTerm"; // backwards compatibility
         return RollTerm.fromData(t);
       }
       return t;

@@ -80,16 +80,15 @@ class ActorSheet extends DocumentSheet {
   _getHeaderButtons() {
     let buttons = super._getHeaderButtons();
     const canConfigure = game.user.isGM || (this.actor.isOwner && game.user.can("TOKEN_CONFIGURE"));
-    if ( this.options.editable && canConfigure ) {
-      const closeIndex = buttons.findIndex(btn => btn.label === "Close");
-      buttons.splice(closeIndex, 0, {
+    if (this.options.editable && canConfigure) {
+      buttons.splice(1, 0, {
         label: this.token ? "Token" : "TOKEN.TitlePrototype",
         class: "configure-token",
         icon: "fas fa-user-circle",
         onclick: ev => this._onConfigureToken(ev)
       });
     }
-    return buttons;
+    return buttons
   }
 
   /* -------------------------------------------- */
@@ -100,7 +99,6 @@ class ActorSheet extends DocumentSheet {
     // Prevent submitting overridden values
     const overrides = foundry.utils.flattenObject(this.actor.overrides);
     for ( let k of Object.keys(overrides) ) {
-      if ( k.startsWith("system.") ) delete data[`data.${k.slice(7)}`]; // Band-aid for < v10 data
       delete data[k];
     }
     return data;
@@ -108,6 +106,14 @@ class ActorSheet extends DocumentSheet {
 
   /* -------------------------------------------- */
   /*  Event Listeners                             */
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  activateListeners(html) {
+    super.activateListeners(html);
+    if ( this.isEditable ) html.find("img[data-edit]").click(ev => this._onEditImage(ev));
+  }
+
   /* -------------------------------------------- */
 
   /**
@@ -123,6 +129,29 @@ class ActorSheet extends DocumentSheet {
     };
     if ( this.token ) return this.token.sheet.render(true, renderOptions);
     else new CONFIG.Token.prototypeSheetClass(this.actor.prototypeToken, renderOptions).render(true);
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Handle changing the actor profile image by opening a FilePicker
+   * @param {Event} event     The input field change event
+   * @private
+   */
+  _onEditImage(event) {
+    const attr = event.currentTarget.dataset.edit;
+    const current = foundry.utils.getProperty(this.actor, attr);
+    const fp = new FilePicker({
+      type: "image",
+      current: current,
+      callback: path => {
+        event.currentTarget.src = path;
+        this._onSubmit(event);
+      },
+      top: this.position.top + 40,
+      left: this.position.left + 10
+    });
+    return fp.browse();
   }
 
   /* -------------------------------------------- */
@@ -175,6 +204,15 @@ class ActorSheet extends DocumentSheet {
   async _onDrop(event) {
     const data = TextEditor.getDragEventData(event);
     const actor = this.actor;
+
+    /**
+     * A hook event that fires when some useful data is dropped onto an ActorSheet.
+     * @function dropActorSheetData
+     * @memberof hookEvents
+     * @param {Actor} actor      The Actor
+     * @param {ActorSheet} sheet The ActorSheet application
+     * @param {object} data      The data that has been dropped onto the sheet
+     */
     const allowed = Hooks.call("dropActorSheetData", actor, this, data);
     if ( allowed === false ) return;
 
@@ -254,13 +292,12 @@ class ActorSheet extends DocumentSheet {
    */
   async _onDropFolder(event, data) {
     if ( !this.actor.isOwner ) return [];
+    if ( data.documentName !== "Item" ) return [];
     const folder = await Folder.implementation.fromDropData(data);
-    if ( folder.type !== "Item" ) return [];
-    const droppedItemData = await Promise.all(folder.contents.map(async item => {
-      if ( !(document instanceof Item) ) item = await fromUuid(item.uuid);
-      return item.toObject();
+    if ( !folder ) return [];
+    return this._onDropItemCreate(folder.contents.map(item => {
+      return game.items.fromCompendium(item);
     }));
-    return this._onDropItemCreate(droppedItemData);
   }
 
   /* -------------------------------------------- */

@@ -45,27 +45,15 @@ function readTextFromFile(file) {
 
 /**
  * Retrieve a Document by its Universally Unique Identifier (uuid).
- * @param {string} uuid                      The uuid of the Document to retrieve.
- * @param {object} [options]                 Options to configure how a UUID is resolved.
- * @param {Document} [options.relative]      A Document to resolve relative UUIDs against.
- * @param {boolean} [options.invalid=false]  Allow retrieving an invalid Document.
- * @returns {Promise<Document|null>}         Returns the Document if it could be found, otherwise null.
+ * @param {string} uuid                 The uuid of the Document to retrieve.
+ * @param {ClientDocument} [relative]   A document to resolve relative UUIDs against.
+ * @returns {Promise<Document|null>}    Returns the Document if it could be found, otherwise null.
  */
-async function fromUuid(uuid, options={}) {
-  /** @deprecated since v11 */
-  if ( foundry.utils.getType(options) !== "Object" ) {
-    foundry.utils.logCompatibilityWarning("Passing a relative document as the second parameter to fromUuid is "
-      + "deprecated. Please pass it within an options object instead.", {since: 11, until: 13});
-    options = {relative: options};
-  }
-  const {relative, invalid=false} = options;
-  let {collection, documentId, documentType, embedded, doc} = foundry.utils.parseUuid(uuid, {relative});
-  if ( collection instanceof CompendiumCollection ) {
-    if ( documentType === "Folder" ) return collection.folders.get(documentId);
-    doc = await collection.getDocument(documentId);
-  }
-  else doc = doc ?? collection?.get(documentId, {invalid});
-  if ( embedded.length ) doc = _resolveEmbedded(doc, embedded, {invalid});
+async function fromUuid(uuid, relative) {
+  let {collection, documentId, embedded, doc} = _parseUuid(uuid, relative);
+  if ( collection instanceof CompendiumCollection ) doc = await collection.getDocument(documentId);
+  else doc = doc ?? collection?.get(documentId);
+  if ( embedded.length ) doc = _resolveEmbedded(doc, embedded);
   return doc || null;
 }
 
@@ -74,38 +62,25 @@ async function fromUuid(uuid, options={}) {
 /**
  * Retrieve a Document by its Universally Unique Identifier (uuid) synchronously. If the uuid resolves to a compendium
  * document, that document's index entry will be returned instead.
- * @param {string} uuid                      The uuid of the Document to retrieve.
- * @param {object} [options]                 Options to configure how a UUID is resolved.
- * @param {Document} [options.relative]      A Document to resolve relative UUIDs against.
- * @param {boolean} [options.invalid=false]  Allow retrieving an invalid Document.
- * @param {boolean} [options.strict=true]    Throw an error if the UUID cannot be resolved synchronously.
- * @returns {Document|object|null}           The Document or its index entry if it resides in a Compendium, otherwise
- *                                           null.
- * @throws If the uuid resolves to a Document that cannot be retrieved synchronously, and the strict option is true.
+ * @param {string} uuid                The uuid of the Document to retrieve.
+ * @param {ClientDocument} [relative]  A document to resolve relative UUIDs against.
+ * @returns {Document|object|null}     The Document or its index entry if it resides in a Compendium, otherwise null.
+ * @throws If the uuid resolves to a Document that cannot be retrieved synchronously.
  */
-function fromUuidSync(uuid, options={}) {
-  /** @deprecated since v11 */
-  if ( foundry.utils.getType(options) !== "Object" ) {
-    foundry.utils.logCompatibilityWarning("Passing a relative document as the second parameter to fromUuidSync is "
-      + "deprecated. Please pass it within an options object instead.", {since: 11, until: 13});
-    options = {relative: options};
-  }
-  const {relative, invalid=false, strict=true} = options;
-  let {collection, documentId, documentType, embedded, doc} = foundry.utils.parseUuid(uuid, {relative});
+function fromUuidSync(uuid, relative) {
+  let {collection, documentId, embedded, doc} = _parseUuid(uuid, relative);
   if ( (collection instanceof CompendiumCollection) && embedded.length ) {
-    if ( !strict ) return null;
     throw new Error(
       `fromUuidSync was invoked on UUID '${uuid}' which references an Embedded Document and cannot be retrieved `
       + "synchronously.");
   }
 
   if ( collection instanceof CompendiumCollection ) {
-    if ( documentType === "Folder" ) return collection.folders.get(documentId);
-    doc = doc ?? collection.get(documentId, {invalid}) ?? collection.index.get(documentId);
+    doc = doc ?? collection.index.get(documentId);
     if ( doc ) doc.pack = collection.collection;
   } else {
-    doc = doc ?? collection?.get(documentId, {invalid});
-    if ( embedded.length ) doc = _resolveEmbedded(doc, embedded, {invalid});
+    doc = doc ?? collection?.get(documentId);
+    if ( embedded.length ) doc = _resolveEmbedded(doc, embedded);
   }
   return doc || null;
 }
@@ -113,19 +88,59 @@ function fromUuidSync(uuid, options={}) {
 /* -------------------------------------------- */
 
 /**
- * Resolve a series of embedded document UUID parts against a parent Document.
- * @param {Document} parent                  The parent Document.
- * @param {string[]} parts                   A series of Embedded Document UUID parts.
- * @param {object} [options]                 Additional options to configure Embedded Document resolution.
- * @param {boolean} [options.invalid=false]  Allow retrieving an invalid Embedded Document.
- * @returns {Document}                       The resolved Embedded Document.
+ * @typedef {object} ResolvedUUID
+ * @property {DocumentCollection} [collection]  The parent collection.
+ * @property {string} [documentId]              The parent document.
+ * @property {ClientDocument} [doc]             An already-resolved document.
+ * @property {string[]} embedded                Any remaining Embedded Document parts.
+ */
+
+/**
+ * Parse a UUID into its constituent parts.
+ * @param {string} uuid                The UUID to parse.
+ * @param {ClientDocument} [relative]  A document to resolve relative UUIDs against.
+ * @returns {ResolvedUUID}             Returns the Collection and the Document ID to resolve the parent document, as
+ *                                     well as the remaining Embedded Document parts, if any.
  * @private
  */
-function _resolveEmbedded(parent, parts, {invalid=false}={}) {
+function _parseUuid(uuid, relative) {
+  if ( uuid.startsWith(".") && relative ) return _resolveRelativeUuid(uuid, relative);
+  let parts = uuid.split(".");
+  let collection;
+  let documentId;
+
+  // Compendium Documents
+  if ( parts[0] === "Compendium" ) {
+    parts.shift();
+    const [scope, packName, id] = parts.splice(0, 3);
+    collection = game.packs.get(`${scope}.${packName}`);
+    documentId = id;
+  }
+
+  // World Documents
+  else {
+    const [documentName, id] = parts.splice(0, 2);
+    collection = CONFIG[documentName]?.collection.instance;
+    documentId = id;
+  }
+
+  return {collection, documentId, embedded: parts};
+}
+
+/* -------------------------------------------- */
+
+/**
+ * Resolve a series of embedded document UUID parts against a parent Document.
+ * @param {Document} parent  The parent Document.
+ * @param {string[]} parts   A series of Embedded Document UUID parts.
+ * @returns {Document}       The resolved Embedded Document.
+ * @private
+ */
+function _resolveEmbedded(parent, parts) {
   let doc = parent;
   while ( doc && (parts.length > 1) ) {
     const [embeddedName, embeddedId] = parts.splice(0, 2);
-    doc = doc.getEmbeddedDocument(embeddedName, embeddedId, {invalid});
+    doc = doc.getEmbeddedDocument(embeddedName, embeddedId);
   }
   return doc;
 }
@@ -133,9 +148,36 @@ function _resolveEmbedded(parent, parts, {invalid=false}={}) {
 /* -------------------------------------------- */
 
 /**
+ * Resolve a UUID relative to another document.
+ * The general-purpose algorithm for resolving relative UUIDs is as follows:
+ * 1. If the number of parts is odd, remove the first part and resolve it against the current document and update the
+ *    current document.
+ * 2. If the number of parts is even, resolve embedded documents against the current document.
+ * @param {string} uuid              The UUID to resolve.
+ * @param {ClientDocument} relative  The document to resolve against.
+ * @returns {ResolvedUUID}
+ * @private
+ */
+function _resolveRelativeUuid(uuid, relative) {
+  uuid = uuid.substring(1);
+  const parts = uuid.split(".");
+
+  // A child document. If we don't have a reference to an actual embedded collection, it will not be resolved in
+  // _resolveEmbedded.
+  if ( parts.length % 2 === 0 ) return {doc: relative, embedded: parts};
+
+  // A sibling document.
+  const documentId = parts.shift();
+  const collection = (relative.compendium && !relative.isEmbedded) ? relative.compendium : relative.collection;
+  return {collection, documentId, embedded: parts};
+}
+
+/* -------------------------------------------- */
+
+/**
  * Return a reference to the Document class implementation which is configured for use.
  * @param {string} documentName     The canonical Document name, for example "Actor"
- * @returns {typeof Document}       The configured Document class implementation
+ * @returns {typeof ClientDocument} The configured Document class implementation
  */
 function getDocumentClass(documentName) {
   return CONFIG[documentName]?.documentClass;

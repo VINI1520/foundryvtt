@@ -12,14 +12,13 @@
  * @param {object} [options={}]         Worker initialization options
  * @param {boolean} [options.debug=false]           Should the worker run in debug mode?
  * @param {boolean} [options.loadPrimitives=false]  Should the worker automatically load the primitives library?
- * @param {string[]} [options.scripts]              Should the worker operates in script modes? Optional scripts.
  */
 class AsyncWorker extends Worker {
-  constructor(name, {debug=false, loadPrimitives=false, scripts}={}) {
+  constructor(name, {debug=false, loadPrimitives=false}={}) {
     super(AsyncWorker.WORKER_HARNESS_JS);
     this.name = name;
-    this.addEventListener("message", this.#onMessage.bind(this));
-    this.addEventListener("error", this.#onError.bind(this));
+    this.addEventListener("message", this._onMessage.bind(this));
+    this.addEventListener("error", this._onError.bind(this));
 
     /**
      * A Promise which resolves once the Worker is ready to accept tasks
@@ -29,8 +28,7 @@ class AsyncWorker extends Worker {
       action: WorkerManager.WORKER_TASK_ACTIONS.INIT,
       workerName: name,
       debug,
-      loadPrimitives,
-      scripts
+      loadPrimitives
     });
   }
 
@@ -49,8 +47,9 @@ class AsyncWorker extends Worker {
   /**
    * An auto-incrementing task index.
    * @type {number}
+   * @private
    */
-  #taskIndex = 0;
+  _taskIndex = 0;
 
   /* -------------------------------------------- */
   /*  Task Management                             */
@@ -60,7 +59,7 @@ class AsyncWorker extends Worker {
    * Load a function onto a given Worker.
    * The function must be a pure function with no external dependencies or requirements on global scope.
    * @param {string} functionName   The name of the function to load
-   * @param {Function} functionRef  A reference to the function that should be loaded
+   * @param {function} functionRef  A reference to the function that should be loaded
    * @returns {Promise<unknown>}    A Promise which resolves once the Worker has loaded the function.
    */
   async loadFunction(functionName, functionRef) {
@@ -77,15 +76,15 @@ class AsyncWorker extends Worker {
    * Execute a task on a specific Worker.
    * @param {string} functionName   The named function to execute on the worker. This function must first have been
    *                                loaded.
-   * @param {Array<*>} args         An array of parameters with which to call the requested function
-   * @param {Array<*>} transfer     An array of transferable objects which are transferred to the worker thread.
-   *                                See https://developer.mozilla.org/en-US/docs/Glossary/Transferable_objects
+   * @param {Array<*>} params       An array of parameters with which to call the requested function
    * @returns {Promise<unknown>}    A Promise which resolves with the returned result of the function once complete.
    */
-  async executeFunction(functionName, args=[], transfer=[]) {
-    if ( !Array.isArray(args) ) args = [args];
-    const action = WorkerManager.WORKER_TASK_ACTIONS.EXECUTE;
-    return this._dispatchTask({action, functionName, args}, transfer);
+  async executeFunction(functionName, ...params) {
+    return this._dispatchTask({
+      action: WorkerManager.WORKER_TASK_ACTIONS.EXECUTE,
+      functionName,
+      args: params
+    });
   }
 
   /* -------------------------------------------- */
@@ -93,16 +92,14 @@ class AsyncWorker extends Worker {
   /**
    * Dispatch a task to a named Worker, awaiting confirmation of the result.
    * @param {WorkerTask} taskData   Data to dispatch to the Worker as part of the task.
-   * @param {Array<*>} transfer     An array of transferable objects which are transferred to the worker thread.
    * @returns {Promise}             A Promise which wraps the task transaction.
    * @private
    */
-  async _dispatchTask(taskData={}, transfer=[]) {
-    const taskId = taskData.taskId = this.#taskIndex++;
-    taskData.transfer = transfer;
+  async _dispatchTask(taskData={}) {
+    const taskId = taskData.taskId = this._taskIndex++;
     return new Promise((resolve, reject) => {
       this.tasks.set(taskId, {resolve, reject, ...taskData});
-      this.postMessage(taskData, transfer);
+      this.postMessage(taskData);
     });
   }
 
@@ -111,8 +108,9 @@ class AsyncWorker extends Worker {
   /**
    * Handle messages emitted by the Worker thread.
    * @param {MessageEvent} event      The dispatched message event
+   * @private
    */
-  #onMessage(event) {
+  _onMessage(event) {
     const response = event.data;
     const task = this.tasks.get(response.taskId);
     if ( !task ) return;
@@ -126,8 +124,9 @@ class AsyncWorker extends Worker {
   /**
    * Handle errors emitted by the Worker thread.
    * @param {ErrorEvent} error        The dispatched error event
+   * @private
    */
-  #onError(error) {
+  _onError(error) {
     error.message = `An error occurred in Worker ${this.name}: ${error.message}`;
     console.error(error);
   }
@@ -140,23 +139,29 @@ class AsyncWorker extends Worker {
  * This interface is accessed as a singleton instance via game.workers.
  * @see Game#workers
  */
-class WorkerManager extends Map {
+class WorkerManager {
   constructor() {
     if ( game.workers instanceof WorkerManager ) {
       throw new Error("The singleton WorkerManager instance has already been constructed as Game#workers");
     }
-    super();
   }
+
+  /**
+   * The currently active workforce.
+   * @type {Map<string,AsyncWorker>}
+   * @private
+   */
+  workforce = new Map();
 
   /**
    * Supported worker task actions
    * @enum {string}
    */
-  static WORKER_TASK_ACTIONS = Object.freeze({
+  static WORKER_TASK_ACTIONS = {
     INIT: "init",
     LOAD: "load",
     EXECUTE: "execute"
-  });
+  };
 
   /* -------------------------------------------- */
   /*  Worker Management                           */
@@ -169,13 +174,26 @@ class WorkerManager extends Map {
    * @returns {Promise<AsyncWorker>}      The created AsyncWorker which is ready to accept tasks
    */
   async createWorker(name, config={}) {
-    if (this.has(name)) {
+    if (this.workforce.has(name)) {
       throw new Error(`A Worker already exists with the name "${name}"`);
     }
     const worker = new AsyncWorker(name, config);
-    this.set(name, worker);
+    this.workforce.set(name, worker);
     await worker.ready;
     return worker;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Get a currently active Worker by name.
+   * @param {string} name             The named Worker to retrieve
+   * @returns {AsyncWorker}           The AsyncWorker instance
+   */
+  getWorker(name) {
+    const w = this.workforce.get(name);
+    if ( !w ) throw new Error(`No worker with name ${name} currently exists!`)
+    return w;
   }
 
   /* -------------------------------------------- */
@@ -186,24 +204,9 @@ class WorkerManager extends Map {
    * @param {string} name           The named worker to terminate
    */
   retireWorker(name) {
-    const worker = this.get(name);
-    if ( !worker ) return;
+    const worker = this.getWorker(name);
     worker.terminate();
-    this.delete(name);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since 11
-   * @ignore
-   */
-  getWorker(name) {
-    foundry.utils.logCompatibilityWarning("WorkerManager#getWorker is deprecated in favor of WorkerManager#get",
-      {since: 11, until: 13});
-    const w = this.get(name);
-    if ( !w ) throw new Error(`No worker with name ${name} currently exists!`);
-    return w;
+    this.workforce.delete(name);
   }
 }
 

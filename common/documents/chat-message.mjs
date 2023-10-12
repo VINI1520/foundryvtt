@@ -68,7 +68,7 @@ class BaseChatMessage extends Document {
       user: new fields.ForeignDocumentField(documents.BaseUser, {nullable: false, initial: () => game?.user?.id}),
       timestamp: new fields.NumberField({required: true, nullable: false, initial: Date.now}),
       flavor: new fields.HTMLField(),
-      content: new fields.HTMLField({textSearch: true}),
+      content: new fields.HTMLField(),
       speaker: new fields.SchemaField({
         scene: new fields.ForeignDocumentField(documents.BaseScene, {idOnly: true}),
         actor: new fields.ForeignDocumentField(documents.BaseActor, {idOnly: true}),

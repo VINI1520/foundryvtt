@@ -26,13 +26,6 @@ class CachedContainer extends PIXI.Container {
   }
 
   /**
-   * The texture configuration to use for this cached container
-   * @type {{multisample: PIXI.MSAA_QUALITY, scaleMode: PIXI.SCALE_MODES, format: PIXI.FORMATS}}
-   * @abstract
-   */
-  static textureConfiguration = {};
-
-  /**
    * A bound resize function which fires on the renderer resize event.
    * @type {function(PIXI.Renderer)}
    * @private
@@ -42,9 +35,9 @@ class CachedContainer extends PIXI.Container {
   /**
    * An map of render textures, linked to their render function and an optional RGBA clear color.
    * @type {Map<PIXI.RenderTexture,Object<Function, number[]>>}
-   * @protected
+   * @private
    */
-  _renderPaths = new Map();
+  #renderPaths = new Map();
 
   /**
    * An object which stores a reference to the normal renderer target and source frame.
@@ -129,26 +122,16 @@ class CachedContainer extends PIXI.Container {
   createRenderTexture({renderFunction, clearColor}={}) {
     const renderOptions = {};
     const renderer = canvas.app?.renderer;
-    const conf = this.constructor.textureConfiguration;
-    const pm = canvas.performance.mode;
-
-    // Disabling linear filtering by default for low/medium performance mode
-    const defaultScaleMode = (pm > CONST.CANVAS_PERFORMANCE_MODES.MED)
-      ? PIXI.SCALE_MODES.LINEAR
-      : PIXI.SCALE_MODES.NEAREST;
 
     // Creating the render texture
     const renderTexture = PIXI.RenderTexture.create({
       width: renderer?.screen.width ?? window.innerWidth,
       height: renderer?.screen.height ?? window.innerHeight,
-      resolution: renderer.resolution ?? PIXI.settings.RESOLUTION,
-      multisample: conf.multisample ?? PIXI.MSAA_QUALITY.NONE,
-      scaleMode: conf.scaleMode ?? defaultScaleMode,
-      format: conf.format ?? PIXI.FORMATS.RGBA
+      resolution: renderer.resolution ?? PIXI.settings.RESOLUTION
     });
     renderOptions.renderFunction = renderFunction;            // Binding the render function
     renderOptions.clearColor = clearColor;                    // Saving the optional clear color
-    this._renderPaths.set(renderTexture, renderOptions);      // Push into the render paths
+    this.#renderPaths.set(renderTexture, renderOptions);      // Push into the render paths
 
     // Return a reference to the render texture
     return renderTexture;
@@ -162,7 +145,7 @@ class CachedContainer extends PIXI.Container {
    * @param {boolean} [destroy=true]             Should the render texture be destroyed?
    */
   removeRenderTexture(renderTexture, destroy=true) {
-    this._renderPaths.delete(renderTexture);
+    this.#renderPaths.delete(renderTexture);
     if ( destroy ) renderTexture?.destroy(true);
   }
 
@@ -183,8 +166,8 @@ class CachedContainer extends PIXI.Container {
   /** @inheritdoc */
   destroy(options) {
     if ( this.#onResize ) canvas.app.renderer.off("resize", this.#onResize);
-    for ( const [rt] of this._renderPaths ) rt?.destroy(true);
-    this._renderPaths.clear();
+    for ( const [rt] of this.#renderPaths ) rt?.destroy(true);
+    this.#renderPaths.clear();
     super.destroy(options);
   }
 
@@ -209,9 +192,9 @@ class CachedContainer extends PIXI.Container {
    * @protected
    */
   #renderSecondary(renderer) {
-    if ( this._renderPaths.size <= 1 ) return;
+    if ( this.#renderPaths.size <= 1 ) return;
     // Bind the render texture and call the custom render method for each render path
-    for ( const [rt, ro] of this._renderPaths ) {
+    for ( const [rt, ro] of this.#renderPaths ) {
       if ( !ro.renderFunction ) continue;
       this.#bind(renderer, rt, ro.clearColor);
       ro.renderFunction.call(this, renderer);
@@ -293,7 +276,7 @@ class CachedContainer extends PIXI.Container {
    * @private
    */
   #resize(renderer) {
-    for ( const [rt] of this._renderPaths ) CachedContainer.resizeRenderTexture(renderer, rt);
+    for ( const [rt] of this.#renderPaths ) CachedContainer.resizeRenderTexture(renderer, rt);
     if ( this.#sprite ) this.#sprite._boundsID++; // Inform PIXI that bounds need to be recomputed for this sprite mesh
   }
 

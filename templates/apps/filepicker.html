@@ -1,4 +1,4 @@
-<form class="standard-form {{ cssClass }}" autocomplete="off" enctype="multipart/form-data">
+<form class="filepicker-body {{ cssClass }}" autocomplete="off" enctype="multipart/form-data">
     <header class="filepicker-header">
 
         <nav class="tabs" aria-role="{{localize 'SHEETS.FormNavLabel'}}">
@@ -12,7 +12,7 @@
                 <i class="fas fa-level-up-alt fa-flip-horizontal fa-fw"></i>
             </button>
             <div class="form-fields">
-                <input type="text" name="target" value="{{target}}">
+                <input type="text" name="target" value="{{target}}"/>
             </div>
             {{#if user.isGM}}
             {{#if canUpload}}
@@ -24,20 +24,6 @@
                 <i class="fas fa-eye-slash"></i>
             </button>
             {{/if}}
-        </div>
-        <div class="form-group favorites">
-            <div class="label">
-                <span>{{ localize "FILES.FavoritesLabel" }} </span>
-                <a data-action="setFavorite" data-tooltip="{{ localize "FILES.AddFavorite" }}"><i class="fas fa-plus"></i></a>
-            </div>
-            <div class="paths">
-                {{#each favorites }}
-                    <span class="path">
-                        <a class="link" data-tooltip="{{ this.path }}" data-source="{{ this.source }}" data-path="{{ this.path }}" data-action="goToFavorite">{{ this.label }}</a>
-                        <a class="remove" data-tooltip="Remove from favorites" data-source="{{ this.source }}" data-path="{{ this.path }}" data-action="removeFavorite"><i class="fa-solid fa-trash"></i></a>
-                    </span>
-                {{/each}}
-            </div>
         </div>
 
         {{#if isS3}}
@@ -54,12 +40,12 @@
         {{/if}}
 
         <div class="form-group filter-dir">
-            <label>{{ localize "FILES.FilterLabel" }}</label>
-            <input type="search" name="filter" placeholder="{{ localize "FILES.Search" }}">
+            <label for="filter">{{ localize "FILES.FilterLabel" }}</label>
+            <input type="search" name="filter" placeholder="{{ localize "FILES.Search" }}"/>
         </div>
 
         <div class="form-group">
-            <label>{{ localize "FILES.DisplayMode" }}</label>
+            <label for="displayMode">{{ localize "FILES.DisplayMode" }}</label>
             <div class="form-fields display-modes">
                 <a class="display-mode" title="{{ localize 'FILES.DisplayModeList' }}" data-mode="list">
                     <i class="fas fa-bars"></i>
@@ -80,8 +66,8 @@
         <div class="form-group tile-size">
             <label>{{ localize "FILES.TileSize" }}</label>
             <div class="form-fields">
-                {{ numberInput tileSize name="tileSize" placeholder=(localize "FILES.InPixels") }}
-                <span class="units">{{ localize "FILES.UnitPixels" }}</span>
+                <input type="text" data-dtype="Number" name="tileSize" placeholder="In Pixels" value="{{ tileSize }}"/>
+                <span class="units">(pixels)</span>
             </div>
             <p class="hint">{{ localize "FILES.TileSizeHint" }}</p>
         </div>
@@ -146,27 +132,23 @@
         {{/if}}
     </section>
 
-    {{#if canUpload}}
-    <div class="form-group upload-file">
-        <label><i class="fas fa-upload fa-fw"></i> {{ localize "FILES.Upload" }}</label>
-        <div class="form-fields">
-            <input type="file" name="upload">
-        </div>
-    </div>
-    {{/if}}
-
-    {{#if canSelect}}
-    <div class="form-group selected-file">
-        <label><i class="fas fa-file fa-fw"></i> {{ localize "FILES.Selected" }}</label>
-        <div class="form-fields">
-            <input type="text" name="file" value="{{selected}}">
-        </div>
-    </div>
-
     <footer class="form-footer filepicker-footer">
-        <button class="bright" type="submit">
+        {{#if canUpload}}
+        <div class="form-group upload-file">
+            <label><i class="fas fa-upload fa-fw"></i> {{ localize "FILES.Upload" }}</label>
+            <input type="file" name="upload"/>
+        </div>
+        {{/if}}
+
+        {{#if canSelect}}
+        <div class="form-group selected-file">
+            <label><i class="fas fa-file fa-fw"></i> {{ localize "FILES.Selected" }}</label>
+            <input type="text" name="file" value="{{selected}}"/>
+        </div>
+
+        <button type="submit">
             <i class="far fa-save"></i> {{ localize submitText }}
         </button>
+        {{/if}}
     </footer>
-    {{/if}}
 </form>

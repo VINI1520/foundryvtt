@@ -1,5 +1,6 @@
 import Document from "../abstract/document.mjs";
 import {mergeObject} from "../utils/helpers.mjs";
+import * as CONST from "../constants.mjs";
 import * as documents from "./module.mjs";
 import * as fields from "../data/fields.mjs";
 
@@ -67,8 +68,8 @@ class BaseCard extends Document {
       name: new fields.StringField({required: true, blank: false, label: "CARD.Name"}),
       description: new fields.HTMLField({label: "CARD.Description"}),
       type: new fields.StringField({required: true, label: "CARD.Type", choices: () => this.TYPES,
-        initial: () => this.TYPES[0]}),
-      system: new fields.TypeDataField(this),
+        initial: this.TYPES[0]}),
+      system: new fields.SystemDataField(this),
       suit: new fields.StringField({label: "CARD.Suit"}),
       value: new fields.NumberField({label: "CARD.Value"}),
       back: new fields.SchemaField({
@@ -104,7 +105,7 @@ class BaseCard extends Document {
    * @type {string[]}
    */
   static get TYPES() {
-    return game.documentTypes.Card;
+    return game.documentTypes?.Card || [CONST.BASE_DOCUMENT_TYPE];
   }
 
   /**

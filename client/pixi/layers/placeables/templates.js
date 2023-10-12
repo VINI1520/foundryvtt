@@ -30,9 +30,18 @@ class TemplateLayer extends PlaceablesLayer {
   /* -------------------------------------------- */
 
   /** @inheritDoc */
+  _activate() {
+    super._activate();
+    for ( const t of this.placeables ) t.controlIcon.visible = t.ruler.visible = t.isVisible;
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritDoc */
   _deactivate() {
     super._deactivate();
     this.objects.visible = true;
+    for ( const t of this.placeables ) t.controlIcon.visible = t.ruler.visible = false;
   }
 
   /* -------------------------------------------- */
@@ -63,19 +72,19 @@ class TemplateLayer extends PlaceablesLayer {
   /** @inheritdoc */
   async _onDragLeftStart(event) {
     await super._onDragLeftStart(event);
-    const interaction = event.interactionData;
+    const {origin, originalEvent} = event.data;
 
     // Create a pending MeasuredTemplateDocument
     const tool = game.activeTool;
     const previewData = {
       user: game.user.id,
       t: tool,
-      x: interaction.origin.x,
-      y: interaction.origin.y,
+      x: origin.x,
+      y: origin.y,
       distance: 1,
       direction: 0,
       fillColor: game.user.color || "#FF0000",
-      hidden: event.altKey
+      hidden: originalEvent.altKey
     };
     const defaults = CONFIG.MeasuredTemplate.defaults;
     if ( tool === "cone") previewData.angle = defaults.angle;
@@ -85,7 +94,7 @@ class TemplateLayer extends PlaceablesLayer {
 
     // Create a preview MeasuredTemplate object
     const template = new this.constructor.placeableClass(doc);
-    interaction.preview = this.preview.addChild(template);
+    event.data.preview = this.preview.addChild(template);
     return template.draw();
   }
 
@@ -93,12 +102,11 @@ class TemplateLayer extends PlaceablesLayer {
 
   /** @inheritdoc */
   _onDragLeftMove(event) {
-    const interaction = event.interactionData;
-    const {destination, layerDragState, preview, origin} = interaction;
-    if ( layerDragState === 0 ) return;
+    const { destination, createState, preview, origin } = event.data;
+    if ( createState === 0 ) return;
 
     // Snap the destination to the grid
-    interaction.destination = canvas.grid.getSnappedPosition(destination.x, destination.y, this.gridPrecision);
+    event.data.destination = canvas.grid.getSnappedPosition(destination.x, destination.y, this.gridPrecision);
 
     // Compute the ray
     const ray = new Ray(origin, destination);
@@ -107,10 +115,10 @@ class TemplateLayer extends PlaceablesLayer {
     // Update the preview object
     preview.document.direction = Math.normalizeDegrees(Math.toDegrees(ray.angle));
     preview.document.distance = ray.distance / ratio;
-    preview.renderFlags.set({refreshShape: true});
+    preview.refresh();
 
     // Confirm the creation state
-    interaction.layerDragState = 2;
+    event.data.createState = 2;
   }
 
   /* -------------------------------------------- */

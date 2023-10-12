@@ -1,6 +1,5 @@
 import Color from "./color.mjs";
 import {logCompatibilityWarning} from "./logging.mjs";
-import {COMPENDIUM_DOCUMENT_TYPES} from "../constants.mjs";
 /**
  * @module helpers
  */
@@ -208,22 +207,6 @@ export function isSubclass(cls, parent) {
 /* -------------------------------------------- */
 
 /**
- * Search up the prototype chain and return the class that defines the given property.
- * @param {object} cls       The starting class.
- * @param {string} property  The property name.
- * @returns {function}       The class that defines the property.
- */
-export function getDefiningClass(cls, property) {
-  let proto = Object.getPrototypeOf(cls);
-  while ( proto ) {
-    if ( proto.hasOwnProperty(property) ) return proto.constructor;
-    proto = Object.getPrototypeOf(proto);
-  }
-}
-
-/* -------------------------------------------- */
-
-/**
  * Encode a url-like string by replacing any characters which need encoding
  * To reverse this encoding, the native decodeURIComponent can be used on the whole encoded string, without adjustment.
  * @param {string} path     A fully-qualified URL or url component (like a relative path)
@@ -248,23 +231,28 @@ export function encodeURL(path) {
 
 /**
  * Expand a flattened object to be a standard nested Object by converting all dot-notation keys to inner objects.
- * Only simple objects will be expanded. Other Object types like class instances will be retained as-is.
  * @param {object} obj      The object to expand
+ * @param {number} [_d=0]   Track the recursion depth to prevent overflow
  * @return {object}         An expanded object
  */
-export function expandObject(obj) {
-  function _expand(value, depth) {
-    if ( depth > 32 ) throw new Error("Maximum object expansion depth exceeded");
-    if ( !value ) return value;
-    if ( Array.isArray(value) ) return value.map(v => _expand(v, depth+1)); // Map arrays
-    if ( value.constructor?.name !== "Object" ) return value;               // Return advanced objects directly
-    const expanded = {};                                                    // Expand simple objects
-    for ( let [k, v] of Object.entries(value) ) {
-      setProperty(expanded, k, _expand(v, depth+1));
+export function expandObject(obj, _d=0) {
+  if ( _d > 100 ) throw new Error("Maximum object expansion depth exceeded");
+
+  // Recursive expansion function
+  function _expand(value) {
+    if ( value instanceof Object ) {
+      if ( Array.isArray(value) ) return value.map(_expand);
+      else return expandObject(value, _d+1)
     }
-    return expanded;
+    return value;
   }
-  return _expand(obj, 0);
+
+  // Expand all object keys
+  const expanded = {};
+  for ( let [k, v] of Object.entries(obj) ) {
+    setProperty(expanded, k, _expand(v));
+  }
+  return expanded;
 }
 
 /* -------------------------------------------- */
@@ -353,8 +341,8 @@ export function flattenObject(obj, _d=0) {
 
 /**
  * Obtain references to the parent classes of a certain class.
- * @param {Function} cls            An class definition
- * @return {Array<typeof Object>}   An array of parent classes which the provided class extends
+ * @param {Function} cls      An ES6 Class definition
+ * @return {Function[]}       An array of parent Classes which the provided class extends
  */
 export function getParentClasses(cls) {
   if ( typeof cls !== "function" ) {
@@ -565,10 +553,10 @@ export function isNewerVersion(v1, v0) {
  * A simple function to test whether an Object is empty
  * @param {object} obj    The object to test
  * @return {boolean}      Is the object empty?
- * @deprecated since v10, will be removed in v12 - Use isEmpty instead.
+ * @deprecated since v10, will be removed in v11 - Use isEmpty instead.
  */
 export function isObjectEmpty(obj) {
-  foundry.utils.logCompatibilityWarning("foundry.utils.isObjectEmpty is deprecated in favor of foundry.utils.isEmpty", {since: 10, until: 12});
+  foundry.utils.logCompatibilityWarning("foundry.utils.isObjectEmpty is deprecated in favor of foundry.utils.isEmpty", {since: 10, until: 11});
   if ( getType(obj) !== "Object" ) {
     throw new Error("The provided data is not an object!");
   }
@@ -587,12 +575,10 @@ export function isEmpty(value) {
   switch ( t ) {
     case "undefined":
       return true;
-    case "null":
-      return true;
     case "Array":
       return !value.length;
     case "Object":
-      return !Object.keys(value).length;
+      return (getType(value) === "Object") && !Object.keys(value).length;
     case "Set":
     case "Map":
       return !value.size;
@@ -647,13 +633,13 @@ export function isEmpty(value) {
  *
  * @example Control whether merges are performed recursively
  * ```js
- * mergeObject({k1: {i1: "v1"}}, {k1: {i2: "v2"}}, {recursive: false}); // {k1: {i2: "v2"}}
+ * mergeObject({k1: {i1: "v1"}}, {k1: {i2: "v2"}}, {recursive: false}); // {k1: {i1: "v2"}}
  * mergeObject({k1: {i1: "v1"}}, {k1: {i2: "v2"}}, {recursive: true}); // {k1: {i1: "v1", i2: "v2"}}
  * ```
  *
  * @example Deleting an existing object key
  * ```js
- * mergeObject({k1: "v1", k2: "v2"}, {"-=k1": null}, {performDeletions: true});   // {k2: "v2"}
+ * mergeObject({k1: "v1", k2: "v2"}, {"-=k1": null});   // {k2: "v2"}
  * ```
  */
 export function mergeObject(original, other={}, {
@@ -802,115 +788,6 @@ export function timeSince(timeStamp) {
 
   // Return the string
   return game.i18n.format("TIME.Since", {since: since});
-}
-
-/* -------------------------------------------- */
-
-/**
- * Format a file size to an appropriate order of magnitude.
- * @param {number} size  The size in bytes.
- * @param {object} [options]
- * @param {number} [options.decimalPlaces=2]  The number of decimal places to round to.
- * @param {2|10} [options.base=10]            The base to use. In base 10 a kilobyte is 1000 bytes. In base 2 it is
- *                                            1024 bytes.
- * @returns {string}
- */
-export function formatFileSize(size, { decimalPlaces=2, base=10 }={}) {
-  const units = ["B", "kB", "MB", "GB", "TB"];
-  const divisor = base === 2 ? 1024 : 1000;
-  let iterations = 0;
-  while ( (iterations < units.length) && (size > divisor) ) {
-    size /= divisor;
-    iterations++;
-  }
-  return `${size.toFixed(decimalPlaces)} ${units[iterations]}`;
-}
-
-/* -------------------------------------------- */
-
-/**
- * @typedef {object} ResolvedUUID
- * @property {string} uuid                      The original UUID.
- * @property {DocumentCollection} [collection]  The parent collection.
- * @property {string} [documentId]              The parent document.
- * @property {string} [documentType]            The parent document type.
- * @property {Document} [doc]                   An already-resolved document.
- * @property {string[]} embedded                Any remaining Embedded Document parts.
- */
-
-/**
- * Parse a UUID into its constituent parts.
- * @param {string} uuid                  The UUID to parse.
- * @param {object} [options]             Options to configure parsing behavior.
- * @param {Document} [options.relative]  A document to resolve relative UUIDs against.
- * @returns {ResolvedUUID}               Returns the Collection, Document Type, and Document ID to resolve the parent
- *                                       document, as well as the remaining Embedded Document parts, if any.
- */
-export function parseUuid(uuid, {relative}={}) {
-  if ( !uuid ) return {uuid, embedded: []};
-  if ( uuid.startsWith(".") && relative ) return _resolveRelativeUuid(uuid, relative);
-  const packs = globalThis.db?.packs ?? game.packs;
-  const parts = uuid.split(".");
-  let collection;
-  let documentId;
-  let documentType;
-
-  // Compendium Documents.
-  if ( parts[0] === "Compendium" ) {
-    parts.shift();
-    const [scope, packName, documentName, id] = parts;
-    collection = packs.get(`${scope}.${packName}`);
-
-    // Fully-qualified compendium UUID containing the primary document type.
-    if ( (documentName === "Folder") || COMPENDIUM_DOCUMENT_TYPES.includes(documentName) ) {
-      parts.splice(0, 4);
-      documentId = id;
-      documentType = documentName;
-    }
-
-    // Legacy compendium UUID with implicit primary document type.
-    else {
-      parts.splice(0, 3);
-      documentId = documentName;
-    }
-  }
-
-  // World Documents.
-  else {
-    const [documentName, id] = parts.splice(0, 2);
-    collection = globalThis.db?.[documentName] ?? CONFIG[documentName]?.collection?.instance;
-    documentType = documentName;
-    documentId = id;
-  }
-
-  return {uuid, collection, documentId, documentType, embedded: parts};
-}
-
-/* -------------------------------------------- */
-
-/**
- * Resolve a UUID relative to another document.
- * The general-purpose algorithm for resolving relative UUIDs is as follows:
- * 1. If the number of parts is odd, remove the first part and resolve it against the current document and update the
- *    current document.
- * 2. If the number of parts is even, resolve embedded documents against the current document.
- * @param {string} uuid        The UUID to resolve.
- * @param {Document} relative  The document to resolve against.
- * @returns {ResolvedUUID}
- * @private
- */
-function _resolveRelativeUuid(uuid, relative) {
-  uuid = uuid.substring(1);
-  const parts = uuid.split(".");
-
-  // A child document. If we don't have a reference to an actual embedded collection, it will not be resolved in
-  // _resolveEmbedded.
-  if ( parts.length % 2 === 0 ) return {doc: relative, embedded: parts};
-
-  // A sibling document.
-  const documentId = parts.shift();
-  const collection = (relative.compendium && !relative.isEmbedded) ? relative.compendium : relative.collection;
-  return {uuid, collection, documentId, embedded: parts};
 }
 
 /* -------------------------------------------- */

@@ -2,7 +2,6 @@
  * @typedef {object} ContextMenuEntry
  * @property {string} name               The context menu label. Can be localized.
  * @property {string} icon               A string containing an HTML icon element for the menu item
- * @property {string} group              An identifier for a group this entry belongs to.
  * @property {function(jQuery)} callback The function to call when the menu item is clicked. Receives the HTML element
  *                                       of the entry that this context menu is for.
  * @property {function(jQuery):boolean} [condition] A function to call to determine if this item appears in the menu.
@@ -35,7 +34,7 @@ class ContextMenu {
 
     /**
      * The target HTMLElement being selected
-     * @type {HTMLElement|jQuery}
+     * @type {HTMLElement}
      */
     this.element = element;
 
@@ -109,8 +108,18 @@ class ContextMenu {
    */
   static create(app, html, selector, menuItems, {hookName="EntryContext", ...options}={}) {
     for ( const cls of app.constructor._getInheritanceChain() ) {
+      /**
+       * A hook event that fires when the context menu for entries in an Application is constructed. Substitute the
+       * Application name in the hook event to target a specific Application, for example
+       * "getActorDirectoryEntryContext".
+       * @function getApplicationEntryContext
+       * @memberof hookEvents
+       * @param {jQuery} html                     The HTML element to which the context options are attached
+       * @param {ContextMenuEntry[]} entryOptions The context menu entries
+       */
       Hooks.call(`get${cls.name}${hookName}`, html, menuItems);
     }
+
     if ( menuItems ) return new ContextMenu(html, selector, menuItems, options);
   }
 
@@ -120,12 +129,9 @@ class ContextMenu {
    * Attach a ContextMenu instance to an HTML selector
    */
   bind() {
-    const element = this.element instanceof HTMLElement ? this.element : this.element[0];
-    element.addEventListener(this.eventName, event => {
-      const matching = event.target.closest(this.selector);
-      if ( !matching ) return;
+    this.element.on(this.eventName, this.selector, event => {
       event.preventDefault();
-      this.#target = matching;
+      this.#target = event.currentTarget;
       const menu = this.menu;
 
       // Remove existing context UI
@@ -193,39 +199,24 @@ class ContextMenu {
     let ol = $('<ol class="context-items"></ol>');
     html.html(ol);
 
-    if ( !this.menuItems.length ) return;
+    // Build menu items
+    for (let item of this.menuItems) {
 
-    const groups = this.menuItems.reduce((acc, entry) => {
-      const group = entry.group ?? "_none";
-      acc[group] ??= [];
-      acc[group].push(entry);
-      return acc;
-    }, {});
-
-    for ( const [group, entries] of Object.entries(groups) ) {
-      let parent = ol;
-      if ( group !== "_none" ) {
-        const groupItem = $(`<li class="context-group" data-group-id="${group}"><ol></ol></li>`);
-        ol.append(groupItem);
-        parent = groupItem.find("ol");
+      // Determine menu item visibility (display unless false)
+      let display = true;
+      if ( item.condition !== undefined ) {
+        display = ( item.condition instanceof Function ) ? item.condition(target) : item.condition;
       }
-      for ( const item of entries ) {
-        // Determine menu item visibility (display unless false)
-        let display = true;
-        if ( item.condition !== undefined ) {
-          display = ( item.condition instanceof Function ) ? item.condition(target) : item.condition;
-        }
-        if ( !display ) continue;
+      if ( !display ) continue;
 
-        // Construct and add the menu item
-        const name = game.i18n.localize(item.name);
-        const li = $(`<li class="context-item">${item.icon}${name}</li>`);
-        li.children("i").addClass("fa-fw");
-        parent.append(li);
+      // Construct and add the menu item
+      let name = game.i18n.localize(item.name);
+      let li = $(`<li class="context-item">${item.icon}${name}</li>`);
+      li.children("i").addClass("fa-fw");
+      ol.append(li);
 
-        // Record a reference to the item
-        item.element = li[0];
-      }
+      // Record a reference to the item
+      item.element = li[0];
     }
 
     // Bail out if there are no children
@@ -235,7 +226,7 @@ class ContextMenu {
     this._setPosition(html, target);
 
     // Apply interactivity
-    if ( !existing.length ) this.activateListeners(html);
+    this.activateListeners(html);
 
     // Deactivate global tooltip
     game.tooltip.deactivate();
@@ -272,8 +263,7 @@ class ContextMenu {
     this._expandUp = containerUp || windowUp;
 
     // Display the menu
-    html.toggleClass("expand-up", this._expandUp);
-    html.toggleClass("expand-down", !this._expandUp);
+    html.addClass(this._expandUp ? "expand-up" : "expand-down");
     html.css("visibility", "");
     target.addClass("context");
   }

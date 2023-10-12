@@ -36,16 +36,6 @@ class ImagePopout extends FormApplication {
   /* -------------------------------------------- */
 
   /**
-   * Whether the application should display video content.
-   * @type {boolean}
-   */
-  get isVideo() {
-    return VideoHelper.hasVideoExtension(this.object);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * @override
    * @returns {ImagePopoutOptions}
    */
@@ -75,8 +65,7 @@ class ImagePopout extends FormApplication {
       options: this.options,
       title: this.title,
       caption: this.options.caption,
-      showTitle: this.isTitleVisible(),
-      isVideo: this.isVideo
+      showTitle: this.isTitleVisible()
     };
   }
 
@@ -112,16 +101,6 @@ class ImagePopout extends FormApplication {
 
   /* -------------------------------------------- */
 
-  /** @inheritdoc */
-  activateListeners(html) {
-    super.activateListeners(html);
-    // For some reason, unless we do this, videos will not autoplay the first time the popup is opened in a session,
-    // even if the user has made a gesture.
-    if ( this.isVideo ) html.find("video")[0]?.play();
-  }
-
-  /* -------------------------------------------- */
-
   /** @override */
   _getHeaderButtons() {
     const buttons = super._getHeaderButtons();
@@ -150,7 +129,7 @@ class ImagePopout extends FormApplication {
     let w;
     let h;
     try {
-      [w, h] = this.isVideo ? await this.getVideoSize(img) : await this.getImageSize(img);
+      [w, h] = await this.getImageSize(img);
     } catch(err) {
       return { width: 480, height: 480 };
     }
@@ -195,25 +174,6 @@ class ImagePopout extends FormApplication {
   /* -------------------------------------------- */
 
   /**
-   * Determine the dimensions of the given video file.
-   * @param {string} src  The URL to the video.
-   * @returns {Promise<[number, number]>}
-   */
-  static getVideoSize(src) {
-    return new Promise((resolve, reject) => {
-      const video = document.createElement("video");
-      video.onloadedmetadata = () => {
-        video.onloadedmetadata = null;
-        resolve([video.videoWidth, video.videoHeight]);
-      };
-      video.onerror = reject;
-      video.src = src;
-    });
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * @typedef {object} ShareImageConfig
    * @property {string} image         The image URL to share.
    * @property {string} title         The image title.
@@ -226,21 +186,17 @@ class ImagePopout extends FormApplication {
 
   /**
    * Share the displayed image with other connected Users
-   * @param {ShareImageConfig} [options]
    */
-  shareImage(options={}) {
-    options = foundry.utils.mergeObject(this.options, options, { inplace: false });
+  shareImage() {
     game.socket.emit("shareImage", {
       image: this.object,
-      title: options.title,
-      caption: options.caption,
-      uuid: options.uuid,
-      showTitle: options.showTitle,
-      users: Array.isArray(options.users) ? options.users : undefined
+      title: this.options.title,
+      caption: this.options.caption,
+      uuid: this.options.uuid
     });
     ui.notifications.info(game.i18n.format("JOURNAL.ActionShowSuccess", {
       mode: "image",
-      title: options.title,
+      title: this.options.title,
       which: "all"
     }));
   }

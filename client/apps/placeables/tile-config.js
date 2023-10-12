@@ -26,9 +26,7 @@ class TileConfig extends DocumentSheet {
     // If the config was closed without saving, reset the initial display of the Tile
     if ( !options.force ) {
       this.document.reset();
-      if ( this.document.object?.destroyed === false ) {
-        this.document.object.refresh();
-      }
+      this.document.object.refresh();
     }
 
     // Remove the preview tile and close
@@ -43,7 +41,7 @@ class TileConfig extends DocumentSheet {
   getData(options={}) {
     const data = super.getData(options);
     data.submitText = game.i18n.localize(this.object.id ? "TILE.SubmitUpdate" : "TILE.SubmitCreate");
-    data.occlusionModes = Object.entries(CONST.OCCLUSION_MODES).reduce((obj, e) => {
+    data.occlusionModes = Object.entries(CONST.TILE_OCCLUSION_MODES).reduce((obj, e) => {
       obj[e[1]] = game.i18n.localize(`TILE.OcclusionMode${e[0].titleCase()}`);
       return obj;
     }, {});

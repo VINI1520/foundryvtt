@@ -30,7 +30,6 @@ class SortingHelpers {
     }
 
     // Ensure the siblings are sorted
-    siblings = Array.from(siblings);
     siblings.sort((a, b) => a[sortKey] - b[sortKey]);
 
     // Determine the index target for the sort

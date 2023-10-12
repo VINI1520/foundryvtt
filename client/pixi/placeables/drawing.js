@@ -1,10 +1,9 @@
 /**
  * The Drawing object is an implementation of the PlaceableObject container.
  * Each Drawing is a placeable object in the DrawingsLayer.
- *
  * @category - Canvas
- * @property {DrawingsLayer} layer                Each Drawing object belongs to the DrawingsLayer
- * @property {DrawingDocument} document           Each Drawing object provides an interface for a DrawingDocument
+ * @see {@link DrawingDocument}
+ * @see {@link DrawingsLayer}
  */
 class Drawing extends PlaceableObject {
 
@@ -29,36 +28,23 @@ class Drawing extends PlaceableObject {
   /**
    * An internal timestamp for the previous freehand draw time, to limit sampling.
    * @type {number}
+   * @private
    */
-  #drawTime = 0;
+  _drawTime = 0;
 
   /**
    * An internal flag for the permanent points of the polygon.
    * @type {number[]}
+   * @private
    */
-  #fixedPoints = foundry.utils.deepClone(this.document.shape.points);
-
-  /**
-   * The computed bounds of the Drawing.
-   * @type {PIXI.Rectangle}
-   */
-  #bounds;
+  _fixedPoints = foundry.utils.deepClone(this.document.shape.points);
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
   static embeddedName = "Drawing";
 
-  /** @override */
-  static RENDER_FLAGS = {
-    redraw: {propagate: ["refresh"]},
-    refresh: {propagate: ["refreshState", "refreshShape"], alias: true},
-    refreshState: {propagate: ["refreshFrame"]},
-    refreshShape: {propagate: ["refreshFrame", "refreshText", "refreshMesh"]},
-    refreshFrame: {},
-    refreshText: {},
-    refreshMesh: {}
-  };
+  /* -------------------------------------------- */
 
   /**
    * The rate at which points are sampled (in milliseconds) during a freehand drawing workflow
@@ -79,9 +65,10 @@ class Drawing extends PlaceableObject {
   /** @override */
   get bounds() {
     const {x, y, shape, rotation} = this.document;
-    return rotation === 0
-      ? new PIXI.Rectangle(x, y, shape.width, shape.height).normalize()
-      : PIXI.Rectangle.fromRotation(x, y, shape.width, shape.height, Math.toRadians(rotation)).normalize();
+    if ( rotation !== 0 ) {
+      return new PIXI.Rectangle.fromRotation(x, y, shape.width, shape.height, Math.toRadians(rotation)).normalize();
+    }
+    return new PIXI.Rectangle(x, y, shape.width, shape.height).normalize();
   }
 
   /* -------------------------------------------- */
@@ -119,7 +106,7 @@ class Drawing extends PlaceableObject {
    * @type {boolean}
    */
   get hasText() {
-    return !!this.document.text && (this.document.fontSize > 0);
+    return this.document.text && (this.document.fontSize > 0);
   }
 
   /* -------------------------------------------- */
@@ -134,7 +121,7 @@ class Drawing extends PlaceableObject {
   }
 
   /* -------------------------------------------- */
-  /*  Initial Rendering                           */
+  /* Rendering                                    */
   /* -------------------------------------------- */
 
   /** @inheritdoc */
@@ -155,11 +142,11 @@ class Drawing extends PlaceableObject {
   /* -------------------------------------------- */
 
   /** @override */
-  async _draw(options) {
+  async _draw() {
 
     // Load the background texture, if one is defined
     const texture = this.document.texture;
-    if ( this._original ) this.texture = this._original.texture?.clone();
+    if ( this.isPreview ) this.texture = this._original.texture?.clone();
     else this.texture = texture ? await loadTexture(texture, {fallback: "icons/svg/hazard.svg"}) : null;
 
     // Create the primary group drawing container
@@ -170,9 +157,6 @@ class Drawing extends PlaceableObject {
 
     // Drawing text
     this.text = this.hasText ? this.addChild(this.#drawText()) : null;
-
-    // Interactivity
-    this.cursor = this.document.isOwner ? "pointer" : null;
   }
 
   /* -------------------------------------------- */
@@ -180,23 +164,13 @@ class Drawing extends PlaceableObject {
   /**
    * Create elements for the Drawing border and handles
    * @returns {PIXI.Container}
+   * @private
    */
   #drawFrame() {
     const frame = new PIXI.Container();
     frame.border = frame.addChild(new PIXI.Graphics());
     frame.handle = frame.addChild(new ResizeHandle([1, 1]));
     return frame;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Create a PreciseText element to be displayed as part of this drawing.
-   * @returns {PreciseText}
-   */
-  #drawText() {
-    const textStyle = this._getTextStyle();
-    return new PreciseText(this.document.text || undefined, textStyle);
   }
 
   /* -------------------------------------------- */
@@ -212,10 +186,10 @@ class Drawing extends PlaceableObject {
     return PreciseText.getTextStyle({
       fontFamily: fontFamily,
       fontSize: fontSize,
-      fill: textColor || 0xFFFFFF,
+      fill: textColor,
       strokeThickness: stroke,
       dropShadowBlur: Math.max(Math.round(fontSize / 16), 2),
-      align: "center",
+      align: "left",
       wordWrap: true,
       wordWrapWidth: shape.width,
       padding: stroke * 4
@@ -223,76 +197,50 @@ class Drawing extends PlaceableObject {
   }
 
   /* -------------------------------------------- */
-  /*  Incremental Refresh                         */
+
+  /**
+   * Create a PreciseText element to be displayed as part of this drawing.
+   * @returns {PreciseText}
+   * @private
+   */
+  #drawText() {
+    const textStyle = this._getTextStyle();
+    return new PreciseText(this.document.text || undefined, textStyle);
+  }
+
   /* -------------------------------------------- */
 
   /** @override */
-  _applyRenderFlags(flags) {
-    if ( flags.refreshShape ) this.#refreshShape();
-    if ( flags.refreshFrame ) this.#refreshFrame();
-    if ( flags.refreshText ) this.#refreshText();
-    if ( flags.refreshState ) this.#refreshState();
-    if ( flags.refreshMesh ) this.#refreshMesh();
-  }
+  _refresh(options) {
 
-  /* -------------------------------------------- */
+    // Refresh the primary drawing container
+    this.shape.refresh();
 
-  /**
-   * Refresh the primary canvas object bound to this drawing.
-   */
-  #refreshMesh() {
-    if ( !this.shape ) return;
-    this.shape.initialize(this.document);
-    this.shape.alpha = Math.min(this.shape.alpha, this.alpha);
-  }
+    // Refresh the shape bounds and the displayed frame
+    const {x, y, z, hidden, shape, rotation} = this.document;
+    const bounds = PIXI.Rectangle.fromRotation(0, 0, shape.width, shape.height, Math.toRadians(rotation)).normalize();
+    this.hitArea = this.controlled ? bounds.clone().pad(50) : bounds; // Pad to include resize handle
+    this.buttonMode = true;
+    if ( this.id && this.controlled ) this.#refreshFrame(bounds);
+    else this.frame.visible = false;
 
-  /* -------------------------------------------- */
+    // Refresh the display of text
+    this.#refreshText();
 
-  /**
-   * Refresh the displayed state of the Drawing.
-   * Used to update aspects of the Drawing which change based on the user interaction state.
-   */
-  #refreshState() {
-    const {hidden, locked} = this.document;
-    this.visible = !hidden || game.user.isGM;
-    this.frame.border.visible = this.controlled || this.hover || this.layer.highlightObjects;
-    this.frame.handle.visible = this.controlled && !locked;
-
-    // Update the alpha of the text (if any) according to the hidden state
-    if ( !this.text ) return;
-    const textAlpha = this.document.textAlpha;
-    this.text.alpha = hidden ? Math.min(0.5, textAlpha) : (textAlpha ?? 1.0);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the displayed shape of the Drawing.
-   * This refresh occurs when the underlying shape of the drawing has been modified.
-   */
-  #refreshShape() {
-    const {x, y, shape, rotation, sort} = this.document;
-
-    // Compute drawing bounds
-    this.#bounds = rotation === 0
-      ? new PIXI.Rectangle(0, 0, shape.width, shape.height).normalize()
-      : PIXI.Rectangle.fromRotation(0, 0, shape.width, shape.height, Math.toRadians(rotation)).normalize();
-
-    // Refresh hit area
-    this.hitArea = this.#bounds.clone().pad(20);
-
-    // Set Position, zIndex, alpha
+    // Set position and visibility
     this.position.set(x, y);
-    this.zIndex = sort;
-    this.alpha = this._getTargetAlpha();
+    this.zIndex = z;
+    this.visible = !hidden || game.user.isGM;
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Refresh the border frame that encloses the Drawing.
+   * Refresh the boundary frame which outlines the Drawing shape
+   * @param {Rectangle} rect      The rectangular bounds of the drawing
+   * @private
    */
-  #refreshFrame() {
+  #refreshFrame(rect) {
 
     // Determine the border color
     const colors = CONFIG.Canvas.dispositionColors;
@@ -306,23 +254,24 @@ class Drawing extends PlaceableObject {
     const t = CONFIG.Canvas.objectBorderThickness;
     const h = Math.round(t/2);
     const o = Math.round(h/2) + pad;
-    const border = this.#bounds.clone().pad(o);
+    const border = rect.clone().pad(o);
     this.frame.border.clear().lineStyle(t, 0x000000).drawShape(border).lineStyle(h, bc).drawShape(border);
 
     // Draw the handle
     this.frame.handle.refresh(border);
+    this.frame.visible = true;
   }
 
   /* -------------------------------------------- */
 
   /**
    * Refresh the appearance of text displayed above the drawing.
-   * This refresh occurs when the shape is refreshed or the position or opacity of drawing text has changed.
+   * @private
    */
   #refreshText() {
     if ( !this.text ) return;
-    this.text.style = this._getTextStyle();
-    const {rotation, shape, hidden} = this.document;
+    const {rotation, textAlpha, shape, hidden} = this.document;
+    this.text.alpha = hidden ? Math.min(0.5, textAlpha) : (textAlpha ?? 1.0);
     this.text.pivot.set(this.text.width / 2, this.text.height / 2);
     this.text.position.set(
       (this.text.width / 2) + ((shape.width - this.text.width) / 2),
@@ -347,21 +296,21 @@ class Drawing extends PlaceableObject {
   _addPoint(position, {round=false, snap=false, temporary=false}={}) {
     if ( snap ) position = canvas.grid.getSnappedPosition(position.x, position.y, this.layer.gridPrecision);
     else if ( round ) {
-      position.x = Math.round(position.x);
-      position.y = Math.round(position.y);
+      position.x = Math.roundFast(position.x);
+      position.y = Math.roundFast(position.y);
     }
 
     // Avoid adding duplicate points
-    const last = this.#fixedPoints.slice(-2);
+    const last = this._fixedPoints.slice(-2);
     const next = [position.x - this.document.x, position.y - this.document.y];
     if ( next.equals(last) ) return;
 
     // Append the new point and update the shape
-    const points = this.#fixedPoints.concat(next);
+    const points = this._fixedPoints.concat(next);
     this.document.shape.updateSource({points});
     if ( !temporary ) {
-      this.#fixedPoints = points;
-      this.#drawTime = Date.now();
+      this._fixedPoints = points;
+      this._drawTime = Date.now();
     }
   }
 
@@ -369,24 +318,28 @@ class Drawing extends PlaceableObject {
 
   /**
    * Remove the last fixed point from the polygon
-   * @internal
+   * @private
    */
   _removePoint() {
-    this.#fixedPoints.splice(-2);
-    this.document.shape.updateSource({points: this.#fixedPoints});
+    this._fixedPoints.splice(-2);
+    this.document.shape.updateSource({points: this._fixedPoints});
   }
 
   /* -------------------------------------------- */
 
-  /** @inheritDoc */
+  /** @override */
   _onControl(options) {
     super._onControl(options);
-    this.enableTextEditing(options);
+    if ( game.activeTool === "text" ) {
+      this._onkeydown = this._onDrawingTextKeydown.bind(this);
+      if ( !options.isNew ) this._pendingText = this.document.text;
+      document.addEventListener("keydown", this._onkeydown);
+    }
   }
 
   /* -------------------------------------------- */
 
-  /** @inheritDoc */
+  /** @override */
   _onRelease(options) {
     super._onRelease(options);
     if ( this._onkeydown ) {
@@ -411,24 +364,9 @@ class Drawing extends PlaceableObject {
   /* -------------------------------------------- */
 
   /** @override */
-  _onDelete(options, userId) {
-    super._onDelete(options, userId);
+  _onDelete(...args) {
+    super._onDelete(...args);
     if ( this._onkeydown ) document.removeEventListener("keydown", this._onkeydown);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Enable text editing for this drawing.
-   * @param {object} [options]
-   */
-  enableTextEditing(options={}) {
-    if ( (game.activeTool === "text") || options.forceTextEditing ) {
-      if ( this.text === null ) this.text = this.addChild(this.#drawText());
-      this._onkeydown = this.#onDrawingTextKeydown.bind(this);
-      if ( !options.isNew ) this._pendingText = this.document.text;
-      document.addEventListener("keydown", this._onkeydown);
-    }
   }
 
   /* -------------------------------------------- */
@@ -436,8 +374,9 @@ class Drawing extends PlaceableObject {
   /**
    * Handle text entry in an active text tool
    * @param {KeyboardEvent} event
+   * @private
    */
-  #onDrawingTextKeydown(event) {
+  _onDrawingTextKeydown(event) {
 
     // Ignore events when an input is focused, or when ALT or CTRL modifiers are applied
     if ( event.altKey || event.ctrlKey || event.metaKey ) return;
@@ -488,7 +427,7 @@ class Drawing extends PlaceableObject {
       this.text.text = this._pendingText;
       this.document.shape.width = this.text.width + 100;
       this.document.shape.height = this.text.height + 50;
-      this.renderFlags.set({refreshShape: true});
+      this.refresh();
     }
 
     // Conclude the workflow
@@ -498,51 +437,30 @@ class Drawing extends PlaceableObject {
   }
 
   /* -------------------------------------------- */
-  /*  Document Event Handlers                     */
+  /*  Socket Listeners and Handlers               */
   /* -------------------------------------------- */
 
   /** @override */
-  _onUpdate(data, options, userId) {
-    super._onUpdate(data, options, userId);
+  _onUpdate(changed, options, userId) {
+    // Update elevation?
+    if ( "z" in changed ) this.document.elevation = changed.z;
 
-    // Full re-draw
-    const redraw = ("type" in (data.shape || {})) || ("texture" in data) || ("text" in data)
-      || (!!this.document.text && ["fontFamily", "fontSize", "textColor"].some(k => k in data));
-    if ( redraw ) return this.renderFlags.set({redraw: true});
-
-    const refreshHUD = ((this.layer.hud.object === this) && ["z", "hidden", "locked"].some(k => k in data));
-    const refreshShape = ["x", "y", "elevation", "z", "shape", "rotation", "strokeWidth", "strokeColor",
-      "strokeAlpha", "bezierFactor", "fillType", "fillAlpha"].some(k => k in data);
-
-    // Incremental refresh
-    this.renderFlags.set({
-      refreshState: ["hidden", "locked", "textAlpha"].some(k => k in data),
-      refreshMesh: "hidden" in data,
-      refreshShape
-    });
-
-    if ( refreshHUD ) this.layer.hud.render();
+    // Fully re-draw when some drawing elements have changed
+    const textChanged = ("text" in changed)
+      || (this.document.text && ["fontFamily", "fontSize", "textColor", "width"].some(k => k in changed));
+    if ( changed.shape?.type || ("texture" in changed) || textChanged ) {
+      this.draw().then(() => super._onUpdate(changed, options, userId));
+    }
+    // Otherwise, simply refresh the existing drawing
+    else super._onUpdate(changed, options, userId);
   }
 
   /* -------------------------------------------- */
-  /*  Interactivity                               */
-  /* -------------------------------------------- */
-
-  /** @inheritDoc */
-  activateListeners() {
-    super.activateListeners();
-    this.frame.handle.off("pointerover").off("pointerout").off("pointerdown")
-      .on("pointerover", this._onHandleHoverIn.bind(this))
-      .on("pointerout", this._onHandleHoverOut.bind(this))
-      .on("pointerdown", this._onHandleMouseDown.bind(this));
-    this.frame.handle.eventMode = "static";
-  }
-
+  /*  Permission Controls                         */
   /* -------------------------------------------- */
 
   /** @override */
   _canControl(user, event) {
-    if ( !this.layer.active || this.isPreview ) return false;
     if ( this._creating ) {  // Allow one-time control immediately following creation
       delete this._creating;
       return true;
@@ -560,16 +478,30 @@ class Drawing extends PlaceableObject {
   }
 
   /* -------------------------------------------- */
+  /*  Event Listeners and Handlers                */
+  /* -------------------------------------------- */
+
+  /** @override */
+  activateListeners() {
+    super.activateListeners();
+    this.frame.handle.off("mouseover").off("mouseout").off("mousedown")
+      .on("mouseover", this._onHandleHoverIn.bind(this))
+      .on("mouseout", this._onHandleHoverOut.bind(this))
+      .on("mousedown", this._onHandleMouseDown.bind(this));
+    this.frame.handle.interactive = true;
+  }
+
+  /* -------------------------------------------- */
 
   /**
-   * Handle mouse movement which modifies the dimensions of the drawn shape.
-   * @param {PIXI.FederatedEvent} event
-   * @protected
+   * Handle mouse movement which modifies the dimensions of the drawn shape
+   * @param {PIXI.InteractionEvent} event
+   * @private
    */
   _onMouseDraw(event) {
-    const {destination, origin} = event.interactionData;
-    const isShift = event.shiftKey;
-    const isAlt = event.altKey;
+    const {destination, origin, originalEvent} = event.data;
+    const isShift = originalEvent.shiftKey;
+    const isAlt = originalEvent.altKey;
     let position = destination;
 
     // Drag differently depending on shape type
@@ -581,7 +513,7 @@ class Drawing extends PlaceableObject {
         let temporary = true;
         if ( isFreehand ) {
           const now = Date.now();
-          temporary = (now - this.#drawTime) < this.constructor.FREEHAND_SAMPLE_RATE;
+          temporary = (now - this._drawTime) < this.constructor.FREEHAND_SAMPLE_RATE;
         }
         const snap = !(isShift || isFreehand);
         this._addPoint(position, {snap, temporary});
@@ -612,7 +544,7 @@ class Drawing extends PlaceableObject {
     }
 
     // Refresh the display
-    this.renderFlags.set({refreshShape: true});
+    this.refresh();
   }
 
   /* -------------------------------------------- */
@@ -641,12 +573,14 @@ class Drawing extends PlaceableObject {
     if ( this._dragHandle ) return this._onHandleDragDrop(event);
     if ( this._dragPassthrough ) return canvas._onDragLeftDrop(event);
 
-    event.interactionData.clearPreviewContainer = false;
     // Update each dragged Drawing, confirming pending text
-    const clones = event.interactionData.clones || [];
+    const clones = event.data.clones || [];
     const updates = clones.map(c => {
       let dest = {x: c.document.x, y: c.document.y};
-      if ( !event.shiftKey ) dest = canvas.grid.getSnappedPosition(dest.x, dest.y, this.layer.gridPrecision);
+      if ( !event.data.originalEvent.shiftKey ) {
+        dest = canvas.grid.getSnappedPosition(dest.x, dest.y, this.layer.gridPrecision);
+      }
+
       // Define the update
       const update = {
         _id: c._original.id,
@@ -664,19 +598,32 @@ class Drawing extends PlaceableObject {
       c._original.visible = false;
       return update;
     });
-    try {
-      return await canvas.scene.updateEmbeddedDocuments("Drawing", updates, {diff: false});
-    } finally {
-      this.layer.clearPreviewContainer();
-    }
+    return canvas.scene.updateEmbeddedDocuments("Drawing", updates, {diff: false});
+  }
+
+  /* -------------------------------------------- */
+
+  /** @override */
+  _onDragLeftCancel(event) {
+    if ( this._dragHandle ) return this._onHandleDragCancel(event);
+    return super._onDragLeftCancel(event);
   }
 
   /* -------------------------------------------- */
 
   /** @inheritDoc */
-  _onDragLeftCancel(event) {
-    if ( this._dragHandle ) return this._onHandleDragCancel(event);
-    return super._onDragLeftCancel(event);
+  _onDragStart() {
+    super._onDragStart();
+    const o = this._original;
+    o.shape.alpha = o.alpha;
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritDoc */
+  _onDragEnd() {
+    super._onDragEnd();
+    if ( this.isPreview ) this._original.shape.alpha = 1.0;
   }
 
   /* -------------------------------------------- */
@@ -685,93 +632,92 @@ class Drawing extends PlaceableObject {
 
   /**
    * Handle mouse-over event on a control handle
-   * @param {PIXI.FederatedEvent} event   The mouseover event
-   * @protected
+   * @param {PIXI.InteractionEvent} event   The mouseover event
+   * @private
    */
   _onHandleHoverIn(event) {
     const handle = event.target;
-    handle?.scale.set(1.5, 1.5);
+    handle.scale.set(1.5, 1.5);
+    event.data.handle = event.target;
   }
 
   /* -------------------------------------------- */
 
   /**
    * Handle mouse-out event on a control handle
-   * @param {PIXI.FederatedEvent} event   The mouseout event
-   * @protected
+   * @param {PIXI.InteractionEvent} event   The mouseout event
+   * @private
    */
   _onHandleHoverOut(event) {
-    const handle = event.target;
-    handle?.scale.set(1.0, 1.0);
+    event.data.handle.scale.set(1.0, 1.0);
+    if ( this.interactionState < MouseInteractionManager.INTERACTION_STATES.CLICKED ) {
+      this._dragHandle = false;
+    }
   }
 
   /* -------------------------------------------- */
 
   /**
-   * When clicking the resize handle, initialize the drag property.
-   * @param {PIXI.FederatedEvent} event   The mousedown event
-   * @protected
+   * When we start a drag event - create a preview copy of the Tile for re-positioning
+   * @param {PIXI.InteractionEvent} event   The mousedown event
+   * @private
    */
   _onHandleMouseDown(event) {
-    if ( !this.document.locked ) this._dragHandle = true;
+    if ( !this.document.locked ) {
+      this._dragHandle = true;
+      this._original = this.document.toObject();
+    }
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Starting the resize handle drag event, initialize the original data.
-   * @param {PIXI.FederatedEvent} event   The mouse interaction event
-   * @protected
+   * Handle the beginning of a drag event on a resize handle
+   * @param {PIXI.InteractionEvent} event   The mouse interaction event
+   * @private
    */
   _onHandleDragStart(event) {
-    event.interactionData.originalData = this.document.toObject();
-    event.interactionData.drawingOrigin = {x: this.#bounds.right, y: this.#bounds.bottom};
+    event.data.origin = {x: this.bounds.right, y: this.bounds.bottom};
   }
 
   /* -------------------------------------------- */
 
   /**
    * Handle mousemove while dragging a tile scale handler
-   * @param {PIXI.FederatedEvent} event   The mouse interaction event
-   * @protected
+   * @param {PIXI.InteractionEvent} event   The mouse interaction event
+   * @private
    */
   _onHandleDragMove(event) {
+    const {destination, origin, originalEvent} = event.data;
 
     // Pan the canvas if the drag event approaches the edge
-    canvas._onDragCanvasPan(event);
+    canvas._onDragCanvasPan(originalEvent);
 
     // Update Drawing dimensions
-    const {destination, origin, originalData} = event.interactionData;
     const dx = destination.x - origin.x;
     const dy = destination.y - origin.y;
-    const normalized = Drawing.rescaleDimensions(originalData, dx, dy);
-
-    // Update the drawing, catching any validation failures
-    this.document.updateSource(normalized);
-    this.renderFlags.set({refreshShape: true});
+    const normalized = this._rescaleDimensions(this._original, dx, dy);
+    try {
+      this.document.updateSource(normalized);
+      this.refresh();
+    } catch(err) {}
   }
 
   /* -------------------------------------------- */
 
   /**
    * Handle mouseup after dragging a tile scale handler
-   * @param {PIXI.FederatedEvent} event   The mouseup event
-   * @protected
+   * @param {PIXI.InteractionEvent} event   The mouseup event
+   * @private
    */
   _onHandleDragDrop(event) {
-    event.interactionData.restoreOriginalData = false;
-    const {destination, origin, originalData, drawingOrigin} = event.interactionData;
-    let drawingDestination = {
-      x: drawingOrigin.x + (destination.x - origin.x),
-      y: drawingOrigin.y + (destination.y - origin.y)
-    };
-    if ( !event.shiftKey ) {
-      drawingDestination = canvas.grid.getSnappedPosition(
-        drawingDestination.x, drawingDestination.y, this.layer.gridPrecision);
+    let {destination, origin, originalEvent} = event.data;
+    if ( !originalEvent.shiftKey ) {
+      destination = canvas.grid.getSnappedPosition(destination.x, destination.y, this.layer.gridPrecision);
     }
-    const dx = drawingDestination.x - drawingOrigin.x;
-    const dy = drawingDestination.y - drawingOrigin.y;
-    const update = Drawing.rescaleDimensions(originalData, dx, dy);
+    const dx = destination.x - origin.x;
+    const dy = destination.y - origin.y;
+    const update = this._rescaleDimensions(this._original, dx, dy);
     return this.document.update(update, {diff: false});
   }
 
@@ -780,52 +726,59 @@ class Drawing extends PlaceableObject {
   /**
    * Handle cancellation of a drag event for one of the resizing handles
    * @param {PointerEvent} event            The drag cancellation event
-   * @protected
+   * @private
    */
   _onHandleDragCancel(event) {
+    this.document.updateSource(this._original);
     this._dragHandle = false;
-    if ( event.interactionData.restoreOriginalData !== false ) {
-      this.document.updateSource(event.interactionData.originalData);
-      this.renderFlags.set({refreshShape: true});
-    }
+    delete this._original;
+    this.refresh();
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Get a vectorized rescaling transformation for drawing data and dimensions passed in parameter
+   * Apply a vectorized rescaling transformation for the drawing data
    * @param {Object} original     The original drawing data
    * @param {number} dx           The pixel distance dragged in the horizontal direction
    * @param {number} dy           The pixel distance dragged in the vertical direction
-   * @returns {object}            The adjusted shape data
+   * @private
    */
-  static rescaleDimensions(original, dx, dy) {
-    let {type, points, width, height} = original.shape;
+  _rescaleDimensions(original, dx, dy) {
+    let {points, width, height} = original.shape;
     width += dx;
     height += dy;
     points = points || [];
 
     // Rescale polygon points
-    if ( type === Drawing.SHAPE_TYPES.POLYGON ) {
+    if ( this.isPolygon ) {
       const scaleX = 1 + (dx / original.shape.width);
       const scaleY = 1 + (dy / original.shape.height);
       points = points.map((p, i) => p * (i % 2 ? scaleY : scaleX));
     }
 
+    // Constrain drawing bounds by the contained text size
+    if ( this.document.text ) {
+      const textBounds = this.text.getLocalBounds();
+      width = Math.max(textBounds.width + 16, width);
+      height = Math.max(textBounds.height + 8, height);
+    }
+
     // Normalize the shape
-    return this.normalizeShape({
+    return this.constructor.normalizeShape({
       x: original.x,
       y: original.y,
-      shape: {width: Math.round(width), height: Math.round(height), points}
+      shape: {width: Math.roundFast(width), height: Math.roundFast(height), points}
     });
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Adjust the location, dimensions, and points of the Drawing before committing the change.
+   * Adjust the location, dimensions, and points of the Drawing before committing the change
    * @param {object} data   The DrawingData pending update
    * @returns {object}      The adjusted data
+   * @private
    */
   static normalizeShape(data) {
 

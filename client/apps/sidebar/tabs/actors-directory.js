@@ -1,11 +1,11 @@
 /**
  * The sidebar directory which organizes and displays world-level Actor documents.
  */
-class ActorDirectory extends DocumentDirectory {
+class ActorDirectory extends SidebarDirectory {
   constructor(...args) {
     super(...args);
     this._dragDrop[0].permissions.dragstart = () => game.user.can("TOKEN_CREATE");
-    this._dragDrop[0].permissions.drop = () => game.user.can("ACTOR_CREATE");
+    this._dragDrop[0].permissions.dragdrop = () => game.user.can("ACTOR_CREATE");
   }
 
   /* -------------------------------------------- */

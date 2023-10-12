@@ -111,14 +111,6 @@ var ProseMirror = (function (exports) {
       return result
     },
 
-    // :: () → Object
-    // Turn ordered map into a plain object.
-    toObject: function() {
-      var result = {};
-      this.forEach(function(key, value) { result[key] = value; });
-      return result
-    },
-
     // :: number
     // The amount of keys in this map.
     get size() {
@@ -885,7 +877,8 @@ var ProseMirror = (function (exports) {
           addNode($end.nodeBefore, target);
   }
   function close(node, content) {
-      node.type.checkContent(content);
+      if (!node.type.validContent(content))
+          throw new ReplaceError("Invalid content for node " + node.type.name);
       return node.copy(content);
   }
   function replaceThreeWay($from, $start, $end, $to, depth) {
@@ -1615,7 +1608,8 @@ var ProseMirror = (function (exports) {
       schema, and raise error when they do not.
       */
       check() {
-          this.type.checkContent(this.content);
+          if (!this.type.validContent(this.content))
+              throw new RangeError(`Invalid content for node ${this.type.name}: ${this.content.toString().slice(0, 50)}`);
           let copy = Mark.none;
           for (let i = 0; i < this.marks.length; i++)
               copy = this.marks[i].addToSet(copy);
@@ -1769,7 +1763,7 @@ var ProseMirror = (function (exports) {
       @internal
       */
       get inlineContent() {
-          return this.next.length != 0 && this.next[0].type.isInline;
+          return this.next.length && this.next[0].type.isInline;
       }
       /**
       Get the first matching node type at this match position that can
@@ -2186,7 +2180,7 @@ var ProseMirror = (function (exports) {
   about the node type, such as its name and what kind of node it
   represents.
   */
-  let NodeType$1 = class NodeType {
+  class NodeType$1 {
       /**
       @internal
       */
@@ -2288,7 +2282,8 @@ var ProseMirror = (function (exports) {
       */
       createChecked(attrs = null, content, marks) {
           content = Fragment.from(content);
-          this.checkContent(content);
+          if (!this.validContent(content))
+              throw new RangeError("Invalid content for node " + this.name);
           return new Node(this, this.computeAttrs(attrs), content, Mark.setFrom(marks));
       }
       /**
@@ -2326,15 +2321,6 @@ var ProseMirror = (function (exports) {
               if (!this.allowsMarks(content.child(i).marks))
                   return false;
           return true;
-      }
-      /**
-      Throws a RangeError if the given fragment is not valid content for this
-      node type.
-      @internal
-      */
-      checkContent(content) {
-          if (!this.validContent(content))
-              throw new RangeError(`Invalid content for node ${this.name}: ${content.toString().slice(0, 50)}`);
       }
       /**
       Check whether the given mark type is allowed in this node.
@@ -2376,7 +2362,7 @@ var ProseMirror = (function (exports) {
       */
       static compile(nodes, schema) {
           let result = Object.create(null);
-          nodes.forEach((name, spec) => result[name] = new NodeType(name, schema, spec));
+          nodes.forEach((name, spec) => result[name] = new NodeType$1(name, schema, spec));
           let topType = schema.spec.topNode || "doc";
           if (!result[topType])
               throw new RangeError("Schema is missing its top node type ('" + topType + "')");
@@ -2386,7 +2372,7 @@ var ProseMirror = (function (exports) {
               throw new RangeError("The text node type should not have attributes");
           return result;
       }
-  };
+  }
   // Attribute descriptors
   class Attribute {
       constructor(options) {
@@ -2500,12 +2486,12 @@ var ProseMirror = (function (exports) {
           in it, try to use property names unlikely to clash.)
           */
           this.cached = Object.create(null);
-          let instanceSpec = this.spec = {};
-          for (let prop in spec)
-              instanceSpec[prop] = spec[prop];
-          instanceSpec.nodes = OrderedMap.from(spec.nodes),
-              instanceSpec.marks = OrderedMap.from(spec.marks || {}),
-              this.nodes = NodeType$1.compile(this.spec.nodes, this);
+          this.spec = {
+              nodes: OrderedMap.from(spec.nodes),
+              marks: OrderedMap.from(spec.marks || {}),
+              topNode: spec.topNode
+          };
+          this.nodes = NodeType$1.compile(this.spec.nodes, this);
           this.marks = MarkType.compile(this.spec.marks, this);
           let contentExprCache = Object.create(null);
           for (let prop in this.nodes) {
@@ -2608,7 +2594,7 @@ var ProseMirror = (function (exports) {
   ProseMirror document conforming to a given schema. Its behavior is
   defined by an array of [rules](https://prosemirror.net/docs/ref/#model.ParseRule).
   */
-  let DOMParser$1 = class DOMParser {
+  class DOMParser$1 {
       /**
       Create a parser that targets the given schema, using the given
       parsing rules.
@@ -2729,8 +2715,7 @@ var ProseMirror = (function (exports) {
               if (rules)
                   rules.forEach(rule => {
                       insert(rule = copy(rule));
-                      if (!(rule.mark || rule.ignore || rule.clearMark))
-                          rule.mark = name;
+                      rule.mark = name;
                   });
           }
           for (let name in schema.nodes) {
@@ -2738,8 +2723,7 @@ var ProseMirror = (function (exports) {
               if (rules)
                   rules.forEach(rule => {
                       insert(rule = copy(rule));
-                      if (!(rule.node || rule.ignore || rule.mark))
-                          rule.node = name;
+                      rule.node = name;
                   });
           }
           return result;
@@ -2751,9 +2735,9 @@ var ProseMirror = (function (exports) {
       */
       static fromSchema(schema) {
           return schema.cached.domParser ||
-              (schema.cached.domParser = new DOMParser(schema, DOMParser.schemaRules(schema)));
+              (schema.cached.domParser = new DOMParser$1(schema, DOMParser$1.schemaRules(schema)));
       }
-  };
+  }
   const blockTags = {
       address: true, article: true, aside: true, blockquote: true, canvas: true,
       dd: true, div: true, dl: true, fieldset: true, figcaption: true, figure: true,
@@ -2886,24 +2870,14 @@ var ProseMirror = (function (exports) {
           }
           else if (dom.nodeType == 1) {
               let style = dom.getAttribute("style");
-              if (!style) {
-                  this.addElement(dom);
-              }
-              else {
-                  let marks = this.readStyles(parseStyles(style));
-                  if (!marks)
-                      return; // A style with ignore: true
-                  let [addMarks, removeMarks] = marks, top = this.top;
-                  for (let i = 0; i < removeMarks.length; i++)
-                      this.removePendingMark(removeMarks[i], top);
-                  for (let i = 0; i < addMarks.length; i++)
-                      this.addPendingMark(addMarks[i]);
-                  this.addElement(dom);
-                  for (let i = 0; i < addMarks.length; i++)
-                      this.removePendingMark(addMarks[i], top);
-                  for (let i = 0; i < removeMarks.length; i++)
-                      this.addPendingMark(removeMarks[i]);
-              }
+              let marks = style ? this.readStyles(parseStyles(style)) : null, top = this.top;
+              if (marks != null)
+                  for (let i = 0; i < marks.length; i++)
+                      this.addPendingMark(marks[i]);
+              this.addElement(dom);
+              if (marks != null)
+                  for (let i = 0; i < marks.length; i++)
+                      this.removePendingMark(marks[i], top);
           }
       }
       addTextNode(dom) {
@@ -2959,10 +2933,6 @@ var ProseMirror = (function (exports) {
                   dom = rule.skip;
               let sync, top = this.top, oldNeedsBlock = this.needsBlock;
               if (blockTags.hasOwnProperty(name)) {
-                  if (top.content.length && top.content[0].isInline && this.open) {
-                      this.open--;
-                      top = this.top;
-                  }
                   sync = true;
                   if (!top.type)
                       this.needsBlock = true;
@@ -2995,7 +2965,7 @@ var ProseMirror = (function (exports) {
       // return an array of marks, or null to indicate some of the styles
       // had a rule with `ignore` set.
       readStyles(styles) {
-          let add = Mark.none, remove = Mark.none;
+          let marks = Mark.none;
           style: for (let i = 0; i < styles.length; i += 2) {
               for (let after = undefined;;) {
                   let rule = this.parser.matchStyle(styles[i], styles[i + 1], this, after);
@@ -3003,22 +2973,14 @@ var ProseMirror = (function (exports) {
                       continue style;
                   if (rule.ignore)
                       return null;
-                  if (rule.clearMark) {
-                      this.top.pendingMarks.forEach(m => {
-                          if (rule.clearMark(m))
-                              remove = m.addToSet(remove);
-                      });
-                  }
-                  else {
-                      add = this.parser.schema.marks[rule.mark].create(rule.attrs).addToSet(add);
-                  }
+                  marks = this.parser.schema.marks[rule.mark].create(rule.attrs).addToSet(marks);
                   if (rule.consuming === false)
                       after = rule;
                   else
                       break;
               }
           }
-          return [add, remove];
+          return marks;
       }
       // Look up a handler for the given node. If none are found, return
       // false. Otherwise, apply it, use its return value to drive the way
@@ -4867,21 +4829,10 @@ var ProseMirror = (function (exports) {
       // content that can be moved somewhere on the frontier. Returns two
       // depths, one for the slice and one for the frontier.
       findFittable() {
-          let startDepth = this.unplaced.openStart;
-          for (let cur = this.unplaced.content, d = 0, openEnd = this.unplaced.openEnd; d < startDepth; d++) {
-              let node = cur.firstChild;
-              if (cur.childCount > 1)
-                  openEnd = 0;
-              if (node.type.spec.isolating && openEnd <= d) {
-                  startDepth = d;
-                  break;
-              }
-              cur = node.content;
-          }
           // Only try wrapping nodes (pass 2) after finding a place without
           // wrapping failed.
           for (let pass = 1; pass <= 2; pass++) {
-              for (let sliceDepth = pass == 1 ? startDepth : this.unplaced.openStart; sliceDepth >= 0; sliceDepth--) {
+              for (let sliceDepth = this.unplaced.openStart; sliceDepth >= 0; sliceDepth--) {
                   let fragment, parent = null;
                   if (sliceDepth) {
                       parent = contentAt(this.unplaced.content, sliceDepth - 1).firstChild;
@@ -5470,7 +5421,7 @@ var ProseMirror = (function (exports) {
       Change the type, attributes, and/or marks of the node at `pos`.
       When `type` isn't given, the existing node type is preserved,
       */
-      setNodeMarkup(pos, type, attrs = null, marks) {
+      setNodeMarkup(pos, type, attrs = null, marks = []) {
           setNodeMarkup(this, pos, type, attrs, marks);
           return this;
       }
@@ -5544,7 +5495,7 @@ var ProseMirror = (function (exports) {
       }
   }
 
-  var index$6 = /*#__PURE__*/Object.freeze({
+  var index$5 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     AddMarkStep: AddMarkStep,
     AddNodeMarkStep: AddNodeMarkStep,
@@ -6339,7 +6290,7 @@ var ProseMirror = (function (exports) {
           return this.applyTransaction(tr).state;
       }
       /**
-      @internal
+      @ignore
       */
       filterTransaction(tr, ignore = -1) {
           for (let i = 0; i < this.config.plugins.length; i++)
@@ -6566,18 +6517,26 @@ var ProseMirror = (function (exports) {
       getState(state) { return state[this.key]; }
   }
 
-  var index$5 = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    AllSelection: AllSelection,
-    EditorState: EditorState,
-    NodeSelection: NodeSelection,
-    Plugin: Plugin,
-    PluginKey: PluginKey,
-    Selection: Selection,
-    SelectionRange: SelectionRange,
-    TextSelection: TextSelection,
-    Transaction: Transaction
-  });
+  const nav = typeof navigator != "undefined" ? navigator : null;
+  const doc$1 = typeof document != "undefined" ? document : null;
+  const agent = (nav && nav.userAgent) || "";
+  const ie_edge = /Edge\/(\d+)/.exec(agent);
+  const ie_upto10 = /MSIE \d/.exec(agent);
+  const ie_11up = /Trident\/(?:[7-9]|\d{2,})\..*rv:(\d+)/.exec(agent);
+  const ie$1 = !!(ie_upto10 || ie_11up || ie_edge);
+  const ie_version = ie_upto10 ? document.documentMode : ie_11up ? +ie_11up[1] : ie_edge ? +ie_edge[1] : 0;
+  const gecko = !ie$1 && /gecko\/(\d+)/i.test(agent);
+  gecko && +(/Firefox\/(\d+)/.exec(agent) || [0, 0])[1];
+  const _chrome = !ie$1 && /Chrome\/(\d+)/.exec(agent);
+  const chrome$1 = !!_chrome;
+  const chrome_version = _chrome ? +_chrome[1] : 0;
+  const safari = !ie$1 && !!nav && /Apple Computer/.test(nav.vendor);
+  // Is true for both iOS and iPadOS for convenience
+  const ios = safari && (/Mobile\/\w+/.test(agent) || !!nav && nav.maxTouchPoints > 2);
+  const mac$3 = ios || (nav ? /Mac/.test(nav.platform) : false);
+  const android = /Android \d/.test(agent);
+  const webkit = !!doc$1 && "webkitFontSmoothing" in doc$1.documentElement.style;
+  const webkit_version = webkit ? +(/\bAppleWebKit\/(\d+)/.exec(navigator.userAgent) || [0, 0])[1] : 0;
 
   const domIndex = function (node) {
       for (var index = 0;; index++) {
@@ -6656,7 +6615,10 @@ var ProseMirror = (function (exports) {
   // Work around Chrome issue https://bugs.chromium.org/p/chromium/issues/detail?id=447523
   // (isCollapsed inappropriately returns true in shadow dom)
   const selectionCollapsed = function (domSel) {
-      return domSel.focusNode && isEquivalentPosition(domSel.focusNode, domSel.focusOffset, domSel.anchorNode, domSel.anchorOffset);
+      let collapsed = domSel.isCollapsed;
+      if (collapsed && chrome$1 && domSel.rangeCount && !domSel.getRangeAt(0).collapsed)
+          collapsed = false;
+      return collapsed;
   };
   function keyEvent(keyCode, key) {
       let event = document.createEvent("Event");
@@ -6665,33 +6627,6 @@ var ProseMirror = (function (exports) {
       event.key = event.code = key;
       return event;
   }
-  function deepActiveElement(doc) {
-      let elt = doc.activeElement;
-      while (elt && elt.shadowRoot)
-          elt = elt.shadowRoot.activeElement;
-      return elt;
-  }
-
-  const nav = typeof navigator != "undefined" ? navigator : null;
-  const doc$1 = typeof document != "undefined" ? document : null;
-  const agent = (nav && nav.userAgent) || "";
-  const ie_edge = /Edge\/(\d+)/.exec(agent);
-  const ie_upto10 = /MSIE \d/.exec(agent);
-  const ie_11up = /Trident\/(?:[7-9]|\d{2,})\..*rv:(\d+)/.exec(agent);
-  const ie$1 = !!(ie_upto10 || ie_11up || ie_edge);
-  const ie_version = ie_upto10 ? document.documentMode : ie_11up ? +ie_11up[1] : ie_edge ? +ie_edge[1] : 0;
-  const gecko = !ie$1 && /gecko\/(\d+)/i.test(agent);
-  gecko && +(/Firefox\/(\d+)/.exec(agent) || [0, 0])[1];
-  const _chrome = !ie$1 && /Chrome\/(\d+)/.exec(agent);
-  const chrome$1 = !!_chrome;
-  const chrome_version = _chrome ? +_chrome[1] : 0;
-  const safari = !ie$1 && !!nav && /Apple Computer/.test(nav.vendor);
-  // Is true for both iOS and iPadOS for convenience
-  const ios = safari && (/Mobile\/\w+/.test(agent) || !!nav && nav.maxTouchPoints > 2);
-  const mac$3 = ios || (nav ? /Mac/.test(nav.platform) : false);
-  const android = /Android \d/.test(agent);
-  const webkit = !!doc$1 && "webkitFontSmoothing" in doc$1.documentElement.style;
-  const webkit_version = webkit ? +(/\bAppleWebKit\/(\d+)/.exec(navigator.userAgent) || [0, 0])[1] : 0;
 
   function windowRect(doc) {
       return { left: 0, right: doc.documentElement.clientWidth,
@@ -6891,32 +6826,25 @@ var ProseMirror = (function (exports) {
       // of nodes to see if there are block nodes that the coordinates
       // fall outside of. If so, we take the position before/after that
       // block. If not, we call `posFromDOM` on the raw node/offset.
-      let outsideBlock = -1;
-      for (let cur = node, sawBlock = false;;) {
+      let outside = -1;
+      for (let cur = node;;) {
           if (cur == view.dom)
               break;
           let desc = view.docView.nearestDesc(cur, true);
           if (!desc)
               return null;
-          if (desc.dom.nodeType == 1 && (desc.node.isBlock && desc.parent && !sawBlock || !desc.contentDOM)) {
+          if (desc.node.isBlock && desc.parent) {
               let rect = desc.dom.getBoundingClientRect();
-              if (desc.node.isBlock && desc.parent && !sawBlock) {
-                  sawBlock = true;
-                  if (rect.left > coords.left || rect.top > coords.top)
-                      outsideBlock = desc.posBefore;
-                  else if (rect.right < coords.left || rect.bottom < coords.top)
-                      outsideBlock = desc.posAfter;
-              }
-              if (!desc.contentDOM && outsideBlock < 0) {
-                  // If we are inside a leaf, return the side of the leaf closer to the coords
-                  let before = desc.node.isBlock ? coords.top < (rect.top + rect.bottom) / 2
-                      : coords.left < (rect.left + rect.right) / 2;
-                  return before ? desc.posBefore : desc.posAfter;
-              }
+              if (rect.left > coords.left || rect.top > coords.top)
+                  outside = desc.posBefore;
+              else if (rect.right < coords.left || rect.bottom < coords.top)
+                  outside = desc.posAfter;
+              else
+                  break;
           }
           cur = desc.dom.parentNode;
       }
-      return outsideBlock > -1 ? outsideBlock : view.docView.posFromDOM(node, offset, -1);
+      return outside > -1 ? outside : view.docView.posFromDOM(node, offset, 1);
   }
   function elementFromPoint(element, coords, box) {
       let len = element.childNodes.length;
@@ -7125,7 +7053,7 @@ var ProseMirror = (function (exports) {
               if (!nearest)
                   break;
               if (nearest.node.isBlock) {
-                  dom = nearest.contentDOM || nearest.dom;
+                  dom = nearest.dom;
                   break;
               }
               dom = nearest.dom.parentNode;
@@ -7167,21 +7095,16 @@ var ProseMirror = (function (exports) {
           // one character, and see if that moves the cursor out of the
           // textblock (or doesn't move it at all, when at the start/end of
           // the document).
-          let { focusNode: oldNode, focusOffset: oldOff, anchorNode, anchorOffset } = view.domSelectionRange();
+          let oldRange = sel.getRangeAt(0), oldNode = sel.focusNode, oldOff = sel.focusOffset;
           let oldBidiLevel = sel.caretBidiLevel // Only for Firefox
           ;
           sel.modify("move", dir, "character");
           let parentDOM = $head.depth ? view.docView.domAfterPos($head.before()) : view.dom;
-          let { focusNode: newNode, focusOffset: newOff } = view.domSelectionRange();
-          let result = newNode && !parentDOM.contains(newNode.nodeType == 1 ? newNode : newNode.parentNode) ||
-              (oldNode == newNode && oldOff == newOff);
+          let result = !parentDOM.contains(sel.focusNode.nodeType == 1 ? sel.focusNode : sel.focusNode.parentNode) ||
+              (oldNode == sel.focusNode && oldOff == sel.focusOffset);
           // Restore the previous selection
-          try {
-              sel.collapse(anchorNode, anchorOffset);
-              if (oldNode && (oldNode != anchorNode || oldOff != anchorOffset) && sel.extend)
-                  sel.extend(oldNode, oldOff);
-          }
-          catch (_) { }
+          sel.removeAllRanges();
+          sel.addRange(oldRange);
           if (oldBidiLevel != null)
               sel.caretBidiLevel = oldBidiLevel;
           return result;
@@ -7344,6 +7267,8 @@ var ProseMirror = (function (exports) {
           }
           return (atEnd == null ? bias > 0 : atEnd) ? this.posAtEnd : this.posAtStart;
       }
+      // Scan up the dom finding the first desc that is a descendant of
+      // this one.
       nearestDesc(dom, onlyNodes = false) {
           for (let first = true, cur = dom; cur; cur = cur.parentNode) {
               let desc = this.getDesc(cur), nodeDOM;
@@ -7551,13 +7476,14 @@ var ProseMirror = (function (exports) {
                       domSel.extend(headDOM.node, headDOM.offset);
                   domSelExtended = true;
               }
-              catch (_) {
+              catch (err) {
                   // In some cases with Chrome the selection is empty after calling
                   // collapse, even when it should be valid. This appears to be a bug, but
                   // it is difficult to isolate. If this happens fallback to the old path
                   // without using extend.
-                  // Similarly, this could crash on Safari if the editor is hidden, and
-                  // there was no selection.
+                  if (!(err instanceof DOMException))
+                      throw err;
+                  // declare global: DOMException
               }
           }
           if (!domSelExtended) {
@@ -7878,7 +7804,7 @@ var ProseMirror = (function (exports) {
           let { from, to } = view.state.selection;
           if (!(view.state.selection instanceof TextSelection) || from < pos || to > pos + this.node.content.size)
               return null;
-          let sel = view.domSelectionRange();
+          let sel = view.domSelection();
           let textNode = nearbyTextNode(sel.focusNode, sel.focusOffset);
           if (!textNode || !this.dom.contains(textNode.parentNode))
               return null;
@@ -8261,8 +8187,7 @@ var ProseMirror = (function (exports) {
               this.stack.push(this.top, this.index + 1);
               let found = -1;
               for (let i = this.index; i < Math.min(this.index + 3, this.top.children.length); i++) {
-                  let next = this.top.children[i];
-                  if (next.matchesMark(marks[depth]) && !this.isLocked(next.dom)) {
+                  if (this.top.children[i].matchesMark(marks[depth])) {
                       found = i;
                       break;
                   }
@@ -8348,7 +8273,7 @@ var ProseMirror = (function (exports) {
                   // Can't update if nextDOM is or contains this.lock, except if
                   // it's a text node whose content already matches the new text
                   // and whose decorations match the new ones.
-                  let locked = this.isLocked(nextDOM) &&
+                  let locked = this.lock && (nextDOM == this.lock || nextDOM.nodeType == 1 && nextDOM.contains(this.lock.parentNode)) &&
                       !(node.isText && next.node && next.node.isText && next.nodeDOM.nodeValue == node.text &&
                           next.dirty != NODE_DIRTY && sameOuterDeco(outerDeco, next.outerDeco));
                   if (!locked && next.update(node, outerDeco, innerDeco, view)) {
@@ -8417,9 +8342,6 @@ var ProseMirror = (function (exports) {
                   parent.children.splice(this.index++, 0, hack);
               this.changed = true;
           }
-      }
-      isLocked(node) {
-          return this.lock && (node == this.lock || node.nodeType == 1 && node.contains(this.lock.parentNode));
       }
   }
   // Iterate from the end of the fragment and array of descs to find
@@ -8618,7 +8540,7 @@ var ProseMirror = (function (exports) {
   }
 
   function selectionFromDOM(view, origin = null) {
-      let domSel = view.domSelectionRange(), doc = view.state.doc;
+      let domSel = view.domSelection(), doc = view.state.doc;
       if (!domSel.focusNode)
           return null;
       let nearestDesc = view.docView.nearestDesc(domSel.focusNode), inWidget = nearestDesc && nearestDesc.size == 0;
@@ -8662,7 +8584,7 @@ var ProseMirror = (function (exports) {
       // in Safari. And the drag selection delay is to workarond issues
       // which only present in Chrome.
       if (!force && view.input.mouseDown && view.input.mouseDown.allowDefault && chrome$1) {
-          let domSel = view.domSelectionRange(), curSel = view.domObserver.currentSelection;
+          let domSel = view.domSelection(), curSel = view.domObserver.currentSelection;
           if (domSel.anchorNode && curSel.anchorNode &&
               isEquivalentPosition(domSel.anchorNode, domSel.anchorOffset, curSel.anchorNode, curSel.anchorOffset)) {
               view.input.mouseDown.delayedSelectionSync = true;
@@ -8737,7 +8659,7 @@ var ProseMirror = (function (exports) {
   function removeClassOnSelectionChange(view) {
       let doc = view.dom.ownerDocument;
       doc.removeEventListener("selectionchange", view.input.hideSelectionGuard);
-      let domSel = view.domSelectionRange();
+      let domSel = view.domSelection();
       let node = domSel.anchorNode, offset = domSel.anchorOffset;
       doc.addEventListener("selectionchange", view.input.hideSelectionGuard = () => {
           if (domSel.anchorNode != node || domSel.anchorOffset != offset) {
@@ -8796,12 +8718,12 @@ var ProseMirror = (function (exports) {
           || TextSelection.between($anchor, $head, bias);
   }
   function hasFocusAndSelection(view) {
-      if (view.editable && !view.hasFocus())
+      if (view.editable && view.root.activeElement != view.dom)
           return false;
       return hasSelection(view);
   }
   function hasSelection(view) {
-      let sel = view.domSelectionRange();
+      let sel = view.domSelection();
       if (!sel.anchorNode)
           return false;
       try {
@@ -8817,7 +8739,7 @@ var ProseMirror = (function (exports) {
   }
   function anchorInRightPlace(view) {
       let anchorDOM = view.docView.domFromPos(view.state.selection.anchor, 0);
-      let domSel = view.domSelectionRange();
+      let domSel = view.domSelection();
       return isEquivalentPosition(anchorDOM.node, anchorDOM.offset, domSel.anchorNode, domSel.anchorOffset);
   }
 
@@ -8884,7 +8806,7 @@ var ProseMirror = (function (exports) {
   // Make sure the cursor isn't directly after one or more ignored
   // nodes, which will confuse the browser's cursor motion logic.
   function skipIgnoredNodesLeft(view) {
-      let sel = view.domSelectionRange();
+      let sel = view.domSelection();
       let node = sel.focusNode, offset = sel.focusOffset;
       if (!node)
           return;
@@ -8936,14 +8858,14 @@ var ProseMirror = (function (exports) {
           }
       }
       if (force)
-          setSelFocus(view, node, offset);
+          setSelFocus(view, sel, node, offset);
       else if (moveNode)
-          setSelFocus(view, moveNode, moveOffset);
+          setSelFocus(view, sel, moveNode, moveOffset);
   }
   // Make sure the cursor isn't directly before one or more ignored
   // nodes.
   function skipIgnoredNodesRight(view) {
-      let sel = view.domSelectionRange();
+      let sel = view.domSelection();
       let node = sel.focusNode, offset = sel.focusOffset;
       if (!node)
           return;
@@ -8985,14 +8907,13 @@ var ProseMirror = (function (exports) {
           }
       }
       if (moveNode)
-          setSelFocus(view, moveNode, moveOffset);
+          setSelFocus(view, sel, moveNode, moveOffset);
   }
   function isBlockNode(dom) {
       let desc = dom.pmViewDesc;
       return desc && desc.node && desc.node.isBlock;
   }
-  function setSelFocus(view, node, offset) {
-      let sel = view.domSelection();
+  function setSelFocus(view, sel, node, offset) {
       if (selectionCollapsed(sel)) {
           let range = document.createRange();
           range.setEnd(node, offset);
@@ -9068,7 +8989,7 @@ var ProseMirror = (function (exports) {
   function safariDownArrowBug(view) {
       if (!safari || view.state.selection.$head.parentOffset > 0)
           return false;
-      let { focusNode, focusOffset } = view.domSelectionRange();
+      let { focusNode, focusOffset } = view.domSelection();
       if (focusNode && focusNode.nodeType == 1 && focusOffset == 0 &&
           focusNode.firstChild && focusNode.firstChild.contentEditable == "false") {
           let child = focusNode.firstChild;
@@ -9126,7 +9047,6 @@ var ProseMirror = (function (exports) {
   }
 
   function serializeForClipboard(view, slice) {
-      view.someProp("transformCopied", f => { slice = f(slice, view); });
       let context = [], { content, openStart, openEnd } = slice;
       while (openStart > 1 && openEnd > 1 && content.childCount == 1 && content.firstChild.childCount == 1) {
           openStart--;
@@ -9151,7 +9071,7 @@ var ProseMirror = (function (exports) {
       }
       if (firstChild && firstChild.nodeType == 1)
           firstChild.setAttribute("data-pm-slice", `${openStart} ${openEnd}${wrappers ? ` -${wrappers}` : ""} ${JSON.stringify(context)}`);
-      let text = view.someProp("clipboardTextSerializer", f => f(slice, view)) ||
+      let text = view.someProp("clipboardTextSerializer", f => f(slice)) ||
           slice.content.textBetween(0, slice.content.size, "\n\n");
       return { dom: wrap, text };
   }
@@ -9163,10 +9083,10 @@ var ProseMirror = (function (exports) {
           return null;
       let asText = text && (plainText || inCode || !html);
       if (asText) {
-          view.someProp("transformPastedText", f => { text = f(text, inCode || plainText, view); });
+          view.someProp("transformPastedText", f => { text = f(text, inCode || plainText); });
           if (inCode)
               return text ? new Slice(Fragment.from(view.state.schema.text(text.replace(/\r\n?/g, "\n"))), 0, 0) : Slice.empty;
-          let parsed = view.someProp("clipboardTextParser", f => f(text, $context, plainText, view));
+          let parsed = view.someProp("clipboardTextParser", f => f(text, $context, plainText));
           if (parsed) {
               slice = parsed;
           }
@@ -9182,7 +9102,7 @@ var ProseMirror = (function (exports) {
           }
       }
       else {
-          view.someProp("transformPastedHTML", f => { html = f(html, view); });
+          view.someProp("transformPastedHTML", f => { html = f(html); });
           dom = readHTML(html);
           if (webkit)
               restoreReplacedSpaces(dom);
@@ -9190,14 +9110,8 @@ var ProseMirror = (function (exports) {
       let contextNode = dom && dom.querySelector("[data-pm-slice]");
       let sliceData = contextNode && /^(\d+) (\d+)(?: -(\d+))? (.*)/.exec(contextNode.getAttribute("data-pm-slice") || "");
       if (sliceData && sliceData[3])
-          for (let i = +sliceData[3]; i > 0; i--) {
-              let child = dom.firstChild;
-              while (child && child.nodeType != 1)
-                  child = child.nextSibling;
-              if (!child)
-                  break;
-              dom = child;
-          }
+          for (let i = +sliceData[3]; i > 0 && dom.firstChild; i--)
+              dom = dom.firstChild;
       if (!slice) {
           let parser = view.someProp("clipboardParser") || view.someProp("domParser") || DOMParser$1.fromSchema(view.state.schema);
           slice = parser.parseSlice(dom, {
@@ -9223,7 +9137,7 @@ var ProseMirror = (function (exports) {
               slice = closeSlice(slice, openStart, openEnd);
           }
       }
-      view.someProp("transformPasted", f => { slice = f(slice, view); });
+      view.someProp("transformPasted", f => { slice = f(slice); });
       return slice;
   }
   const inlineParents = /^(a|abbr|acronym|b|cite|code|del|em|i|ins|kbd|label|output|q|ruby|s|samp|span|strong|sub|sup|time|u|tt|var)$/i;
@@ -9507,7 +9421,7 @@ var ProseMirror = (function (exports) {
       let sel = view.state.selection;
       if (!(sel instanceof TextSelection) || !sel.$from.sameParent(sel.$to)) {
           let text = String.fromCharCode(event.charCode);
-          if (!/[\r\n]/.test(text) && !view.someProp("handleTextInput", f => f(view, sel.$from.pos, sel.$to.pos, text)))
+          if (!view.someProp("handleTextInput", f => f(view, sel.$from.pos, sel.$to.pos, text)))
               view.dispatch(view.state.tr.insertText(text).scrollIntoView());
           event.preventDefault();
       }
@@ -9730,7 +9644,7 @@ var ProseMirror = (function (exports) {
                   // (hidden) cursor is doesn't change the selection, and
                   // thus doesn't get a reaction from ProseMirror. This
                   // works around that.
-                  (chrome$1 && !this.view.state.selection.visible &&
+                  (chrome$1 && !(this.view.state.selection instanceof TextSelection) &&
                       Math.min(Math.abs(pos.pos - this.view.state.selection.from), Math.abs(pos.pos - this.view.state.selection.to)) <= 2))) {
               updateSelection(this.view, Selection.near(this.view.state.doc.resolve(pos.pos)), "pointer");
               event.preventDefault();
@@ -9800,13 +9714,13 @@ var ProseMirror = (function (exports) {
               // the inserted text won't inherit the marks. So this moves it
               // inside if necessary.
               if (gecko && state.selection.empty && $pos.parentOffset && !$pos.textOffset && $pos.nodeBefore.marks.length) {
-                  let sel = view.domSelectionRange();
+                  let sel = view.domSelection();
                   for (let node = sel.focusNode, offset = sel.focusOffset; node && node.nodeType == 1 && offset != 0;) {
                       let before = offset < 0 ? node.lastChild : node.childNodes[offset - 1];
                       if (!before)
                           break;
                       if (before.nodeType == 3) {
-                          view.domSelection().collapse(before, before.nodeValue.length);
+                          sel.collapse(before, before.nodeValue.length);
                           break;
                       }
                       else {
@@ -9927,13 +9841,13 @@ var ProseMirror = (function (exports) {
           if (target.parentNode)
               target.parentNode.removeChild(target);
           if (plainText)
-              doPaste(view, target.value, null, view.input.shiftKey, event);
+              doPaste(view, target.value, null, event);
           else
-              doPaste(view, target.textContent, target.innerHTML, view.input.shiftKey, event);
+              doPaste(view, target.textContent, target.innerHTML, event);
       }, 50);
   }
-  function doPaste(view, text, html, preferPlain, event) {
-      let slice = parseFromClipboard(view, text, html, preferPlain, view.state.selection.$from);
+  function doPaste(view, text, html, event) {
+      let slice = parseFromClipboard(view, text, html, view.input.shiftKey, view.state.selection.$from);
       if (view.someProp("handlePaste", f => f(view, event, slice || Slice.empty)))
           return true;
       if (!slice)
@@ -9954,7 +9868,7 @@ var ProseMirror = (function (exports) {
       if (view.composing && !android)
           return;
       let data = brokenClipboardAPI ? null : event.clipboardData;
-      if (data && doPaste(view, data.getData("text/plain"), data.getData("text/html"), view.input.shiftKey, event))
+      if (data && doPaste(view, data.getData("text/plain"), data.getData("text/html"), event))
           event.preventDefault();
       else
           capturePaste(view, event);
@@ -10013,7 +9927,7 @@ var ProseMirror = (function (exports) {
       let $mouse = view.state.doc.resolve(eventPos.pos);
       let slice = dragging && dragging.slice;
       if (slice) {
-          view.someProp("transformPasted", f => { slice = f(slice, view); });
+          view.someProp("transformPasted", f => { slice = f(slice); });
       }
       else {
           slice = parseFromClipboard(view, event.dataTransfer.getData(brokenClipboardAPI ? "Text" : "text/plain"), brokenClipboardAPI ? null : event.dataTransfer.getData("text/html"), false, $mouse);
@@ -10062,7 +9976,7 @@ var ProseMirror = (function (exports) {
           view.domObserver.start();
           view.focused = true;
           setTimeout(() => {
-              if (view.docView && view.hasFocus() && !view.domObserver.currentSelection.eq(view.domSelectionRange()))
+              if (view.docView && view.hasFocus() && !view.domObserver.currentSelection.eq(view.domSelection()))
                   selectionToDOM(view);
           }, 20);
       }
@@ -10562,8 +10476,7 @@ var ProseMirror = (function (exports) {
           switch (members.length) {
               case 0: return empty;
               case 1: return members[0];
-              default: return new DecorationGroup(members.every(m => m instanceof DecorationSet) ? members :
-                  members.reduce((r, m) => r.concat(m instanceof DecorationSet ? m : m.members), []));
+              default: return new DecorationGroup(members);
           }
       }
   }
@@ -10895,7 +10808,7 @@ var ProseMirror = (function (exports) {
           // us a selection change event before the DOM changes are
           // reported.
           if (ie$1 && ie_version <= 11 && !this.view.state.selection.empty) {
-              let sel = this.view.domSelectionRange();
+              let sel = this.view.domSelection();
               // Selection.isCollapsed isn't reliable on IE
               if (sel.focusNode && isEquivalentPosition(sel.focusNode, sel.focusOffset, sel.anchorNode, sel.anchorOffset))
                   return this.flushSoon();
@@ -10903,20 +10816,13 @@ var ProseMirror = (function (exports) {
           this.flush();
       }
       setCurSelection() {
-          this.currentSelection.set(this.view.domSelectionRange());
+          this.currentSelection.set(this.view.domSelection());
       }
       ignoreSelectionChange(sel) {
-          if (!sel.focusNode)
+          if (sel.rangeCount == 0)
               return true;
-          let ancestors = new Set, container;
-          for (let scan = sel.focusNode; scan; scan = parentNode(scan))
-              ancestors.add(scan);
-          for (let scan = sel.anchorNode; scan; scan = parentNode(scan))
-              if (ancestors.has(scan)) {
-                  container = scan;
-                  break;
-              }
-          let desc = container && this.view.docView.nearestDesc(container);
+          let container = sel.getRangeAt(0).commonAncestorContainer;
+          let desc = this.view.docView.nearestDesc(container);
           if (desc && desc.ignoreMutation({
               type: "selection",
               target: container.nodeType == 3 ? container.parentNode : container
@@ -10934,7 +10840,7 @@ var ProseMirror = (function (exports) {
               mutations = this.queue.concat(mutations);
               this.queue.length = 0;
           }
-          let sel = view.domSelectionRange();
+          let sel = view.domSelection();
           let newSel = !this.suppressingSelectionUpdates && !this.currentSelection.eq(sel) && hasFocusAndSelection(view) && !this.ignoreSelectionChange(sel);
           let from = -1, to = -1, typeOver = false, added = [];
           if (view.editable) {
@@ -10963,7 +10869,7 @@ var ProseMirror = (function (exports) {
           // start of the document after focus, restore the selection from
           // the state
           if (from < 0 && newSel && view.input.lastFocus > Date.now() - 200 &&
-              Math.max(view.input.lastTouch, view.input.lastClick.time) < Date.now() - 300 &&
+              view.input.lastTouch < Date.now() - 300 &&
               selectionCollapsed(sel) && (readSel = selectionFromDOM(view)) &&
               readSel.eq(Selection.near(view.state.doc.resolve(0), 1))) {
               view.input.lastFocus = 0;
@@ -11051,33 +10957,6 @@ var ProseMirror = (function (exports) {
           cssCheckWarned = true;
       }
   }
-  // Used to work around a Safari Selection/shadow DOM bug
-  // Based on https://github.com/codemirror/dev/issues/414 fix
-  function safariShadowSelectionRange(view) {
-      let found;
-      function read(event) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          found = event.getTargetRanges()[0];
-      }
-      // Because Safari (at least in 2018-2022) doesn't provide regular
-      // access to the selection inside a shadowRoot, we have to perform a
-      // ridiculous hack to get at it—using `execCommand` to trigger a
-      // `beforeInput` event so that we can read the target range from the
-      // event.
-      view.dom.addEventListener("beforeinput", read, true);
-      document.execCommand("indent");
-      view.dom.removeEventListener("beforeinput", read, true);
-      let anchorNode = found.startContainer, anchorOffset = found.startOffset;
-      let focusNode = found.endContainer, focusOffset = found.endOffset;
-      let currentAnchor = view.domAtPos(view.state.selection.anchor);
-      // Since such a range doesn't distinguish between anchor and head,
-      // use a heuristic that flips it around if its end matches the
-      // current anchor.
-      if (isEquivalentPosition(currentAnchor.node, currentAnchor.offset, focusNode, focusOffset))
-          [anchorNode, anchorOffset, focusNode, focusOffset] = [focusNode, focusOffset, anchorNode, anchorOffset];
-      return { anchorNode, anchorOffset, focusNode, focusOffset };
-  }
 
   // Note that all referencing and parsing is done with the
   // start-of-operation selection and document, since that's the one
@@ -11086,7 +10965,7 @@ var ProseMirror = (function (exports) {
   // readDOMChange.
   function parseBetween(view, from_, to_) {
       let { node: parent, fromOffset, toOffset, from, to } = view.docView.parseRange(from_, to_);
-      let domSel = view.domSelectionRange();
+      let domSel = view.domSelection();
       let find;
       let anchor = domSel.anchorNode;
       if (anchor && view.dom.contains(anchor.nodeType == 1 ? anchor : anchor.parentNode)) {
@@ -11152,16 +11031,11 @@ var ProseMirror = (function (exports) {
       }
       return null;
   }
-  const isInline = /^(a|abbr|acronym|b|bd[io]|big|br|button|cite|code|data(list)?|del|dfn|em|i|ins|kbd|label|map|mark|meter|output|q|ruby|s|samp|small|span|strong|su[bp]|time|u|tt|var)$/i;
   function readDOMChange(view, from, to, typeOver, addedNodes) {
       if (from < 0) {
           let origin = view.input.lastSelectionTime > Date.now() - 50 ? view.input.lastSelectionOrigin : null;
           let newSel = selectionFromDOM(view, origin);
           if (newSel && !view.state.selection.eq(newSel)) {
-              if (chrome$1 && android &&
-                  view.input.lastKeyCode === 13 && Date.now() - 100 < view.input.lastKeyCodeTime &&
-                  view.someProp("handleKeyDown", f => f(view, keyEvent(13, "Enter"))))
-                  return;
               let tr = view.state.tr.setSelection(newSel);
               if (origin == "pointer")
                   tr.setMeta("pointer", true);
@@ -11191,7 +11065,7 @@ var ProseMirror = (function (exports) {
       view.input.lastKeyCode = null;
       let change = findDiff(compare.content, parse.doc.content, parse.from, preferredPos, preferredSide);
       if ((ios && view.input.lastIOSEnter > Date.now() - 225 || android) &&
-          addedNodes.some(n => n.nodeType == 1 && !isInline.test(n.nodeName)) &&
+          addedNodes.some(n => n.nodeName == "DIV" || n.nodeName == "P") &&
           (!change || change.endA >= change.endB) &&
           view.someProp("handleKeyDown", f => f(view, keyEvent(13, "Enter")))) {
           view.input.lastIOSEnter = 0;
@@ -11534,13 +11408,12 @@ var ProseMirror = (function (exports) {
       update(props) {
           if (props.handleDOMEvents != this._props.handleDOMEvents)
               ensureListeners(this);
-          let prevProps = this._props;
           this._props = props;
           if (props.plugins) {
               props.plugins.forEach(checkStateComponent);
               this.directPlugins = props.plugins;
           }
-          this.updateStateInner(props.state, prevProps);
+          this.updateStateInner(props.state, true);
       }
       /**
       Update the view by updating existing props object with the object
@@ -11561,9 +11434,9 @@ var ProseMirror = (function (exports) {
       other props.
       */
       updateState(state) {
-          this.updateStateInner(state, this._props);
+          this.updateStateInner(state, this.state.plugins != state.plugins);
       }
-      updateStateInner(state, prevProps) {
+      updateStateInner(state, reconfigured) {
           let prev = this.state, redraw = false, updateSel = false;
           // When stored marks are added, stop composition, so that they can
           // be displayed.
@@ -11572,21 +11445,18 @@ var ProseMirror = (function (exports) {
               updateSel = true;
           }
           this.state = state;
-          let pluginsChanged = prev.plugins != state.plugins || this._props.plugins != prevProps.plugins;
-          if (pluginsChanged || this._props.plugins != prevProps.plugins || this._props.nodeViews != prevProps.nodeViews) {
+          if (reconfigured) {
               let nodeViews = buildNodeViews(this);
               if (changedNodeViews(nodeViews, this.nodeViews)) {
                   this.nodeViews = nodeViews;
                   redraw = true;
               }
-          }
-          if (pluginsChanged || prevProps.handleDOMEvents != this._props.handleDOMEvents) {
               ensureListeners(this);
           }
           this.editable = getEditable(this);
           updateCursorWrapper(this);
           let innerDeco = viewDecorations(this), outerDeco = computeDocDeco(this);
-          let scroll = prev.plugins != state.plugins && !prev.doc.eq(state.doc) ? "reset"
+          let scroll = reconfigured ? "reset"
               : state.scrollToSelection > prev.scrollToSelection ? "to selection" : "preserve";
           let updateDoc = redraw || !this.docView.matchesNode(state.doc, outerDeco, innerDeco);
           if (updateDoc || !state.selection.eq(prev.selection))
@@ -11606,7 +11476,7 @@ var ProseMirror = (function (exports) {
                   // Chrome sometimes starts misreporting the selection, so this
                   // tracks that and forces a selection reset when our update
                   // did write to the node.
-                  let chromeKludge = chrome$1 ? (this.trackWrites = this.domSelectionRange().focusNode) : null;
+                  let chromeKludge = chrome$1 ? (this.trackWrites = this.domSelection().focusNode) : null;
                   if (redraw || !this.docView.update(state.doc, outerDeco, innerDeco, this)) {
                       this.docView.updateOuterDeco([]);
                       this.docView.destroy();
@@ -11620,8 +11490,7 @@ var ProseMirror = (function (exports) {
               // can cause a spurious DOM selection update, disrupting mouse
               // drag selection.
               if (forceSelUpdate ||
-                  !(this.input.mouseDown && this.domObserver.currentSelection.eq(this.domSelectionRange()) &&
-                      anchorInRightPlace(this))) {
+                  !(this.input.mouseDown && this.domObserver.currentSelection.eq(this.domSelection()) && anchorInRightPlace(this))) {
                   selectionToDOM(this, forceSelUpdate);
               }
               else {
@@ -11645,7 +11514,7 @@ var ProseMirror = (function (exports) {
       @internal
       */
       scrollToSelection() {
-          let startDOM = this.domSelectionRange().focusNode;
+          let startDOM = this.domSelection().focusNode;
           if (this.someProp("handleScrollToSelection", f => f(this))) ;
           else if (this.state.selection instanceof NodeSelection) {
               let target = this.docView.domAfterPos(this.state.selection.from);
@@ -11706,24 +11575,6 @@ var ProseMirror = (function (exports) {
       Query whether the view has focus.
       */
       hasFocus() {
-          // Work around IE not handling focus correctly if resize handles are shown.
-          // If the cursor is inside an element with resize handles, activeElement
-          // will be that element instead of this.dom.
-          if (ie$1) {
-              // If activeElement is within this.dom, and there are no other elements
-              // setting `contenteditable` to false in between, treat it as focused.
-              let node = this.root.activeElement;
-              if (node == this.dom)
-                  return true;
-              if (!node || !this.dom.contains(node))
-                  return false;
-              while (node && this.dom != node && this.dom.contains(node)) {
-                  if (node.contentEditable == 'false')
-                      return false;
-                  node = node.parentElement;
-              }
-              return true;
-          }
           return this.root.activeElement == this.dom;
       }
       /**
@@ -11832,20 +11683,6 @@ var ProseMirror = (function (exports) {
           return endOfTextblock(this, state || this.state, dir);
       }
       /**
-      Run the editor's paste logic with the given HTML string. The
-      `event`, if given, will be passed to the
-      [`handlePaste`](https://prosemirror.net/docs/ref/#view.EditorProps.handlePaste) hook.
-      */
-      pasteHTML(html, event) {
-          return doPaste(this, "", html, false, event || new ClipboardEvent("paste"));
-      }
-      /**
-      Run the editor's paste logic with the given plain-text input.
-      */
-      pasteText(text, event) {
-          return doPaste(this, text, null, true, event || new ClipboardEvent("paste"));
-      }
-      /**
       Removes the editor from the DOM and destroys all [node
       views](https://prosemirror.net/docs/ref/#view.NodeView).
       */
@@ -11893,13 +11730,6 @@ var ProseMirror = (function (exports) {
               dispatchTransaction.call(this, tr);
           else
               this.updateState(this.state.apply(tr));
-      }
-      /**
-      @internal
-      */
-      domSelectionRange() {
-          return safari && this.root.nodeType === 11 && deepActiveElement(this.dom.ownerDocument) == this.dom
-              ? safariShadowSelectionRange(this) : this.domSelection();
       }
       /**
       @internal
@@ -12447,6 +12277,7 @@ var ProseMirror = (function (exports) {
   };
 
   var chrome = typeof navigator != "undefined" && /Chrome\/(\d+)/.exec(navigator.userAgent);
+  typeof navigator != "undefined" && /Gecko\/\d+/.test(navigator.userAgent);
   var mac$2 = typeof navigator != "undefined" && /Mac/.test(navigator.platform);
   var ie = typeof navigator != "undefined" && /MSIE \d|Trident\/(?:[7-9]|\d{2,})\..*rv:(\d+)/.exec(navigator.userAgent);
   var brokenModifierNames = mac$2 || chrome && +chrome[1] < 57;
@@ -12525,14 +12356,14 @@ var ProseMirror = (function (exports) {
           copy[normalizeKeyName(prop)] = map[prop];
       return copy;
   }
-  function modifiers(name, event, shift = true) {
+  function modifiers(name, event, shift) {
       if (event.altKey)
           name = "Alt-" + name;
       if (event.ctrlKey)
           name = "Ctrl-" + name;
       if (event.metaKey)
           name = "Meta-" + name;
-      if (shift && event.shiftKey)
+      if (shift !== false && event.shiftKey)
           name = "Shift-" + name;
       return name;
   }
@@ -12578,28 +12409,26 @@ var ProseMirror = (function (exports) {
   function keydownHandler(bindings) {
       let map = normalize(bindings);
       return function (view, event) {
-          let name = keyName(event), baseName, direct = map[modifiers(name, event)];
+          let name = keyName(event), isChar = name.length == 1 && name != " ", baseName;
+          let direct = map[modifiers(name, event, !isChar)];
           if (direct && direct(view.state, view.dispatch, view))
               return true;
-          // A character key
-          if (name.length == 1 && name != " ") {
-              if (event.shiftKey) {
-                  // In case the name was already modified by shift, try looking
-                  // it up without its shift modifier
-                  let noShift = map[modifiers(name, event, false)];
-                  if (noShift && noShift(view.state, view.dispatch, view))
-                      return true;
-              }
-              if ((event.shiftKey || event.altKey || event.metaKey || name.charCodeAt(0) > 127) &&
-                  (baseName = base[event.keyCode]) && baseName != name) {
-                  // Try falling back to the keyCode when there's a modifier
-                  // active or the character produced isn't ASCII, and our table
-                  // produces a different name from the the keyCode. See #668,
-                  // #1060
-                  let fromCode = map[modifiers(baseName, event)];
-                  if (fromCode && fromCode(view.state, view.dispatch, view))
-                      return true;
-              }
+          if (isChar && (event.shiftKey || event.altKey || event.metaKey || name.charCodeAt(0) > 127) &&
+              (baseName = base[event.keyCode]) && baseName != name) {
+              // Try falling back to the keyCode when there's a modifier
+              // active or the character produced isn't ASCII, and our table
+              // produces a different name from the the keyCode. See #668,
+              // #1060
+              let fromCode = map[modifiers(baseName, event, true)];
+              if (fromCode && fromCode(view.state, view.dispatch, view))
+                  return true;
+          }
+          else if (isChar && event.shiftKey) {
+              // Otherwise, if shift is active, also try the binding with the
+              // Shift- prefix enabled. See #997
+              let withShift = map[modifiers(name, event, true)];
+              if (withShift && withShift(view.state, view.dispatch, view))
+                  return true;
           }
           return false;
       };
@@ -12615,13 +12444,6 @@ var ProseMirror = (function (exports) {
           dispatch(state.tr.deleteSelection().scrollIntoView());
       return true;
   };
-  function atBlockStart(state, view) {
-      let { $cursor } = state.selection;
-      if (!$cursor || (view ? !view.endOfTextblock("backward", state)
-          : $cursor.parentOffset > 0))
-          return null;
-      return $cursor;
-  }
   /**
   If the selection is empty and at the start of a textblock, try to
   reduce the distance between that block and the one before it—if
@@ -12632,8 +12454,9 @@ var ProseMirror = (function (exports) {
   (bidi-aware) start-of-textblock detection if given.
   */
   const joinBackward = (state, dispatch, view) => {
-      let $cursor = atBlockStart(state, view);
-      if (!$cursor)
+      let { $cursor } = state.selection;
+      if (!$cursor || (view ? !view.endOfTextblock("backward", state)
+          : $cursor.parentOffset > 0))
           return false;
       let $cut = findCutBefore($cursor);
       // If there is no node before this, try to lift
@@ -12672,60 +12495,6 @@ var ProseMirror = (function (exports) {
       }
       return false;
   };
-  /**
-  A more limited form of [`joinBackward`]($commands.joinBackward)
-  that only tries to join the current textblock to the one before
-  it, if the cursor is at the start of a textblock.
-  */
-  const joinTextblockBackward = (state, dispatch, view) => {
-      let $cursor = atBlockStart(state, view);
-      if (!$cursor)
-          return false;
-      let $cut = findCutBefore($cursor);
-      return $cut ? joinTextblocksAround(state, $cut, dispatch) : false;
-  };
-  /**
-  A more limited form of [`joinForward`]($commands.joinForward)
-  that only tries to join the current textblock to the one after
-  it, if the cursor is at the end of a textblock.
-  */
-  const joinTextblockForward = (state, dispatch, view) => {
-      let $cursor = atBlockEnd(state, view);
-      if (!$cursor)
-          return false;
-      let $cut = findCutAfter($cursor);
-      return $cut ? joinTextblocksAround(state, $cut, dispatch) : false;
-  };
-  function joinTextblocksAround(state, $cut, dispatch) {
-      let before = $cut.nodeBefore, beforeText = before, beforePos = $cut.pos - 1;
-      for (; !beforeText.isTextblock; beforePos--) {
-          if (beforeText.type.spec.isolating)
-              return false;
-          let child = beforeText.lastChild;
-          if (!child)
-              return false;
-          beforeText = child;
-      }
-      let after = $cut.nodeAfter, afterText = after, afterPos = $cut.pos + 1;
-      for (; !afterText.isTextblock; afterPos++) {
-          if (afterText.type.spec.isolating)
-              return false;
-          let child = afterText.firstChild;
-          if (!child)
-              return false;
-          afterText = child;
-      }
-      let step = replaceStep(state.doc, beforePos, afterPos, Slice.empty);
-      if (!step || step.from != beforePos ||
-          step instanceof ReplaceStep && step.slice.size >= afterPos - beforePos)
-          return false;
-      if (dispatch) {
-          let tr = state.tr.step(step);
-          tr.setSelection(TextSelection.create(tr.doc, beforePos));
-          dispatch(tr.scrollIntoView());
-      }
-      return true;
-  }
   function textblockAt(node, side, only = false) {
       for (let scan = node; scan; scan = (side == "start" ? scan.firstChild : scan.lastChild)) {
           if (scan.isTextblock)
@@ -12769,13 +12538,6 @@ var ProseMirror = (function (exports) {
           }
       return null;
   }
-  function atBlockEnd(state, view) {
-      let { $cursor } = state.selection;
-      if (!$cursor || (view ? !view.endOfTextblock("forward", state)
-          : $cursor.parentOffset < $cursor.parent.content.size))
-          return null;
-      return $cursor;
-  }
   /**
   If the selection is empty and the cursor is at the end of a
   textblock, try to reduce or remove the boundary between that block
@@ -12784,8 +12546,9 @@ var ProseMirror = (function (exports) {
   for accurate start-of-textblock detection if given.
   */
   const joinForward = (state, dispatch, view) => {
-      let $cursor = atBlockEnd(state, view);
-      if (!$cursor)
+      let { $cursor } = state.selection;
+      if (!$cursor || (view ? !view.endOfTextblock("forward", state)
+          : $cursor.parentOffset < $cursor.parent.content.size))
           return false;
       let $cut = findCutAfter($cursor);
       // If there is no node after this, there's nothing to do
@@ -12994,53 +12757,45 @@ var ProseMirror = (function (exports) {
       return true;
   };
   /**
-  Create a variant of [`splitBlock`](https://prosemirror.net/docs/ref/#commands.splitBlock) that uses
-  a custom function to determine the type of the newly split off block.
-  */
-  function splitBlockAs(splitNode) {
-      return (state, dispatch) => {
-          let { $from, $to } = state.selection;
-          if (state.selection instanceof NodeSelection && state.selection.node.isBlock) {
-              if (!$from.parentOffset || !canSplit(state.doc, $from.pos))
-                  return false;
-              if (dispatch)
-                  dispatch(state.tr.split($from.pos).scrollIntoView());
-              return true;
-          }
-          if (!$from.parent.isBlock)
-              return false;
-          if (dispatch) {
-              let atEnd = $to.parentOffset == $to.parent.content.size;
-              let tr = state.tr;
-              if (state.selection instanceof TextSelection || state.selection instanceof AllSelection)
-                  tr.deleteSelection();
-              let deflt = $from.depth == 0 ? null : defaultBlockAt($from.node(-1).contentMatchAt($from.indexAfter(-1)));
-              let splitType = splitNode && splitNode($to.parent, atEnd);
-              let types = splitType ? [splitType] : atEnd && deflt ? [{ type: deflt }] : undefined;
-              let can = canSplit(tr.doc, tr.mapping.map($from.pos), 1, types);
-              if (!types && !can && canSplit(tr.doc, tr.mapping.map($from.pos), 1, deflt ? [{ type: deflt }] : undefined)) {
-                  if (deflt)
-                      types = [{ type: deflt }];
-                  can = true;
-              }
-              if (can) {
-                  tr.split(tr.mapping.map($from.pos), 1, types);
-                  if (!atEnd && !$from.parentOffset && $from.parent.type != deflt) {
-                      let first = tr.mapping.map($from.before()), $first = tr.doc.resolve(first);
-                      if (deflt && $from.node(-1).canReplaceWith($first.index(), $first.index() + 1, deflt))
-                          tr.setNodeMarkup(tr.mapping.map($from.before()), deflt);
-                  }
-              }
-              dispatch(tr.scrollIntoView());
-          }
-          return true;
-      };
-  }
-  /**
   Split the parent block of the selection. If the selection is a text
   selection, also delete its content.
   */
-  const splitBlock = splitBlockAs();
+  const splitBlock = (state, dispatch) => {
+      let { $from, $to } = state.selection;
+      if (state.selection instanceof NodeSelection && state.selection.node.isBlock) {
+          if (!$from.parentOffset || !canSplit(state.doc, $from.pos))
+              return false;
+          if (dispatch)
+              dispatch(state.tr.split($from.pos).scrollIntoView());
+          return true;
+      }
+      if (!$from.parent.isBlock)
+          return false;
+      if (dispatch) {
+          let atEnd = $to.parentOffset == $to.parent.content.size;
+          let tr = state.tr;
+          if (state.selection instanceof TextSelection || state.selection instanceof AllSelection)
+              tr.deleteSelection();
+          let deflt = $from.depth == 0 ? null : defaultBlockAt($from.node(-1).contentMatchAt($from.indexAfter(-1)));
+          let types = atEnd && deflt ? [{ type: deflt }] : undefined;
+          let can = canSplit(tr.doc, tr.mapping.map($from.pos), 1, types);
+          if (!types && !can && canSplit(tr.doc, tr.mapping.map($from.pos), 1, deflt ? [{ type: deflt }] : undefined)) {
+              if (deflt)
+                  types = [{ type: deflt }];
+              can = true;
+          }
+          if (can) {
+              tr.split(tr.mapping.map($from.pos), 1, types);
+              if (!atEnd && !$from.parentOffset && $from.parent.type != deflt) {
+                  let first = tr.mapping.map($from.before()), $first = tr.doc.resolve(first);
+                  if (deflt && $from.node(-1).canReplaceWith($first.index(), $first.index() + 1, deflt))
+                      tr.setNodeMarkup(tr.mapping.map($from.before()), deflt);
+              }
+          }
+          dispatch(tr.scrollIntoView());
+      }
+      return true;
+  };
   /**
   Acts like [`splitBlock`](https://prosemirror.net/docs/ref/#commands.splitBlock), but without
   resetting the set of active marks at the cursor.
@@ -13193,40 +12948,32 @@ var ProseMirror = (function (exports) {
   */
   function setBlockType(nodeType, attrs = null) {
       return function (state, dispatch) {
+          let { from, to } = state.selection;
           let applicable = false;
-          for (let i = 0; i < state.selection.ranges.length && !applicable; i++) {
-              let { $from: { pos: from }, $to: { pos: to } } = state.selection.ranges[i];
-              state.doc.nodesBetween(from, to, (node, pos) => {
-                  if (applicable)
-                      return false;
-                  if (!node.isTextblock || node.hasMarkup(nodeType, attrs))
-                      return;
-                  if (node.type == nodeType) {
-                      applicable = true;
-                  }
-                  else {
-                      let $pos = state.doc.resolve(pos), index = $pos.index();
-                      applicable = $pos.parent.canReplaceWith(index, index + 1, nodeType);
-                  }
-              });
-          }
+          state.doc.nodesBetween(from, to, (node, pos) => {
+              if (applicable)
+                  return false;
+              if (!node.isTextblock || node.hasMarkup(nodeType, attrs))
+                  return;
+              if (node.type == nodeType) {
+                  applicable = true;
+              }
+              else {
+                  let $pos = state.doc.resolve(pos), index = $pos.index();
+                  applicable = $pos.parent.canReplaceWith(index, index + 1, nodeType);
+              }
+          });
           if (!applicable)
               return false;
-          if (dispatch) {
-              let tr = state.tr;
-              for (let i = 0; i < state.selection.ranges.length; i++) {
-                  let { $from: { pos: from }, $to: { pos: to } } = state.selection.ranges[i];
-                  tr.setBlockType(from, to, nodeType, attrs);
-              }
-              dispatch(tr.scrollIntoView());
-          }
+          if (dispatch)
+              dispatch(state.tr.setBlockType(from, to, nodeType, attrs).scrollIntoView());
           return true;
       };
   }
   function markApplies(doc, ranges, type) {
       for (let i = 0; i < ranges.length; i++) {
           let { $from, $to } = ranges[i];
-          let can = $from.depth == 0 ? doc.inlineContent && doc.type.allowsMarkType(type) : false;
+          let can = $from.depth == 0 ? doc.type.allowsMarkType(type) : false;
           doc.nodesBetween($from.pos, $to.pos, node => {
               if (can)
                   return false;
@@ -13412,8 +13159,6 @@ var ProseMirror = (function (exports) {
     joinBackward: joinBackward,
     joinDown: joinDown,
     joinForward: joinForward,
-    joinTextblockBackward: joinTextblockBackward,
-    joinTextblockForward: joinTextblockForward,
     joinUp: joinUp,
     lift: lift,
     liftEmptyBlock: liftEmptyBlock,
@@ -13428,7 +13173,6 @@ var ProseMirror = (function (exports) {
     selectTextblockStart: selectTextblockStart,
     setBlockType: setBlockType,
     splitBlock: splitBlock,
-    splitBlockAs: splitBlockAs,
     splitBlockKeepMarks: splitBlockKeepMarks,
     toggleMark: toggleMark,
     wrapIn: wrapIn
@@ -13451,13 +13195,12 @@ var ProseMirror = (function (exports) {
   }
   class DropCursorView {
       constructor(editorView, options) {
-          var _a;
           this.editorView = editorView;
           this.cursorPos = null;
           this.element = null;
           this.timeout = -1;
-          this.width = (_a = options.width) !== null && _a !== void 0 ? _a : 1;
-          this.color = options.color === false ? undefined : (options.color || "black");
+          this.width = options.width || 1;
+          this.color = options.color || "black";
           this.class = options.class;
           this.handlers = ["dragover", "dragend", "drop", "dragleave"].map(name => {
               let handler = (e) => { this[name](e); };
@@ -13489,19 +13232,16 @@ var ProseMirror = (function (exports) {
           }
       }
       updateOverlay() {
-          let $pos = this.editorView.state.doc.resolve(this.cursorPos);
-          let isBlock = !$pos.parent.inlineContent, rect;
-          if (isBlock) {
+          let $pos = this.editorView.state.doc.resolve(this.cursorPos), rect;
+          if (!$pos.parent.inlineContent) {
               let before = $pos.nodeBefore, after = $pos.nodeAfter;
               if (before || after) {
-                  let node = this.editorView.nodeDOM(this.cursorPos - (before ? before.nodeSize : 0));
-                  if (node) {
-                      let nodeRect = node.getBoundingClientRect();
-                      let top = before ? nodeRect.bottom : nodeRect.top;
-                      if (before && after)
-                          top = (top + this.editorView.nodeDOM(this.cursorPos).getBoundingClientRect().top) / 2;
-                      rect = { left: nodeRect.left, right: nodeRect.right, top: top - this.width / 2, bottom: top + this.width / 2 };
-                  }
+                  let nodeRect = this.editorView.nodeDOM(this.cursorPos - (before ? before.nodeSize : 0))
+                      .getBoundingClientRect();
+                  let top = before ? nodeRect.bottom : nodeRect.top;
+                  if (before && after)
+                      top = (top + this.editorView.nodeDOM(this.cursorPos).getBoundingClientRect().top) / 2;
+                  rect = { left: nodeRect.left, right: nodeRect.right, top: top - this.width / 2, bottom: top + this.width / 2 };
               }
           }
           if (!rect) {
@@ -13513,13 +13253,8 @@ var ProseMirror = (function (exports) {
               this.element = parent.appendChild(document.createElement("div"));
               if (this.class)
                   this.element.className = this.class;
-              this.element.style.cssText = "position: absolute; z-index: 50; pointer-events: none;";
-              if (this.color) {
-                  this.element.style.backgroundColor = this.color;
-              }
+              this.element.style.cssText = "position: absolute; z-index: 50; pointer-events: none; background-color: " + this.color;
           }
-          this.element.classList.toggle("prosemirror-dropcursor-block", isBlock);
-          this.element.classList.toggle("prosemirror-dropcursor-inline", !isBlock);
           let parentLeft, parentTop;
           if (!parent || parent == document.body && getComputedStyle(parent).position == "static") {
               parentLeft = -pageXOffset;
@@ -13549,9 +13284,9 @@ var ProseMirror = (function (exports) {
           if (pos && !disabled) {
               let target = pos.pos;
               if (this.editorView.dragging && this.editorView.dragging.slice) {
-                  let point = dropPoint(this.editorView.state.doc, target, this.editorView.dragging.slice);
-                  if (point != null)
-                      target = point;
+                  target = dropPoint(this.editorView.state.doc, target, this.editorView.dragging.slice);
+                  if (target == null)
+                      return this.setCursor(null);
               }
               this.setCursor(target);
               this.scheduleRemoval(5000);
@@ -14608,11 +14343,7 @@ var ProseMirror = (function (exports) {
       const target = liftTarget(range);
       if (target == null)
           return false;
-      tr.lift(range, target);
-      let after = tr.mapping.map(end, -1) - 1;
-      if (canJoin(tr.doc, after))
-          tr.join(after);
-      dispatch(tr.scrollIntoView());
+      dispatch(tr.lift(range, target).scrollIntoView());
       return true;
   }
   function liftOutOfList(state, dispatch, range) {
@@ -14700,7 +14431,7 @@ var ProseMirror = (function (exports) {
      * @type {[number, number, number]}
      */
     get rgb() {
-      return [((this >> 16) & 0xFF) / 255, ((this >> 8) & 0xFF) / 255, (this & 0xFF) / 255];
+      return [...this];
     }
 
     /* ------------------------------------------ */
@@ -14835,7 +14566,9 @@ var ProseMirror = (function (exports) {
      * @returns {Color}           The resulting mixed Color
      */
     mix(other, weight) {
-      return new Color(Color.mix(this, other, weight));
+      const o = other.rgb;
+      const mixed = this.rgb.map((c, i) => Math.clamped((weight * o[i]) + ((1 - weight) * c), 0, 1));
+      return Color.fromRGB(mixed);
     }
 
     /* ------------------------------------------ */
@@ -14846,8 +14579,9 @@ var ProseMirror = (function (exports) {
      * @returns {Color}             The resulting Color.
      */
     multiply(other) {
-      if ( other instanceof Color ) return new Color(Color.multiply(this, other));
-      return new Color(Color.multiplyScalar(this, other));
+      const o = other instanceof Color ? other.rgb : [other, other, other];
+      const mixed = this.rgb.map((c, i) => Math.clamped(c * o[i], 0, 1));
+      return Color.fromRGB(mixed);
     }
 
     /* ------------------------------------------ */
@@ -14858,8 +14592,9 @@ var ProseMirror = (function (exports) {
      * @returns {Color}             The resulting Color.
      */
     add(other) {
-      if ( other instanceof Color ) return new Color(Color.add(this, other));
-      return new Color(Color.addScalar(this, other));
+      const o = other instanceof Color ? other.rgb : [other, other, other];
+      const mixed = this.rgb.map((c, i) => Math.clamped(c + o[i], 0, 1));
+      return Color.fromRGB(mixed);
     }
 
     /* ------------------------------------------ */
@@ -14870,8 +14605,9 @@ var ProseMirror = (function (exports) {
      * @returns {Color}             The resulting Color.
      */
     subtract(other) {
-      if ( other instanceof Color ) return new Color(Color.subtract(this, other));
-      return new Color(Color.subtractScalar(this, other));
+      const o = other instanceof Color ? other.rgb : [other, other, other];
+      const mixed = this.rgb.map((c, i) => Math.clamped(c - o[i], 0, 1));
+      return Color.fromRGB(mixed);
     }
 
     /* ------------------------------------------ */
@@ -14882,8 +14618,9 @@ var ProseMirror = (function (exports) {
      * @returns {Color}             The resulting Color.
      */
     maximize(other) {
-      if ( other instanceof Color ) return new Color(Color.maximize(this, other));
-      return new Color(Color.maximizeScalar(this, other));
+      const o = other instanceof Color ? other.rgb : [other, other, other];
+      const mixed = this.rgb.map((c, i) => Math.clamped(Math.max(c, o[i]), 0, 1));
+      return Color.fromRGB(mixed);
     }
 
     /* ------------------------------------------ */
@@ -14894,8 +14631,9 @@ var ProseMirror = (function (exports) {
      * @returns {Color}             The resulting Color.
      */
     minimize(other) {
-      if ( other instanceof Color ) return new Color(Color.minimize(this, other));
-      return new Color(Color.minimizeScalar(this, other));
+      const o = other instanceof Color ? other.rgb : [other, other, other];
+      const mixed = this.rgb.map((c, i) => Math.clamped(Math.min(c, o[i]), 0, 1));
+      return Color.fromRGB(mixed);
     }
 
     /* ------------------------------------------ */
@@ -14910,189 +14648,6 @@ var ProseMirror = (function (exports) {
       yield this.r;
       yield this.g;
       yield this.b;
-    }
-
-    /* ------------------------------------------------------------------------------------------- */
-    /*                      Real-time performance Methods and Properties                           */
-    /*  Important Note:                                                                            */
-    /*  These methods are not a replacement, but a tool when real-time performance is needed.      */
-    /*  They do not have the flexibility of the "classic" methods and come with some limitations.  */
-    /*  Unless you have to deal with real-time performance, you should use the "classic" methods.  */
-    /* ------------------------------------------------------------------------------------------- */
-
-    /**
-     * Set an rgb array with the rgb values contained in this Color class.
-     * @param {number[]} vec3  Receive the result. Must be an array with at least a length of 3.
-     */
-    applyRGB(vec3) {
-      vec3[0] = ((this >> 16) & 0xFF) / 255;
-      vec3[1] = ((this >> 8) & 0xFF) / 255;
-      vec3[2] = (this & 0xFF) / 255;
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Apply a linear interpolation between two colors, according to the weight.
-     * @param {number}        color1       The first color to mix.
-     * @param {number}        color2       The second color to mix.
-     * @param {number}        weight       Weight of the linear interpolation.
-     * @returns {number}                   The resulting mixed color
-     */
-    static mix(color1, color2, weight) {
-      return (((((color1 >> 16) & 0xFF) * (1 - weight) + ((color2 >> 16) & 0xFF) * weight) << 16) & 0xFF0000)
-        | (((((color1 >> 8) & 0xFF) * (1 - weight) + ((color2 >> 8) & 0xFF) * weight) << 8) & 0x00FF00)
-        | (((color1 & 0xFF) * (1 - weight) + (color2 & 0xFF) * weight) & 0x0000FF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Multiply two colors.
-     * @param {number}        color1       The first color to multiply.
-     * @param {number}        color2       The second color to multiply.
-     * @returns {number}                   The result.
-     */
-    static multiply(color1, color2) {
-      return ((((color1 >> 16) & 0xFF) / 255 * ((color2 >> 16) & 0xFF) / 255) * 255 << 16)
-        | ((((color1 >> 8) & 0xFF) / 255 * ((color2 >> 8) & 0xFF) / 255) * 255 << 8)
-        | (((color1 & 0xFF) / 255 * ((color2 & 0xFF) / 255)) * 255);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Multiply a color by a scalar
-     * @param {number} color        The color to multiply.
-     * @param {number} scalar       A static scalar to multiply with.
-     * @returns {number}            The resulting color as a number.
-     */
-    static multiplyScalar(color, scalar) {
-      return ((((color >> 16) & 0xFF) / 255 * scalar) * 255 << 16)
-        | ((((color >> 8) & 0xFF) / 255 * scalar) * 255 << 8)
-        | (((color & 0xFF) / 255 * scalar) * 255);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Maximize two colors.
-     * @param {number}        color1       The first color.
-     * @param {number}        color2       The second color.
-     * @returns {number}                   The result.
-     */
-    static maximize(color1, color2) {
-      return (Math.clamped(Math.max((color1 >> 16) & 0xFF, (color2 >> 16) & 0xFF), 0, 0xFF) << 16)
-        | (Math.clamped(Math.max((color1 >> 8) & 0xFF, (color2 >> 8) & 0xFF), 0, 0xFF) << 8)
-        | Math.clamped(Math.max(color1 & 0xFF, color2 & 0xFF), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Maximize a color by a static scalar.
-     * @param {number} color         The color to maximize.
-     * @param {number} scalar        Scalar to maximize with (normalized).
-     * @returns {number}             The resulting color as a number.
-     */
-    static maximizeScalar(color, scalar) {
-      return (Math.clamped(Math.max((color >> 16) & 0xFF, scalar * 255), 0, 0xFF) << 16)
-        | (Math.clamped(Math.max((color >> 8) & 0xFF, scalar * 255), 0, 0xFF) << 8)
-        | Math.clamped(Math.max(color & 0xFF, scalar * 255), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Add two colors.
-     * @param {number}        color1       The first color.
-     * @param {number}        color2       The second color.
-     * @returns {number}                   The resulting color as a number.
-     */
-    static add(color1, color2) {
-      return (Math.clamped((((color1 >> 16) & 0xFF) + ((color2 >> 16) & 0xFF)), 0, 0xFF) << 16)
-        | (Math.clamped((((color1 >> 8) & 0xFF) + ((color2 >> 8) & 0xFF)), 0, 0xFF) << 8)
-        | Math.clamped(((color1 & 0xFF) + (color2 & 0xFF)), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Add a static scalar to a color.
-     * @param {number} color         The color.
-     * @param {number} scalar        Scalar to add with (normalized).
-     * @returns {number}             The resulting color as a number.
-     */
-    static addScalar(color, scalar) {
-      return (Math.clamped((((color >> 16) & 0xFF) + scalar * 255), 0, 0xFF) << 16)
-        | (Math.clamped((((color >> 8) & 0xFF) + scalar * 255), 0, 0xFF) << 8)
-        | Math.clamped(((color & 0xFF) + scalar * 255), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Subtract two colors.
-     * @param {number}        color1       The first color.
-     * @param {number}        color2       The second color.
-     */
-    static subtract(color1, color2) {
-      return (Math.clamped((((color1 >> 16) & 0xFF) - ((color2 >> 16) & 0xFF)), 0, 0xFF) << 16)
-        | (Math.clamped((((color1 >> 8) & 0xFF) - ((color2 >> 8) & 0xFF)), 0, 0xFF) << 8)
-        | Math.clamped(((color1 & 0xFF) - (color2 & 0xFF)), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Subtract a color by a static scalar.
-     * @param {number} color         The color.
-     * @param {number} scalar        Scalar to subtract with (normalized).
-     * @returns {number}             The resulting color as a number.
-     */
-    static subtractScalar(color, scalar) {
-      return (Math.clamped((((color >> 16) & 0xFF) - scalar * 255), 0, 0xFF) << 16)
-        | (Math.clamped((((color >> 8) & 0xFF) - scalar * 255), 0, 0xFF) << 8)
-        | Math.clamped(((color & 0xFF) - scalar * 255), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Minimize two colors.
-     * @param {number}        color1       The first color.
-     * @param {number}        color2       The second color.
-     */
-    static minimize(color1, color2) {
-      return (Math.clamped(Math.min((color1 >> 16) & 0xFF, (color2 >> 16) & 0xFF), 0, 0xFF) << 16)
-        | (Math.clamped(Math.min((color1 >> 8) & 0xFF, (color2 >> 8) & 0xFF), 0, 0xFF) << 8)
-        | Math.clamped(Math.min(color1 & 0xFF, color2 & 0xFF), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Minimize a color by a static scalar.
-     * @param {number} color         The color.
-     * @param {number} scalar        Scalar to minimize with (normalized).
-     */
-    static minimizeScalar(color, scalar) {
-      return (Math.clamped(Math.min((color >> 16) & 0xFF, scalar * 255), 0, 0xFF) << 16)
-        | (Math.clamped(Math.min((color >> 8) & 0xFF, scalar * 255), 0, 0xFF) << 8)
-        | Math.clamped(Math.min(color & 0xFF, scalar * 255), 0, 0xFF);
-    }
-
-    /* ------------------------------------------ */
-
-    /**
-     * Convert a color to RGB and assign values to a passed array.
-     * @param {number} color   The color to convert to RGB values.
-     * @param {number[]} vec3  Receive the result. Must be an array with at least a length of 3.
-     */
-    static applyRGB(color, vec3) {
-      vec3[0] = ((color >> 16) & 0xFF) / 255;
-      vec3[1] = ((color >> 8) & 0xFF) / 255;
-      vec3[2] = (color & 0xFF) / 255;
     }
 
     /* ------------------------------------------ */
@@ -15139,19 +14694,6 @@ var ProseMirror = (function (exports) {
     /* ------------------------------------------ */
 
     /**
-     * Create a Color instance from an RGB normalized values.
-     * @param {number} r                          The red value
-     * @param {number} g                          The green value
-     * @param {number} b                          The blue value
-     * @returns {Color}                           The hex color instance
-     */
-    static fromRGBvalues(r, g, b) {
-      return new this(((r * 255) << 16) + ((g * 255) << 8) + (b * 255 | 0));
-    }
-
-    /* ------------------------------------------ */
-
-    /**
      * Create a Color instance from an HSV array.
      * Conversion formula adapted from http://en.wikipedia.org/wiki/HSV_color_space.
      * Assumes h, s, and v are contained in the set [0, 1].
@@ -15179,6 +14721,51 @@ var ProseMirror = (function (exports) {
   }
 
   /** @module constants */
+
+  /**
+   * Define the allowed ownership levels for a Document.
+   * Each level is assigned a value in ascending order.
+   * Higher levels grant more permissions.
+   * @enum {number}
+   * @see https://foundryvtt.com/article/users/
+   */
+  const DOCUMENT_OWNERSHIP_LEVELS = {
+    /**
+     * The User inherits permissions from the parent Folder.
+     */
+    INHERIT: -1,
+
+    /**
+     * Restricts the associated Document so that it may not be seen by this User.
+     */
+    NONE: 0,
+
+    /**
+     * Allows the User to interact with the Document in basic ways, allowing them to see it in sidebars and see only limited aspects of its contents. The limits of this interaction are defined by the game system being used.
+     */
+    LIMITED: 1,
+
+    /**
+     * Allows the User to view this Document as if they were owner, but prevents them from making any changes to it.
+     */
+    OBSERVER: 2,
+
+    /**
+     * Allows the User to view and make changes to the Document as its owner. Owned documents cannot be deleted by anyone other than a gamemaster level User.
+     */
+    OWNER: 3
+  };
+  Object.freeze(DOCUMENT_OWNERSHIP_LEVELS);
+
+  /**
+   * Meta ownership levels that are used in the UI but never stored.
+   * @enum {number}
+   */
+  const DOCUMENT_META_OWNERSHIP_LEVELS = {
+    DEFAULT: -20,
+    NOCHANGE: -10
+  };
+  Object.freeze(DOCUMENT_META_OWNERSHIP_LEVELS);
 
   /**
    * Define the allowed User permission levels.
@@ -15227,6 +14814,141 @@ var ProseMirror = (function (exports) {
   }, {});
 
   /**
+   * @typedef {Object} UserPermission
+   * @property {string} label
+   * @property {string} hint
+   * @property {boolean} disableGM
+   * @property {number} defaultRole
+   */
+
+  /**
+   * Define the recognized User capabilities which individual Users or role levels may be permitted to perform
+   * @type {Object<UserPermission>}
+   */
+  ({
+    ACTOR_CREATE: {
+      label: "PERMISSION.ActorCreate",
+      hint: "PERMISSION.ActorCreateHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.ASSISTANT
+    },
+    BROADCAST_AUDIO: {
+      label: "PERMISSION.BroadcastAudio",
+      hint: "PERMISSION.BroadcastAudioHint",
+      disableGM: true,
+      defaultRole: USER_ROLES.TRUSTED
+    },
+    BROADCAST_VIDEO: {
+      label: "PERMISSION.BroadcastVideo",
+      hint: "PERMISSION.BroadcastVideoHint",
+      disableGM: true,
+      defaultRole: USER_ROLES.TRUSTED
+    },
+    DRAWING_CREATE: {
+      label: "PERMISSION.DrawingCreate",
+      hint: "PERMISSION.DrawingCreateHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.TRUSTED
+    },
+    ITEM_CREATE: {
+      label: "PERMISSION.ItemCreate",
+      hint: "PERMISSION.ItemCreateHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.ASSISTANT
+    },
+    FILES_BROWSE: {
+      label: "PERMISSION.FilesBrowse",
+      hint: "PERMISSION.FilesBrowseHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.TRUSTED
+    },
+    FILES_UPLOAD: {
+      label: "PERMISSION.FilesUpload",
+      hint: "PERMISSION.FilesUploadHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.ASSISTANT
+    },
+    JOURNAL_CREATE: {
+      label: "PERMISSION.JournalCreate",
+      hint: "PERMISSION.JournalCreateHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.TRUSTED
+    },
+    MACRO_SCRIPT: {
+      label: "PERMISSION.MacroScript",
+      hint: "PERMISSION.MacroScriptHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.PLAYER
+    },
+    MESSAGE_WHISPER: {
+      label: "PERMISSION.MessageWhisper",
+      hint: "PERMISSION.MessageWhisperHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.PLAYER
+    },
+    NOTE_CREATE: {
+      label: "PERMISSION.NoteCreate",
+      hint: "PERMISSION.NoteCreateHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.TRUSTED
+    },
+    PING_CANVAS: {
+      label: "PERMISSION.PingCanvas",
+      hint: "PERMISSION.PingCanvasHint",
+      disableGM: true,
+      defaultRole: USER_ROLES.PLAYER
+    },
+    SETTINGS_MODIFY: {
+      label: "PERMISSION.SettingsModify",
+      hint: "PERMISSION.SettingsModifyHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.ASSISTANT
+    },
+    SHOW_CURSOR: {
+      label: "PERMISSION.ShowCursor",
+      hint: "PERMISSION.ShowCursorHint",
+      disableGM: true,
+      defaultRole: USER_ROLES.PLAYER
+    },
+    SHOW_RULER: {
+      label: "PERMISSION.ShowRuler",
+      hint: "PERMISSION.ShowRulerHint",
+      disableGM: true,
+      defaultRole: USER_ROLES.PLAYER
+    },
+    TEMPLATE_CREATE: {
+      label: "PERMISSION.TemplateCreate",
+      hint: "PERMISSION.TemplateCreateHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.PLAYER
+    },
+    TOKEN_CREATE: {
+      label: "PERMISSION.TokenCreate",
+      hint: "PERMISSION.TokenCreateHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.ASSISTANT
+    },
+    TOKEN_DELETE: {
+      label: "PERMISSION.TokenDelete",
+      hint: "PERMISSION.TokenDeleteHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.ASSISTANT
+    },
+    TOKEN_CONFIGURE: {
+      label: "PERMISSION.TokenConfigure",
+      hint: "PERMISSION.TokenConfigureHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.TRUSTED
+    },
+    WALL_DOORS: {
+      label: "PERMISSION.WallDoors",
+      hint: "PERMISSION.WallDoorsHint",
+      disableGM: false,
+      defaultRole: USER_ROLES.PLAYER
+    }
+  });
+
+  /**
    * The supported file extensions for image-type files, and their corresponding mime types.
    * @type {Object<string, string>}
    */
@@ -15250,7 +14972,7 @@ var ProseMirror = (function (exports) {
   const VIDEO_FILE_EXTENSIONS = {
     m4v: "video/mp4",
     mp4: "video/mp4",
-    ogv: "video/ogg",
+    ogg: "video/ogg",
     webm: "video/webm"
   };
 
@@ -15371,23 +15093,28 @@ var ProseMirror = (function (exports) {
 
   /**
    * Expand a flattened object to be a standard nested Object by converting all dot-notation keys to inner objects.
-   * Only simple objects will be expanded. Other Object types like class instances will be retained as-is.
    * @param {object} obj      The object to expand
+   * @param {number} [_d=0]   Track the recursion depth to prevent overflow
    * @return {object}         An expanded object
    */
-  function expandObject(obj) {
-    function _expand(value, depth) {
-      if ( depth > 32 ) throw new Error("Maximum object expansion depth exceeded");
-      if ( !value ) return value;
-      if ( Array.isArray(value) ) return value.map(v => _expand(v, depth+1)); // Map arrays
-      if ( value.constructor?.name !== "Object" ) return value;               // Return advanced objects directly
-      const expanded = {};                                                    // Expand simple objects
-      for ( let [k, v] of Object.entries(value) ) {
-        setProperty(expanded, k, _expand(v, depth+1));
+  function expandObject(obj, _d=0) {
+    if ( _d > 100 ) throw new Error("Maximum object expansion depth exceeded");
+
+    // Recursive expansion function
+    function _expand(value) {
+      if ( value instanceof Object ) {
+        if ( Array.isArray(value) ) return value.map(_expand);
+        else return expandObject(value, _d+1)
       }
-      return expanded;
+      return value;
     }
-    return _expand(obj, 0);
+
+    // Expand all object keys
+    const expanded = {};
+    for ( let [k, v] of Object.entries(obj) ) {
+      setProperty(expanded, k, _expand(v));
+    }
+    return expanded;
   }
 
   /* -------------------------------------------- */
@@ -15474,12 +15201,10 @@ var ProseMirror = (function (exports) {
     switch ( t ) {
       case "undefined":
         return true;
-      case "null":
-        return true;
       case "Array":
         return !value.length;
       case "Object":
-        return !Object.keys(value).length;
+        return (getType(value) === "Object") && !Object.keys(value).length;
       case "Set":
       case "Map":
         return !value.size;
@@ -15534,13 +15259,13 @@ var ProseMirror = (function (exports) {
    *
    * @example Control whether merges are performed recursively
    * ```js
-   * mergeObject({k1: {i1: "v1"}}, {k1: {i2: "v2"}}, {recursive: false}); // {k1: {i2: "v2"}}
+   * mergeObject({k1: {i1: "v1"}}, {k1: {i2: "v2"}}, {recursive: false}); // {k1: {i1: "v2"}}
    * mergeObject({k1: {i1: "v1"}}, {k1: {i2: "v2"}}, {recursive: true}); // {k1: {i1: "v1", i2: "v2"}}
    * ```
    *
    * @example Deleting an existing object key
    * ```js
-   * mergeObject({k1: "v1", k2: "v2"}, {"-=k1": null}, {performDeletions: true});   // {k2: "v2"}
+   * mergeObject({k1: "v1", k2: "v2"}, {"-=k1": null});   // {k2: "v2"}
    * ```
    */
   function mergeObject(original, other={}, {
@@ -15840,10 +15565,9 @@ var ProseMirror = (function (exports) {
      * @param {ProseMirrorDropDownEntry[]} items         The configured menu items.
      * @param {object} [options]
      * @param {string} [options.cssClass]                The menu CSS class name. Required if providing an action.
-     * @param {string} [options.icon]                    Use an icon for the dropdown rather than a text label.
      * @param {function(MouseEvent)} [options.onAction]  A callback to fire when a menu item is clicked.
      */
-    constructor(title, items, {cssClass, icon, onAction}={}) {
+    constructor(title, items, {cssClass, onAction}={}) {
       /**
        * The default title for this drop-down.
        * @type {string}
@@ -15855,7 +15579,6 @@ var ProseMirror = (function (exports) {
        * @type {ProseMirrorDropDownEntry[]}
        */
       Object.defineProperty(this, "items", {value: items, writable: false});
-      this.#icon = icon;
       this.#cssClass = cssClass;
       this.#onAction = onAction;
     }
@@ -15867,14 +15590,6 @@ var ProseMirror = (function (exports) {
      * @type {string}
      */
     #cssClass;
-
-    /* -------------------------------------------- */
-
-    /**
-     * The icon to use instead of a text label, if any.
-     * @type {string}
-     */
-    #icon;
 
     /* -------------------------------------------- */
 
@@ -15920,8 +15635,8 @@ var ProseMirror = (function (exports) {
       const active = game.i18n.localize(activeItem ? activeItem.title : this.title);
       const items = this.constructor._renderMenu(this.items);
       return `
-      <button type="button" class="pm-dropdown ${this.#icon ? "icon" : ""} ${this.#cssClass}">
-        ${this.#icon ? this.#icon : `<span>${active}</span>`}
+      <button type="button" class="pm-dropdown ${this.#cssClass}">
+        <span>${active}</span>
         <i class="fa-solid fa-chevron-down"></i>
         ${items}
       </button>
@@ -15955,17 +15670,8 @@ var ProseMirror = (function (exports) {
      * @protected
      */
     static _renderMenu(entries) {
-      const groups = entries.reduce((arr, item) => {
-        const group = item.group ?? 0;
-        arr[group] ??= [];
-        arr[group].push(this._renderMenuItem(item));
-        return arr;
-      }, []);
-      const items = groups.reduce((arr, group) => {
-        if ( group?.length ) arr.push(group.join(""));
-        return arr;
-      }, []);
-      return `<ul>${items.join('<li class="divider"></li>')}</ul>`;
+      const items = entries.map(item => this._renderMenuItem(item));
+      return `<ul>${items.join("")}</ul>`;
     }
 
     /* -------------------------------------------- */
@@ -15987,2362 +15693,6 @@ var ProseMirror = (function (exports) {
       return parts.join("");
     }
   }
-
-  // src/index.ts
-
-  // src/tablemap.ts
-  var readFromCache;
-  var addToCache;
-  if (typeof WeakMap != "undefined") {
-    let cache = /* @__PURE__ */ new WeakMap();
-    readFromCache = (key) => cache.get(key);
-    addToCache = (key, value) => {
-      cache.set(key, value);
-      return value;
-    };
-  } else {
-    const cache = [];
-    const cacheSize = 10;
-    let cachePos = 0;
-    readFromCache = (key) => {
-      for (let i = 0; i < cache.length; i += 2)
-        if (cache[i] == key)
-          return cache[i + 1];
-    };
-    addToCache = (key, value) => {
-      if (cachePos == cacheSize)
-        cachePos = 0;
-      cache[cachePos++] = key;
-      return cache[cachePos++] = value;
-    };
-  }
-  var TableMap = class {
-    constructor(width, height, map, problems) {
-      this.width = width;
-      this.height = height;
-      this.map = map;
-      this.problems = problems;
-    }
-    findCell(pos) {
-      for (let i = 0; i < this.map.length; i++) {
-        const curPos = this.map[i];
-        if (curPos != pos)
-          continue;
-        const left = i % this.width;
-        const top = i / this.width | 0;
-        let right = left + 1;
-        let bottom = top + 1;
-        for (let j = 1; right < this.width && this.map[i + j] == curPos; j++) {
-          right++;
-        }
-        for (let j = 1; bottom < this.height && this.map[i + this.width * j] == curPos; j++) {
-          bottom++;
-        }
-        return { left, top, right, bottom };
-      }
-      throw new RangeError(`No cell with offset ${pos} found`);
-    }
-    colCount(pos) {
-      for (let i = 0; i < this.map.length; i++) {
-        if (this.map[i] == pos) {
-          return i % this.width;
-        }
-      }
-      throw new RangeError(`No cell with offset ${pos} found`);
-    }
-    nextCell(pos, axis, dir) {
-      const { left, right, top, bottom } = this.findCell(pos);
-      if (axis == "horiz") {
-        if (dir < 0 ? left == 0 : right == this.width)
-          return null;
-        return this.map[top * this.width + (dir < 0 ? left - 1 : right)];
-      } else {
-        if (dir < 0 ? top == 0 : bottom == this.height)
-          return null;
-        return this.map[left + this.width * (dir < 0 ? top - 1 : bottom)];
-      }
-    }
-    rectBetween(a, b) {
-      const {
-        left: leftA,
-        right: rightA,
-        top: topA,
-        bottom: bottomA
-      } = this.findCell(a);
-      const {
-        left: leftB,
-        right: rightB,
-        top: topB,
-        bottom: bottomB
-      } = this.findCell(b);
-      return {
-        left: Math.min(leftA, leftB),
-        top: Math.min(topA, topB),
-        right: Math.max(rightA, rightB),
-        bottom: Math.max(bottomA, bottomB)
-      };
-    }
-    cellsInRect(rect) {
-      const result = [];
-      const seen = {};
-      for (let row = rect.top; row < rect.bottom; row++) {
-        for (let col = rect.left; col < rect.right; col++) {
-          const index = row * this.width + col;
-          const pos = this.map[index];
-          if (seen[pos])
-            continue;
-          seen[pos] = true;
-          if (col == rect.left && col && this.map[index - 1] == pos || row == rect.top && row && this.map[index - this.width] == pos) {
-            continue;
-          }
-          result.push(pos);
-        }
-      }
-      return result;
-    }
-    positionAt(row, col, table) {
-      for (let i = 0, rowStart = 0; ; i++) {
-        const rowEnd = rowStart + table.child(i).nodeSize;
-        if (i == row) {
-          let index = col + row * this.width;
-          const rowEndIndex = (row + 1) * this.width;
-          while (index < rowEndIndex && this.map[index] < rowStart)
-            index++;
-          return index == rowEndIndex ? rowEnd - 1 : this.map[index];
-        }
-        rowStart = rowEnd;
-      }
-    }
-    static get(table) {
-      return readFromCache(table) || addToCache(table, computeMap(table));
-    }
-  };
-  function computeMap(table) {
-    if (table.type.spec.tableRole != "table")
-      throw new RangeError("Not a table node: " + table.type.name);
-    const width = findWidth(table), height = table.childCount;
-    const map = [];
-    let mapPos = 0;
-    let problems = null;
-    const colWidths = [];
-    for (let i = 0, e = width * height; i < e; i++)
-      map[i] = 0;
-    for (let row = 0, pos = 0; row < height; row++) {
-      const rowNode = table.child(row);
-      pos++;
-      for (let i = 0; ; i++) {
-        while (mapPos < map.length && map[mapPos] != 0)
-          mapPos++;
-        if (i == rowNode.childCount)
-          break;
-        const cellNode = rowNode.child(i);
-        const { colspan, rowspan, colwidth } = cellNode.attrs;
-        for (let h = 0; h < rowspan; h++) {
-          if (h + row >= height) {
-            (problems || (problems = [])).push({
-              type: "overlong_rowspan",
-              pos,
-              n: rowspan - h
-            });
-            break;
-          }
-          const start = mapPos + h * width;
-          for (let w = 0; w < colspan; w++) {
-            if (map[start + w] == 0)
-              map[start + w] = pos;
-            else
-              (problems || (problems = [])).push({
-                type: "collision",
-                row,
-                pos,
-                n: colspan - w
-              });
-            const colW = colwidth && colwidth[w];
-            if (colW) {
-              const widthIndex = (start + w) % width * 2, prev = colWidths[widthIndex];
-              if (prev == null || prev != colW && colWidths[widthIndex + 1] == 1) {
-                colWidths[widthIndex] = colW;
-                colWidths[widthIndex + 1] = 1;
-              } else if (prev == colW) {
-                colWidths[widthIndex + 1]++;
-              }
-            }
-          }
-        }
-        mapPos += colspan;
-        pos += cellNode.nodeSize;
-      }
-      const expectedPos = (row + 1) * width;
-      let missing = 0;
-      while (mapPos < expectedPos)
-        if (map[mapPos++] == 0)
-          missing++;
-      if (missing)
-        (problems || (problems = [])).push({ type: "missing", row, n: missing });
-      pos++;
-    }
-    const tableMap = new TableMap(width, height, map, problems);
-    let badWidths = false;
-    for (let i = 0; !badWidths && i < colWidths.length; i += 2)
-      if (colWidths[i] != null && colWidths[i + 1] < height)
-        badWidths = true;
-    if (badWidths)
-      findBadColWidths(tableMap, colWidths, table);
-    return tableMap;
-  }
-  function findWidth(table) {
-    let width = -1;
-    let hasRowSpan = false;
-    for (let row = 0; row < table.childCount; row++) {
-      const rowNode = table.child(row);
-      let rowWidth = 0;
-      if (hasRowSpan)
-        for (let j = 0; j < row; j++) {
-          const prevRow = table.child(j);
-          for (let i = 0; i < prevRow.childCount; i++) {
-            const cell = prevRow.child(i);
-            if (j + cell.attrs.rowspan > row)
-              rowWidth += cell.attrs.colspan;
-          }
-        }
-      for (let i = 0; i < rowNode.childCount; i++) {
-        const cell = rowNode.child(i);
-        rowWidth += cell.attrs.colspan;
-        if (cell.attrs.rowspan > 1)
-          hasRowSpan = true;
-      }
-      if (width == -1)
-        width = rowWidth;
-      else if (width != rowWidth)
-        width = Math.max(width, rowWidth);
-    }
-    return width;
-  }
-  function findBadColWidths(map, colWidths, table) {
-    if (!map.problems)
-      map.problems = [];
-    const seen = {};
-    for (let i = 0; i < map.map.length; i++) {
-      const pos = map.map[i];
-      if (seen[pos])
-        continue;
-      seen[pos] = true;
-      const node = table.nodeAt(pos);
-      if (!node) {
-        throw new RangeError(`No cell with offset ${pos} found`);
-      }
-      let updated = null;
-      const attrs = node.attrs;
-      for (let j = 0; j < attrs.colspan; j++) {
-        const col = (i + j) % map.width;
-        const colWidth = colWidths[col * 2];
-        if (colWidth != null && (!attrs.colwidth || attrs.colwidth[j] != colWidth))
-          (updated || (updated = freshColWidth(attrs)))[j] = colWidth;
-      }
-      if (updated)
-        map.problems.unshift({
-          type: "colwidth mismatch",
-          pos,
-          colwidth: updated
-        });
-    }
-  }
-  function freshColWidth(attrs) {
-    if (attrs.colwidth)
-      return attrs.colwidth.slice();
-    const result = [];
-    for (let i = 0; i < attrs.colspan; i++)
-      result.push(0);
-    return result;
-  }
-
-  // src/schema.ts
-  function getCellAttrs(dom, extraAttrs) {
-    if (typeof dom === "string") {
-      return {};
-    }
-    const widthAttr = dom.getAttribute("data-colwidth");
-    const widths = widthAttr && /^\d+(,\d+)*$/.test(widthAttr) ? widthAttr.split(",").map((s) => Number(s)) : null;
-    const colspan = Number(dom.getAttribute("colspan") || 1);
-    const result = {
-      colspan,
-      rowspan: Number(dom.getAttribute("rowspan") || 1),
-      colwidth: widths && widths.length == colspan ? widths : null
-    };
-    for (const prop in extraAttrs) {
-      const getter = extraAttrs[prop].getFromDOM;
-      const value = getter && getter(dom);
-      if (value != null) {
-        result[prop] = value;
-      }
-    }
-    return result;
-  }
-  function setCellAttrs(node, extraAttrs) {
-    const attrs = {};
-    if (node.attrs.colspan != 1)
-      attrs.colspan = node.attrs.colspan;
-    if (node.attrs.rowspan != 1)
-      attrs.rowspan = node.attrs.rowspan;
-    if (node.attrs.colwidth)
-      attrs["data-colwidth"] = node.attrs.colwidth.join(",");
-    for (const prop in extraAttrs) {
-      const setter = extraAttrs[prop].setDOMAttr;
-      if (setter)
-        setter(node.attrs[prop], attrs);
-    }
-    return attrs;
-  }
-  function tableNodes(options) {
-    const extraAttrs = options.cellAttributes || {};
-    const cellAttrs = {
-      colspan: { default: 1 },
-      rowspan: { default: 1 },
-      colwidth: { default: null }
-    };
-    for (const prop in extraAttrs)
-      cellAttrs[prop] = { default: extraAttrs[prop].default };
-    return {
-      table: {
-        content: "table_row+",
-        tableRole: "table",
-        isolating: true,
-        group: options.tableGroup,
-        parseDOM: [{ tag: "table" }],
-        toDOM() {
-          return ["table", ["tbody", 0]];
-        }
-      },
-      table_row: {
-        content: "(table_cell | table_header)*",
-        tableRole: "row",
-        parseDOM: [{ tag: "tr" }],
-        toDOM() {
-          return ["tr", 0];
-        }
-      },
-      table_cell: {
-        content: options.cellContent,
-        attrs: cellAttrs,
-        tableRole: "cell",
-        isolating: true,
-        parseDOM: [
-          { tag: "td", getAttrs: (dom) => getCellAttrs(dom, extraAttrs) }
-        ],
-        toDOM(node) {
-          return ["td", setCellAttrs(node, extraAttrs), 0];
-        }
-      },
-      table_header: {
-        content: options.cellContent,
-        attrs: cellAttrs,
-        tableRole: "header_cell",
-        isolating: true,
-        parseDOM: [
-          { tag: "th", getAttrs: (dom) => getCellAttrs(dom, extraAttrs) }
-        ],
-        toDOM(node) {
-          return ["th", setCellAttrs(node, extraAttrs), 0];
-        }
-      }
-    };
-  }
-  function tableNodeTypes(schema) {
-    let result = schema.cached.tableNodeTypes;
-    if (!result) {
-      result = schema.cached.tableNodeTypes = {};
-      for (const name in schema.nodes) {
-        const type = schema.nodes[name], role = type.spec.tableRole;
-        if (role)
-          result[role] = type;
-      }
-    }
-    return result;
-  }
-
-  // src/util.ts
-  var tableEditingKey = new PluginKey("selectingCells");
-  function cellAround($pos) {
-    for (let d = $pos.depth - 1; d > 0; d--)
-      if ($pos.node(d).type.spec.tableRole == "row")
-        return $pos.node(0).resolve($pos.before(d + 1));
-    return null;
-  }
-  function cellWrapping($pos) {
-    for (let d = $pos.depth; d > 0; d--) {
-      const role = $pos.node(d).type.spec.tableRole;
-      if (role === "cell" || role === "header_cell")
-        return $pos.node(d);
-    }
-    return null;
-  }
-  function isInTable(state) {
-    const $head = state.selection.$head;
-    for (let d = $head.depth; d > 0; d--)
-      if ($head.node(d).type.spec.tableRole == "row")
-        return true;
-    return false;
-  }
-  function selectionCell(state) {
-    const sel = state.selection;
-    if ("$anchorCell" in sel && sel.$anchorCell) {
-      return sel.$anchorCell.pos > sel.$headCell.pos ? sel.$anchorCell : sel.$headCell;
-    } else if ("node" in sel && sel.node && sel.node.type.spec.tableRole == "cell") {
-      return sel.$anchor;
-    }
-    const $cell = cellAround(sel.$head) || cellNear(sel.$head);
-    if ($cell) {
-      return $cell;
-    }
-    throw new RangeError(`No cell found around position ${sel.head}`);
-  }
-  function cellNear($pos) {
-    for (let after = $pos.nodeAfter, pos = $pos.pos; after; after = after.firstChild, pos++) {
-      const role = after.type.spec.tableRole;
-      if (role == "cell" || role == "header_cell")
-        return $pos.doc.resolve(pos);
-    }
-    for (let before = $pos.nodeBefore, pos = $pos.pos; before; before = before.lastChild, pos--) {
-      const role = before.type.spec.tableRole;
-      if (role == "cell" || role == "header_cell")
-        return $pos.doc.resolve(pos - before.nodeSize);
-    }
-  }
-  function pointsAtCell($pos) {
-    return $pos.parent.type.spec.tableRole == "row" && !!$pos.nodeAfter;
-  }
-  function moveCellForward($pos) {
-    return $pos.node(0).resolve($pos.pos + $pos.nodeAfter.nodeSize);
-  }
-  function inSameTable($cellA, $cellB) {
-    return $cellA.depth == $cellB.depth && $cellA.pos >= $cellB.start(-1) && $cellA.pos <= $cellB.end(-1);
-  }
-  function findCell($pos) {
-    return TableMap.get($pos.node(-1)).findCell($pos.pos - $pos.start(-1));
-  }
-  function colCount($pos) {
-    return TableMap.get($pos.node(-1)).colCount($pos.pos - $pos.start(-1));
-  }
-  function nextCell($pos, axis, dir) {
-    const table = $pos.node(-1);
-    const map = TableMap.get(table);
-    const tableStart = $pos.start(-1);
-    const moved = map.nextCell($pos.pos - tableStart, axis, dir);
-    return moved == null ? null : $pos.node(0).resolve(tableStart + moved);
-  }
-  function removeColSpan(attrs, pos, n = 1) {
-    const result = { ...attrs, colspan: attrs.colspan - n };
-    if (result.colwidth) {
-      result.colwidth = result.colwidth.slice();
-      result.colwidth.splice(pos, n);
-      if (!result.colwidth.some((w) => w > 0))
-        result.colwidth = null;
-    }
-    return result;
-  }
-  function addColSpan(attrs, pos, n = 1) {
-    const result = { ...attrs, colspan: attrs.colspan + n };
-    if (result.colwidth) {
-      result.colwidth = result.colwidth.slice();
-      for (let i = 0; i < n; i++)
-        result.colwidth.splice(pos, 0, 0);
-    }
-    return result;
-  }
-  function columnIsHeader(map, table, col) {
-    const headerCell = tableNodeTypes(table.type.schema).header_cell;
-    for (let row = 0; row < map.height; row++)
-      if (table.nodeAt(map.map[col + row * map.width]).type != headerCell)
-        return false;
-    return true;
-  }
-
-  // src/cellselection.ts
-  var CellSelection = class extends Selection {
-    constructor($anchorCell, $headCell = $anchorCell) {
-      const table = $anchorCell.node(-1);
-      const map = TableMap.get(table);
-      const tableStart = $anchorCell.start(-1);
-      const rect = map.rectBetween(
-        $anchorCell.pos - tableStart,
-        $headCell.pos - tableStart
-      );
-      const doc = $anchorCell.node(0);
-      const cells = map.cellsInRect(rect).filter((p) => p != $headCell.pos - tableStart);
-      cells.unshift($headCell.pos - tableStart);
-      const ranges = cells.map((pos) => {
-        const cell = table.nodeAt(pos);
-        if (!cell) {
-          throw RangeError(`No cell with offset ${pos} found`);
-        }
-        const from = tableStart + pos + 1;
-        return new SelectionRange(
-          doc.resolve(from),
-          doc.resolve(from + cell.content.size)
-        );
-      });
-      super(ranges[0].$from, ranges[0].$to, ranges);
-      this.$anchorCell = $anchorCell;
-      this.$headCell = $headCell;
-    }
-    map(doc, mapping) {
-      const $anchorCell = doc.resolve(mapping.map(this.$anchorCell.pos));
-      const $headCell = doc.resolve(mapping.map(this.$headCell.pos));
-      if (pointsAtCell($anchorCell) && pointsAtCell($headCell) && inSameTable($anchorCell, $headCell)) {
-        const tableChanged = this.$anchorCell.node(-1) != $anchorCell.node(-1);
-        if (tableChanged && this.isRowSelection())
-          return CellSelection.rowSelection($anchorCell, $headCell);
-        else if (tableChanged && this.isColSelection())
-          return CellSelection.colSelection($anchorCell, $headCell);
-        else
-          return new CellSelection($anchorCell, $headCell);
-      }
-      return TextSelection.between($anchorCell, $headCell);
-    }
-    content() {
-      const table = this.$anchorCell.node(-1);
-      const map = TableMap.get(table);
-      const tableStart = this.$anchorCell.start(-1);
-      const rect = map.rectBetween(
-        this.$anchorCell.pos - tableStart,
-        this.$headCell.pos - tableStart
-      );
-      const seen = {};
-      const rows = [];
-      for (let row = rect.top; row < rect.bottom; row++) {
-        const rowContent = [];
-        for (let index = row * map.width + rect.left, col = rect.left; col < rect.right; col++, index++) {
-          const pos = map.map[index];
-          if (seen[pos])
-            continue;
-          seen[pos] = true;
-          const cellRect = map.findCell(pos);
-          let cell = table.nodeAt(pos);
-          if (!cell) {
-            throw RangeError(`No cell with offset ${pos} found`);
-          }
-          const extraLeft = rect.left - cellRect.left;
-          const extraRight = cellRect.right - rect.right;
-          if (extraLeft > 0 || extraRight > 0) {
-            let attrs = cell.attrs;
-            if (extraLeft > 0) {
-              attrs = removeColSpan(attrs, 0, extraLeft);
-            }
-            if (extraRight > 0) {
-              attrs = removeColSpan(
-                attrs,
-                attrs.colspan - extraRight,
-                extraRight
-              );
-            }
-            if (cellRect.left < rect.left) {
-              cell = cell.type.createAndFill(attrs);
-              if (!cell) {
-                throw RangeError(
-                  `Could not create cell with attrs ${JSON.stringify(attrs)}`
-                );
-              }
-            } else {
-              cell = cell.type.create(attrs, cell.content);
-            }
-          }
-          if (cellRect.top < rect.top || cellRect.bottom > rect.bottom) {
-            const attrs = {
-              ...cell.attrs,
-              rowspan: Math.min(cellRect.bottom, rect.bottom) - Math.max(cellRect.top, rect.top)
-            };
-            if (cellRect.top < rect.top) {
-              cell = cell.type.createAndFill(attrs);
-            } else {
-              cell = cell.type.create(attrs, cell.content);
-            }
-          }
-          rowContent.push(cell);
-        }
-        rows.push(table.child(row).copy(Fragment.from(rowContent)));
-      }
-      const fragment = this.isColSelection() && this.isRowSelection() ? table : rows;
-      return new Slice(Fragment.from(fragment), 1, 1);
-    }
-    replace(tr, content = Slice.empty) {
-      const mapFrom = tr.steps.length, ranges = this.ranges;
-      for (let i = 0; i < ranges.length; i++) {
-        const { $from, $to } = ranges[i], mapping = tr.mapping.slice(mapFrom);
-        tr.replace(
-          mapping.map($from.pos),
-          mapping.map($to.pos),
-          i ? Slice.empty : content
-        );
-      }
-      const sel = Selection.findFrom(
-        tr.doc.resolve(tr.mapping.slice(mapFrom).map(this.to)),
-        -1
-      );
-      if (sel)
-        tr.setSelection(sel);
-    }
-    replaceWith(tr, node) {
-      this.replace(tr, new Slice(Fragment.from(node), 0, 0));
-    }
-    forEachCell(f) {
-      const table = this.$anchorCell.node(-1);
-      const map = TableMap.get(table);
-      const tableStart = this.$anchorCell.start(-1);
-      const cells = map.cellsInRect(
-        map.rectBetween(
-          this.$anchorCell.pos - tableStart,
-          this.$headCell.pos - tableStart
-        )
-      );
-      for (let i = 0; i < cells.length; i++) {
-        f(table.nodeAt(cells[i]), tableStart + cells[i]);
-      }
-    }
-    isColSelection() {
-      const anchorTop = this.$anchorCell.index(-1);
-      const headTop = this.$headCell.index(-1);
-      if (Math.min(anchorTop, headTop) > 0)
-        return false;
-      const anchorBottom = anchorTop + this.$anchorCell.nodeAfter.attrs.rowspan;
-      const headBottom = headTop + this.$headCell.nodeAfter.attrs.rowspan;
-      return Math.max(anchorBottom, headBottom) == this.$headCell.node(-1).childCount;
-    }
-    static colSelection($anchorCell, $headCell = $anchorCell) {
-      const table = $anchorCell.node(-1);
-      const map = TableMap.get(table);
-      const tableStart = $anchorCell.start(-1);
-      const anchorRect = map.findCell($anchorCell.pos - tableStart);
-      const headRect = map.findCell($headCell.pos - tableStart);
-      const doc = $anchorCell.node(0);
-      if (anchorRect.top <= headRect.top) {
-        if (anchorRect.top > 0)
-          $anchorCell = doc.resolve(tableStart + map.map[anchorRect.left]);
-        if (headRect.bottom < map.height)
-          $headCell = doc.resolve(
-            tableStart + map.map[map.width * (map.height - 1) + headRect.right - 1]
-          );
-      } else {
-        if (headRect.top > 0)
-          $headCell = doc.resolve(tableStart + map.map[headRect.left]);
-        if (anchorRect.bottom < map.height)
-          $anchorCell = doc.resolve(
-            tableStart + map.map[map.width * (map.height - 1) + anchorRect.right - 1]
-          );
-      }
-      return new CellSelection($anchorCell, $headCell);
-    }
-    isRowSelection() {
-      const table = this.$anchorCell.node(-1);
-      const map = TableMap.get(table);
-      const tableStart = this.$anchorCell.start(-1);
-      const anchorLeft = map.colCount(this.$anchorCell.pos - tableStart);
-      const headLeft = map.colCount(this.$headCell.pos - tableStart);
-      if (Math.min(anchorLeft, headLeft) > 0)
-        return false;
-      const anchorRight = anchorLeft + this.$anchorCell.nodeAfter.attrs.colspan;
-      const headRight = headLeft + this.$headCell.nodeAfter.attrs.colspan;
-      return Math.max(anchorRight, headRight) == map.width;
-    }
-    eq(other) {
-      return other instanceof CellSelection && other.$anchorCell.pos == this.$anchorCell.pos && other.$headCell.pos == this.$headCell.pos;
-    }
-    static rowSelection($anchorCell, $headCell = $anchorCell) {
-      const table = $anchorCell.node(-1);
-      const map = TableMap.get(table);
-      const tableStart = $anchorCell.start(-1);
-      const anchorRect = map.findCell($anchorCell.pos - tableStart);
-      const headRect = map.findCell($headCell.pos - tableStart);
-      const doc = $anchorCell.node(0);
-      if (anchorRect.left <= headRect.left) {
-        if (anchorRect.left > 0)
-          $anchorCell = doc.resolve(
-            tableStart + map.map[anchorRect.top * map.width]
-          );
-        if (headRect.right < map.width)
-          $headCell = doc.resolve(
-            tableStart + map.map[map.width * (headRect.top + 1) - 1]
-          );
-      } else {
-        if (headRect.left > 0)
-          $headCell = doc.resolve(tableStart + map.map[headRect.top * map.width]);
-        if (anchorRect.right < map.width)
-          $anchorCell = doc.resolve(
-            tableStart + map.map[map.width * (anchorRect.top + 1) - 1]
-          );
-      }
-      return new CellSelection($anchorCell, $headCell);
-    }
-    toJSON() {
-      return {
-        type: "cell",
-        anchor: this.$anchorCell.pos,
-        head: this.$headCell.pos
-      };
-    }
-    static fromJSON(doc, json) {
-      return new CellSelection(doc.resolve(json.anchor), doc.resolve(json.head));
-    }
-    static create(doc, anchorCell, headCell = anchorCell) {
-      return new CellSelection(doc.resolve(anchorCell), doc.resolve(headCell));
-    }
-    getBookmark() {
-      return new CellBookmark(this.$anchorCell.pos, this.$headCell.pos);
-    }
-  };
-  CellSelection.prototype.visible = false;
-  Selection.jsonID("cell", CellSelection);
-  var CellBookmark = class {
-    constructor(anchor, head) {
-      this.anchor = anchor;
-      this.head = head;
-    }
-    map(mapping) {
-      return new CellBookmark(mapping.map(this.anchor), mapping.map(this.head));
-    }
-    resolve(doc) {
-      const $anchorCell = doc.resolve(this.anchor), $headCell = doc.resolve(this.head);
-      if ($anchorCell.parent.type.spec.tableRole == "row" && $headCell.parent.type.spec.tableRole == "row" && $anchorCell.index() < $anchorCell.parent.childCount && $headCell.index() < $headCell.parent.childCount && inSameTable($anchorCell, $headCell))
-        return new CellSelection($anchorCell, $headCell);
-      else
-        return Selection.near($headCell, 1);
-    }
-  };
-  function drawCellSelection(state) {
-    if (!(state.selection instanceof CellSelection))
-      return null;
-    const cells = [];
-    state.selection.forEachCell((node, pos) => {
-      cells.push(
-        Decoration.node(pos, pos + node.nodeSize, { class: "selectedCell" })
-      );
-    });
-    return DecorationSet.create(state.doc, cells);
-  }
-  function isCellBoundarySelection({ $from, $to }) {
-    if ($from.pos == $to.pos || $from.pos < $from.pos - 6)
-      return false;
-    let afterFrom = $from.pos;
-    let beforeTo = $to.pos;
-    let depth = $from.depth;
-    for (; depth >= 0; depth--, afterFrom++)
-      if ($from.after(depth + 1) < $from.end(depth))
-        break;
-    for (let d = $to.depth; d >= 0; d--, beforeTo--)
-      if ($to.before(d + 1) > $to.start(d))
-        break;
-    return afterFrom == beforeTo && /row|table/.test($from.node(depth).type.spec.tableRole);
-  }
-  function isTextSelectionAcrossCells({ $from, $to }) {
-    let fromCellBoundaryNode;
-    let toCellBoundaryNode;
-    for (let i = $from.depth; i > 0; i--) {
-      const node = $from.node(i);
-      if (node.type.spec.tableRole === "cell" || node.type.spec.tableRole === "header_cell") {
-        fromCellBoundaryNode = node;
-        break;
-      }
-    }
-    for (let i = $to.depth; i > 0; i--) {
-      const node = $to.node(i);
-      if (node.type.spec.tableRole === "cell" || node.type.spec.tableRole === "header_cell") {
-        toCellBoundaryNode = node;
-        break;
-      }
-    }
-    return fromCellBoundaryNode !== toCellBoundaryNode && $to.parentOffset === 0;
-  }
-  function normalizeSelection(state, tr, allowTableNodeSelection) {
-    const sel = (tr || state).selection;
-    const doc = (tr || state).doc;
-    let normalize;
-    let role;
-    if (sel instanceof NodeSelection && (role = sel.node.type.spec.tableRole)) {
-      if (role == "cell" || role == "header_cell") {
-        normalize = CellSelection.create(doc, sel.from);
-      } else if (role == "row") {
-        const $cell = doc.resolve(sel.from + 1);
-        normalize = CellSelection.rowSelection($cell, $cell);
-      } else if (!allowTableNodeSelection) {
-        const map = TableMap.get(sel.node);
-        const start = sel.from + 1;
-        const lastCell = start + map.map[map.width * map.height - 1];
-        normalize = CellSelection.create(doc, start + 1, lastCell);
-      }
-    } else if (sel instanceof TextSelection && isCellBoundarySelection(sel)) {
-      normalize = TextSelection.create(doc, sel.from);
-    } else if (sel instanceof TextSelection && isTextSelectionAcrossCells(sel)) {
-      normalize = TextSelection.create(doc, sel.$from.start(), sel.$from.end());
-    }
-    if (normalize)
-      (tr || (tr = state.tr)).setSelection(normalize);
-    return tr;
-  }
-  var fixTablesKey = new PluginKey("fix-tables");
-  function changedDescendants(old, cur, offset, f) {
-    const oldSize = old.childCount, curSize = cur.childCount;
-    outer:
-      for (let i = 0, j = 0; i < curSize; i++) {
-        const child = cur.child(i);
-        for (let scan = j, e = Math.min(oldSize, i + 3); scan < e; scan++) {
-          if (old.child(scan) == child) {
-            j = scan + 1;
-            offset += child.nodeSize;
-            continue outer;
-          }
-        }
-        f(child, offset);
-        if (j < oldSize && old.child(j).sameMarkup(child))
-          changedDescendants(old.child(j), child, offset + 1, f);
-        else
-          child.nodesBetween(0, child.content.size, f, offset + 1);
-        offset += child.nodeSize;
-      }
-  }
-  function fixTables(state, oldState) {
-    let tr;
-    const check = (node, pos) => {
-      if (node.type.spec.tableRole == "table")
-        tr = fixTable(state, node, pos, tr);
-    };
-    if (!oldState)
-      state.doc.descendants(check);
-    else if (oldState.doc != state.doc)
-      changedDescendants(oldState.doc, state.doc, 0, check);
-    return tr;
-  }
-  function fixTable(state, table, tablePos, tr) {
-    const map = TableMap.get(table);
-    if (!map.problems)
-      return tr;
-    if (!tr)
-      tr = state.tr;
-    const mustAdd = [];
-    for (let i = 0; i < map.height; i++)
-      mustAdd.push(0);
-    for (let i = 0; i < map.problems.length; i++) {
-      const prob = map.problems[i];
-      if (prob.type == "collision") {
-        const cell = table.nodeAt(prob.pos);
-        if (!cell)
-          continue;
-        const attrs = cell.attrs;
-        for (let j = 0; j < attrs.rowspan; j++)
-          mustAdd[prob.row + j] += prob.n;
-        tr.setNodeMarkup(
-          tr.mapping.map(tablePos + 1 + prob.pos),
-          null,
-          removeColSpan(attrs, attrs.colspan - prob.n, prob.n)
-        );
-      } else if (prob.type == "missing") {
-        mustAdd[prob.row] += prob.n;
-      } else if (prob.type == "overlong_rowspan") {
-        const cell = table.nodeAt(prob.pos);
-        if (!cell)
-          continue;
-        tr.setNodeMarkup(tr.mapping.map(tablePos + 1 + prob.pos), null, {
-          ...cell.attrs,
-          rowspan: cell.attrs.rowspan - prob.n
-        });
-      } else if (prob.type == "colwidth mismatch") {
-        const cell = table.nodeAt(prob.pos);
-        if (!cell)
-          continue;
-        tr.setNodeMarkup(tr.mapping.map(tablePos + 1 + prob.pos), null, {
-          ...cell.attrs,
-          colwidth: prob.colwidth
-        });
-      }
-    }
-    let first, last;
-    for (let i = 0; i < mustAdd.length; i++)
-      if (mustAdd[i]) {
-        if (first == null)
-          first = i;
-        last = i;
-      }
-    for (let i = 0, pos = tablePos + 1; i < map.height; i++) {
-      const row = table.child(i);
-      const end = pos + row.nodeSize;
-      const add = mustAdd[i];
-      if (add > 0) {
-        let role = "cell";
-        if (row.firstChild) {
-          role = row.firstChild.type.spec.tableRole;
-        }
-        const nodes = [];
-        for (let j = 0; j < add; j++) {
-          const node = tableNodeTypes(state.schema)[role].createAndFill();
-          if (node)
-            nodes.push(node);
-        }
-        const side = (i == 0 || first == i - 1) && last == i ? pos + 1 : end - 1;
-        tr.insert(tr.mapping.map(side), nodes);
-      }
-      pos = end;
-    }
-    return tr.setMeta(fixTablesKey, { fixTables: true });
-  }
-  function pastedCells(slice) {
-    if (!slice.size)
-      return null;
-    let { content, openStart, openEnd } = slice;
-    while (content.childCount == 1 && (openStart > 0 && openEnd > 0 || content.child(0).type.spec.tableRole == "table")) {
-      openStart--;
-      openEnd--;
-      content = content.child(0).content;
-    }
-    const first = content.child(0);
-    const role = first.type.spec.tableRole;
-    const schema = first.type.schema, rows = [];
-    if (role == "row") {
-      for (let i = 0; i < content.childCount; i++) {
-        let cells = content.child(i).content;
-        const left = i ? 0 : Math.max(0, openStart - 1);
-        const right = i < content.childCount - 1 ? 0 : Math.max(0, openEnd - 1);
-        if (left || right)
-          cells = fitSlice(
-            tableNodeTypes(schema).row,
-            new Slice(cells, left, right)
-          ).content;
-        rows.push(cells);
-      }
-    } else if (role == "cell" || role == "header_cell") {
-      rows.push(
-        openStart || openEnd ? fitSlice(
-          tableNodeTypes(schema).row,
-          new Slice(content, openStart, openEnd)
-        ).content : content
-      );
-    } else {
-      return null;
-    }
-    return ensureRectangular(schema, rows);
-  }
-  function ensureRectangular(schema, rows) {
-    const widths = [];
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      for (let j = row.childCount - 1; j >= 0; j--) {
-        const { rowspan, colspan } = row.child(j).attrs;
-        for (let r = i; r < i + rowspan; r++)
-          widths[r] = (widths[r] || 0) + colspan;
-      }
-    }
-    let width = 0;
-    for (let r = 0; r < widths.length; r++)
-      width = Math.max(width, widths[r]);
-    for (let r = 0; r < widths.length; r++) {
-      if (r >= rows.length)
-        rows.push(Fragment.empty);
-      if (widths[r] < width) {
-        const empty = tableNodeTypes(schema).cell.createAndFill();
-        const cells = [];
-        for (let i = widths[r]; i < width; i++) {
-          cells.push(empty);
-        }
-        rows[r] = rows[r].append(Fragment.from(cells));
-      }
-    }
-    return { height: rows.length, width, rows };
-  }
-  function fitSlice(nodeType, slice) {
-    const node = nodeType.createAndFill();
-    const tr = new Transform(node).replace(0, node.content.size, slice);
-    return tr.doc;
-  }
-  function clipCells({ width, height, rows }, newWidth, newHeight) {
-    if (width != newWidth) {
-      const added = [];
-      const newRows = [];
-      for (let row = 0; row < rows.length; row++) {
-        const frag = rows[row], cells = [];
-        for (let col = added[row] || 0, i = 0; col < newWidth; i++) {
-          let cell = frag.child(i % frag.childCount);
-          if (col + cell.attrs.colspan > newWidth)
-            cell = cell.type.createChecked(
-              removeColSpan(
-                cell.attrs,
-                cell.attrs.colspan,
-                col + cell.attrs.colspan - newWidth
-              ),
-              cell.content
-            );
-          cells.push(cell);
-          col += cell.attrs.colspan;
-          for (let j = 1; j < cell.attrs.rowspan; j++)
-            added[row + j] = (added[row + j] || 0) + cell.attrs.colspan;
-        }
-        newRows.push(Fragment.from(cells));
-      }
-      rows = newRows;
-      width = newWidth;
-    }
-    if (height != newHeight) {
-      const newRows = [];
-      for (let row = 0, i = 0; row < newHeight; row++, i++) {
-        const cells = [], source = rows[i % height];
-        for (let j = 0; j < source.childCount; j++) {
-          let cell = source.child(j);
-          if (row + cell.attrs.rowspan > newHeight)
-            cell = cell.type.create(
-              {
-                ...cell.attrs,
-                rowspan: Math.max(1, newHeight - cell.attrs.rowspan)
-              },
-              cell.content
-            );
-          cells.push(cell);
-        }
-        newRows.push(Fragment.from(cells));
-      }
-      rows = newRows;
-      height = newHeight;
-    }
-    return { width, height, rows };
-  }
-  function growTable(tr, map, table, start, width, height, mapFrom) {
-    const schema = tr.doc.type.schema;
-    const types = tableNodeTypes(schema);
-    let empty;
-    let emptyHead;
-    if (width > map.width) {
-      for (let row = 0, rowEnd = 0; row < map.height; row++) {
-        const rowNode = table.child(row);
-        rowEnd += rowNode.nodeSize;
-        const cells = [];
-        let add;
-        if (rowNode.lastChild == null || rowNode.lastChild.type == types.cell)
-          add = empty || (empty = types.cell.createAndFill());
-        else
-          add = emptyHead || (emptyHead = types.header_cell.createAndFill());
-        for (let i = map.width; i < width; i++)
-          cells.push(add);
-        tr.insert(tr.mapping.slice(mapFrom).map(rowEnd - 1 + start), cells);
-      }
-    }
-    if (height > map.height) {
-      const cells = [];
-      for (let i = 0, start2 = (map.height - 1) * map.width; i < Math.max(map.width, width); i++) {
-        const header = i >= map.width ? false : table.nodeAt(map.map[start2 + i]).type == types.header_cell;
-        cells.push(
-          header ? emptyHead || (emptyHead = types.header_cell.createAndFill()) : empty || (empty = types.cell.createAndFill())
-        );
-      }
-      const emptyRow = types.row.create(null, Fragment.from(cells)), rows = [];
-      for (let i = map.height; i < height; i++)
-        rows.push(emptyRow);
-      tr.insert(tr.mapping.slice(mapFrom).map(start + table.nodeSize - 2), rows);
-    }
-    return !!(empty || emptyHead);
-  }
-  function isolateHorizontal(tr, map, table, start, left, right, top, mapFrom) {
-    if (top == 0 || top == map.height)
-      return false;
-    let found = false;
-    for (let col = left; col < right; col++) {
-      const index = top * map.width + col, pos = map.map[index];
-      if (map.map[index - map.width] == pos) {
-        found = true;
-        const cell = table.nodeAt(pos);
-        const { top: cellTop, left: cellLeft } = map.findCell(pos);
-        tr.setNodeMarkup(tr.mapping.slice(mapFrom).map(pos + start), null, {
-          ...cell.attrs,
-          rowspan: top - cellTop
-        });
-        tr.insert(
-          tr.mapping.slice(mapFrom).map(map.positionAt(top, cellLeft, table)),
-          cell.type.createAndFill({
-            ...cell.attrs,
-            rowspan: cellTop + cell.attrs.rowspan - top
-          })
-        );
-        col += cell.attrs.colspan - 1;
-      }
-    }
-    return found;
-  }
-  function isolateVertical(tr, map, table, start, top, bottom, left, mapFrom) {
-    if (left == 0 || left == map.width)
-      return false;
-    let found = false;
-    for (let row = top; row < bottom; row++) {
-      const index = row * map.width + left, pos = map.map[index];
-      if (map.map[index - 1] == pos) {
-        found = true;
-        const cell = table.nodeAt(pos);
-        const cellLeft = map.colCount(pos);
-        const updatePos = tr.mapping.slice(mapFrom).map(pos + start);
-        tr.setNodeMarkup(
-          updatePos,
-          null,
-          removeColSpan(
-            cell.attrs,
-            left - cellLeft,
-            cell.attrs.colspan - (left - cellLeft)
-          )
-        );
-        tr.insert(
-          updatePos + cell.nodeSize,
-          cell.type.createAndFill(
-            removeColSpan(cell.attrs, 0, left - cellLeft)
-          )
-        );
-        row += cell.attrs.rowspan - 1;
-      }
-    }
-    return found;
-  }
-  function insertCells(state, dispatch, tableStart, rect, cells) {
-    let table = tableStart ? state.doc.nodeAt(tableStart - 1) : state.doc;
-    if (!table) {
-      throw new Error("No table found");
-    }
-    let map = TableMap.get(table);
-    const { top, left } = rect;
-    const right = left + cells.width, bottom = top + cells.height;
-    const tr = state.tr;
-    let mapFrom = 0;
-    function recomp() {
-      table = tableStart ? tr.doc.nodeAt(tableStart - 1) : tr.doc;
-      if (!table) {
-        throw new Error("No table found");
-      }
-      map = TableMap.get(table);
-      mapFrom = tr.mapping.maps.length;
-    }
-    if (growTable(tr, map, table, tableStart, right, bottom, mapFrom))
-      recomp();
-    if (isolateHorizontal(tr, map, table, tableStart, left, right, top, mapFrom))
-      recomp();
-    if (isolateHorizontal(tr, map, table, tableStart, left, right, bottom, mapFrom))
-      recomp();
-    if (isolateVertical(tr, map, table, tableStart, top, bottom, left, mapFrom))
-      recomp();
-    if (isolateVertical(tr, map, table, tableStart, top, bottom, right, mapFrom))
-      recomp();
-    for (let row = top; row < bottom; row++) {
-      const from = map.positionAt(row, left, table), to = map.positionAt(row, right, table);
-      tr.replace(
-        tr.mapping.slice(mapFrom).map(from + tableStart),
-        tr.mapping.slice(mapFrom).map(to + tableStart),
-        new Slice(cells.rows[row - top], 0, 0)
-      );
-    }
-    recomp();
-    tr.setSelection(
-      new CellSelection(
-        tr.doc.resolve(tableStart + map.positionAt(top, left, table)),
-        tr.doc.resolve(tableStart + map.positionAt(bottom - 1, right - 1, table))
-      )
-    );
-    dispatch(tr);
-  }
-
-  // src/input.ts
-  var handleKeyDown = keydownHandler({
-    ArrowLeft: arrow("horiz", -1),
-    ArrowRight: arrow("horiz", 1),
-    ArrowUp: arrow("vert", -1),
-    ArrowDown: arrow("vert", 1),
-    "Shift-ArrowLeft": shiftArrow("horiz", -1),
-    "Shift-ArrowRight": shiftArrow("horiz", 1),
-    "Shift-ArrowUp": shiftArrow("vert", -1),
-    "Shift-ArrowDown": shiftArrow("vert", 1),
-    Backspace: deleteCellSelection,
-    "Mod-Backspace": deleteCellSelection,
-    Delete: deleteCellSelection,
-    "Mod-Delete": deleteCellSelection
-  });
-  function maybeSetSelection(state, dispatch, selection) {
-    if (selection.eq(state.selection))
-      return false;
-    if (dispatch)
-      dispatch(state.tr.setSelection(selection).scrollIntoView());
-    return true;
-  }
-  function arrow(axis, dir) {
-    return (state, dispatch, view) => {
-      if (!view)
-        return false;
-      const sel = state.selection;
-      if (sel instanceof CellSelection) {
-        return maybeSetSelection(
-          state,
-          dispatch,
-          Selection.near(sel.$headCell, dir)
-        );
-      }
-      if (axis != "horiz" && !sel.empty)
-        return false;
-      const end = atEndOfCell(view, axis, dir);
-      if (end == null)
-        return false;
-      if (axis == "horiz") {
-        return maybeSetSelection(
-          state,
-          dispatch,
-          Selection.near(state.doc.resolve(sel.head + dir), dir)
-        );
-      } else {
-        const $cell = state.doc.resolve(end);
-        const $next = nextCell($cell, axis, dir);
-        let newSel;
-        if ($next)
-          newSel = Selection.near($next, 1);
-        else if (dir < 0)
-          newSel = Selection.near(state.doc.resolve($cell.before(-1)), -1);
-        else
-          newSel = Selection.near(state.doc.resolve($cell.after(-1)), 1);
-        return maybeSetSelection(state, dispatch, newSel);
-      }
-    };
-  }
-  function shiftArrow(axis, dir) {
-    return (state, dispatch, view) => {
-      if (!view)
-        return false;
-      const sel = state.selection;
-      let cellSel;
-      if (sel instanceof CellSelection) {
-        cellSel = sel;
-      } else {
-        const end = atEndOfCell(view, axis, dir);
-        if (end == null)
-          return false;
-        cellSel = new CellSelection(state.doc.resolve(end));
-      }
-      const $head = nextCell(cellSel.$headCell, axis, dir);
-      if (!$head)
-        return false;
-      return maybeSetSelection(
-        state,
-        dispatch,
-        new CellSelection(cellSel.$anchorCell, $head)
-      );
-    };
-  }
-  function deleteCellSelection(state, dispatch) {
-    const sel = state.selection;
-    if (!(sel instanceof CellSelection))
-      return false;
-    if (dispatch) {
-      const tr = state.tr;
-      const baseContent = tableNodeTypes(state.schema).cell.createAndFill().content;
-      sel.forEachCell((cell, pos) => {
-        if (!cell.content.eq(baseContent))
-          tr.replace(
-            tr.mapping.map(pos + 1),
-            tr.mapping.map(pos + cell.nodeSize - 1),
-            new Slice(baseContent, 0, 0)
-          );
-      });
-      if (tr.docChanged)
-        dispatch(tr);
-    }
-    return true;
-  }
-  function handleTripleClick(view, pos) {
-    const doc = view.state.doc, $cell = cellAround(doc.resolve(pos));
-    if (!$cell)
-      return false;
-    view.dispatch(view.state.tr.setSelection(new CellSelection($cell)));
-    return true;
-  }
-  function handlePaste(view, _, slice) {
-    if (!isInTable(view.state))
-      return false;
-    let cells = pastedCells(slice);
-    const sel = view.state.selection;
-    if (sel instanceof CellSelection) {
-      if (!cells)
-        cells = {
-          width: 1,
-          height: 1,
-          rows: [
-            Fragment.from(
-              fitSlice(tableNodeTypes(view.state.schema).cell, slice)
-            )
-          ]
-        };
-      const table = sel.$anchorCell.node(-1);
-      const start = sel.$anchorCell.start(-1);
-      const rect = TableMap.get(table).rectBetween(
-        sel.$anchorCell.pos - start,
-        sel.$headCell.pos - start
-      );
-      cells = clipCells(cells, rect.right - rect.left, rect.bottom - rect.top);
-      insertCells(view.state, view.dispatch, start, rect, cells);
-      return true;
-    } else if (cells) {
-      const $cell = selectionCell(view.state);
-      const start = $cell.start(-1);
-      insertCells(
-        view.state,
-        view.dispatch,
-        start,
-        TableMap.get($cell.node(-1)).findCell($cell.pos - start),
-        cells
-      );
-      return true;
-    } else {
-      return false;
-    }
-  }
-  function handleMouseDown(view, startEvent) {
-    var _a;
-    if (startEvent.ctrlKey || startEvent.metaKey)
-      return;
-    const startDOMCell = domInCell(view, startEvent.target);
-    let $anchor;
-    if (startEvent.shiftKey && view.state.selection instanceof CellSelection) {
-      setCellSelection(view.state.selection.$anchorCell, startEvent);
-      startEvent.preventDefault();
-    } else if (startEvent.shiftKey && startDOMCell && ($anchor = cellAround(view.state.selection.$anchor)) != null && ((_a = cellUnderMouse(view, startEvent)) == null ? void 0 : _a.pos) != $anchor.pos) {
-      setCellSelection($anchor, startEvent);
-      startEvent.preventDefault();
-    } else if (!startDOMCell) {
-      return;
-    }
-    function setCellSelection($anchor2, event) {
-      let $head = cellUnderMouse(view, event);
-      const starting = tableEditingKey.getState(view.state) == null;
-      if (!$head || !inSameTable($anchor2, $head)) {
-        if (starting)
-          $head = $anchor2;
-        else
-          return;
-      }
-      const selection = new CellSelection($anchor2, $head);
-      if (starting || !view.state.selection.eq(selection)) {
-        const tr = view.state.tr.setSelection(selection);
-        if (starting)
-          tr.setMeta(tableEditingKey, $anchor2.pos);
-        view.dispatch(tr);
-      }
-    }
-    function stop() {
-      view.root.removeEventListener("mouseup", stop);
-      view.root.removeEventListener("dragstart", stop);
-      view.root.removeEventListener("mousemove", move);
-      if (tableEditingKey.getState(view.state) != null)
-        view.dispatch(view.state.tr.setMeta(tableEditingKey, -1));
-    }
-    function move(_event) {
-      const event = _event;
-      const anchor = tableEditingKey.getState(view.state);
-      let $anchor2;
-      if (anchor != null) {
-        $anchor2 = view.state.doc.resolve(anchor);
-      } else if (domInCell(view, event.target) != startDOMCell) {
-        $anchor2 = cellUnderMouse(view, startEvent);
-        if (!$anchor2)
-          return stop();
-      }
-      if ($anchor2)
-        setCellSelection($anchor2, event);
-    }
-    view.root.addEventListener("mouseup", stop);
-    view.root.addEventListener("dragstart", stop);
-    view.root.addEventListener("mousemove", move);
-  }
-  function atEndOfCell(view, axis, dir) {
-    if (!(view.state.selection instanceof TextSelection))
-      return null;
-    const { $head } = view.state.selection;
-    for (let d = $head.depth - 1; d >= 0; d--) {
-      const parent = $head.node(d), index = dir < 0 ? $head.index(d) : $head.indexAfter(d);
-      if (index != (dir < 0 ? 0 : parent.childCount))
-        return null;
-      if (parent.type.spec.tableRole == "cell" || parent.type.spec.tableRole == "header_cell") {
-        const cellPos = $head.before(d);
-        const dirStr = axis == "vert" ? dir > 0 ? "down" : "up" : dir > 0 ? "right" : "left";
-        return view.endOfTextblock(dirStr) ? cellPos : null;
-      }
-    }
-    return null;
-  }
-  function domInCell(view, dom) {
-    for (; dom && dom != view.dom; dom = dom.parentNode) {
-      if (dom.nodeName == "TD" || dom.nodeName == "TH") {
-        return dom;
-      }
-    }
-    return null;
-  }
-  function cellUnderMouse(view, event) {
-    const mousePos = view.posAtCoords({
-      left: event.clientX,
-      top: event.clientY
-    });
-    if (!mousePos)
-      return null;
-    return mousePos ? cellAround(view.state.doc.resolve(mousePos.pos)) : null;
-  }
-
-  // src/tableview.ts
-  var TableView = class {
-    constructor(node, cellMinWidth) {
-      this.node = node;
-      this.cellMinWidth = cellMinWidth;
-      this.dom = document.createElement("div");
-      this.dom.className = "tableWrapper";
-      this.table = this.dom.appendChild(document.createElement("table"));
-      this.colgroup = this.table.appendChild(document.createElement("colgroup"));
-      updateColumnsOnResize(node, this.colgroup, this.table, cellMinWidth);
-      this.contentDOM = this.table.appendChild(document.createElement("tbody"));
-    }
-    update(node) {
-      if (node.type != this.node.type)
-        return false;
-      this.node = node;
-      updateColumnsOnResize(node, this.colgroup, this.table, this.cellMinWidth);
-      return true;
-    }
-    ignoreMutation(record) {
-      return record.type == "attributes" && (record.target == this.table || this.colgroup.contains(record.target));
-    }
-  };
-  function updateColumnsOnResize(node, colgroup, table, cellMinWidth, overrideCol, overrideValue) {
-    var _a;
-    let totalWidth = 0;
-    let fixedWidth = true;
-    let nextDOM = colgroup.firstChild;
-    const row = node.firstChild;
-    if (!row)
-      return;
-    for (let i = 0, col = 0; i < row.childCount; i++) {
-      const { colspan, colwidth } = row.child(i).attrs;
-      for (let j = 0; j < colspan; j++, col++) {
-        const hasWidth = overrideCol == col ? overrideValue : colwidth && colwidth[j];
-        const cssWidth = hasWidth ? hasWidth + "px" : "";
-        totalWidth += hasWidth || cellMinWidth;
-        if (!hasWidth)
-          fixedWidth = false;
-        if (!nextDOM) {
-          colgroup.appendChild(document.createElement("col")).style.width = cssWidth;
-        } else {
-          if (nextDOM.style.width != cssWidth)
-            nextDOM.style.width = cssWidth;
-          nextDOM = nextDOM.nextSibling;
-        }
-      }
-    }
-    while (nextDOM) {
-      const after = nextDOM.nextSibling;
-      (_a = nextDOM.parentNode) == null ? void 0 : _a.removeChild(nextDOM);
-      nextDOM = after;
-    }
-    if (fixedWidth) {
-      table.style.width = totalWidth + "px";
-      table.style.minWidth = "";
-    } else {
-      table.style.width = "";
-      table.style.minWidth = totalWidth + "px";
-    }
-  }
-
-  // src/columnresizing.ts
-  var columnResizingPluginKey = new PluginKey(
-    "tableColumnResizing"
-  );
-  function columnResizing({
-    handleWidth = 5,
-    cellMinWidth = 25,
-    View = TableView,
-    lastColumnResizable = true
-  } = {}) {
-    const plugin = new Plugin({
-      key: columnResizingPluginKey,
-      state: {
-        init(_, state) {
-          plugin.spec.props.nodeViews[tableNodeTypes(state.schema).table.name] = (node, view) => new View(node, cellMinWidth, view);
-          return new ResizeState(-1, false);
-        },
-        apply(tr, prev) {
-          return prev.apply(tr);
-        }
-      },
-      props: {
-        attributes: (state) => {
-          const pluginState = columnResizingPluginKey.getState(state);
-          return pluginState && pluginState.activeHandle > -1 ? { class: "resize-cursor" } : {};
-        },
-        handleDOMEvents: {
-          mousemove: (view, event) => {
-            handleMouseMove(
-              view,
-              event,
-              handleWidth,
-              cellMinWidth,
-              lastColumnResizable
-            );
-          },
-          mouseleave: (view) => {
-            handleMouseLeave(view);
-          },
-          mousedown: (view, event) => {
-            handleMouseDown2(view, event, cellMinWidth);
-          }
-        },
-        decorations: (state) => {
-          const pluginState = columnResizingPluginKey.getState(state);
-          if (pluginState && pluginState.activeHandle > -1) {
-            return handleDecorations(state, pluginState.activeHandle);
-          }
-        },
-        nodeViews: {}
-      }
-    });
-    return plugin;
-  }
-  var ResizeState = class {
-    constructor(activeHandle, dragging) {
-      this.activeHandle = activeHandle;
-      this.dragging = dragging;
-    }
-    apply(tr) {
-      const state = this;
-      const action = tr.getMeta(columnResizingPluginKey);
-      if (action && action.setHandle != null)
-        return new ResizeState(action.setHandle, false);
-      if (action && action.setDragging !== void 0)
-        return new ResizeState(state.activeHandle, action.setDragging);
-      if (state.activeHandle > -1 && tr.docChanged) {
-        let handle = tr.mapping.map(state.activeHandle, -1);
-        if (!pointsAtCell(tr.doc.resolve(handle))) {
-          handle = -1;
-        }
-        return new ResizeState(handle, state.dragging);
-      }
-      return state;
-    }
-  };
-  function handleMouseMove(view, event, handleWidth, cellMinWidth, lastColumnResizable) {
-    const pluginState = columnResizingPluginKey.getState(view.state);
-    if (!pluginState)
-      return;
-    if (!pluginState.dragging) {
-      const target = domCellAround(event.target);
-      let cell = -1;
-      if (target) {
-        const { left, right } = target.getBoundingClientRect();
-        if (event.clientX - left <= handleWidth)
-          cell = edgeCell(view, event, "left");
-        else if (right - event.clientX <= handleWidth)
-          cell = edgeCell(view, event, "right");
-      }
-      if (cell != pluginState.activeHandle) {
-        if (!lastColumnResizable && cell !== -1) {
-          const $cell = view.state.doc.resolve(cell);
-          const table = $cell.node(-1);
-          const map = TableMap.get(table);
-          const tableStart = $cell.start(-1);
-          const col = map.colCount($cell.pos - tableStart) + $cell.nodeAfter.attrs.colspan - 1;
-          if (col == map.width - 1) {
-            return;
-          }
-        }
-        updateHandle(view, cell);
-      }
-    }
-  }
-  function handleMouseLeave(view) {
-    const pluginState = columnResizingPluginKey.getState(view.state);
-    if (pluginState && pluginState.activeHandle > -1 && !pluginState.dragging)
-      updateHandle(view, -1);
-  }
-  function handleMouseDown2(view, event, cellMinWidth) {
-    const pluginState = columnResizingPluginKey.getState(view.state);
-    if (!pluginState || pluginState.activeHandle == -1 || pluginState.dragging)
-      return false;
-    const cell = view.state.doc.nodeAt(pluginState.activeHandle);
-    const width = currentColWidth(view, pluginState.activeHandle, cell.attrs);
-    view.dispatch(
-      view.state.tr.setMeta(columnResizingPluginKey, {
-        setDragging: { startX: event.clientX, startWidth: width }
-      })
-    );
-    function finish(event2) {
-      window.removeEventListener("mouseup", finish);
-      window.removeEventListener("mousemove", move);
-      const pluginState2 = columnResizingPluginKey.getState(view.state);
-      if (pluginState2 == null ? void 0 : pluginState2.dragging) {
-        updateColumnWidth(
-          view,
-          pluginState2.activeHandle,
-          draggedWidth(pluginState2.dragging, event2, cellMinWidth)
-        );
-        view.dispatch(
-          view.state.tr.setMeta(columnResizingPluginKey, { setDragging: null })
-        );
-      }
-    }
-    function move(event2) {
-      if (!event2.which)
-        return finish(event2);
-      const pluginState2 = columnResizingPluginKey.getState(view.state);
-      if (!pluginState2)
-        return;
-      if (pluginState2.dragging) {
-        const dragged = draggedWidth(pluginState2.dragging, event2, cellMinWidth);
-        displayColumnWidth(view, pluginState2.activeHandle, dragged, cellMinWidth);
-      }
-    }
-    window.addEventListener("mouseup", finish);
-    window.addEventListener("mousemove", move);
-    event.preventDefault();
-    return true;
-  }
-  function currentColWidth(view, cellPos, { colspan, colwidth }) {
-    const width = colwidth && colwidth[colwidth.length - 1];
-    if (width)
-      return width;
-    const dom = view.domAtPos(cellPos);
-    const node = dom.node.childNodes[dom.offset];
-    let domWidth = node.offsetWidth, parts = colspan;
-    if (colwidth) {
-      for (let i = 0; i < colspan; i++)
-        if (colwidth[i]) {
-          domWidth -= colwidth[i];
-          parts--;
-        }
-    }
-    return domWidth / parts;
-  }
-  function domCellAround(target) {
-    while (target && target.nodeName != "TD" && target.nodeName != "TH")
-      target = target.classList && target.classList.contains("ProseMirror") ? null : target.parentNode;
-    return target;
-  }
-  function edgeCell(view, event, side) {
-    const found = view.posAtCoords({ left: event.clientX, top: event.clientY });
-    if (!found)
-      return -1;
-    const { pos } = found;
-    const $cell = cellAround(view.state.doc.resolve(pos));
-    if (!$cell)
-      return -1;
-    if (side == "right")
-      return $cell.pos;
-    const map = TableMap.get($cell.node(-1)), start = $cell.start(-1);
-    const index = map.map.indexOf($cell.pos - start);
-    return index % map.width == 0 ? -1 : start + map.map[index - 1];
-  }
-  function draggedWidth(dragging, event, cellMinWidth) {
-    const offset = event.clientX - dragging.startX;
-    return Math.max(cellMinWidth, dragging.startWidth + offset);
-  }
-  function updateHandle(view, value) {
-    view.dispatch(
-      view.state.tr.setMeta(columnResizingPluginKey, { setHandle: value })
-    );
-  }
-  function updateColumnWidth(view, cell, width) {
-    const $cell = view.state.doc.resolve(cell);
-    const table = $cell.node(-1), map = TableMap.get(table), start = $cell.start(-1);
-    const col = map.colCount($cell.pos - start) + $cell.nodeAfter.attrs.colspan - 1;
-    const tr = view.state.tr;
-    for (let row = 0; row < map.height; row++) {
-      const mapIndex = row * map.width + col;
-      if (row && map.map[mapIndex] == map.map[mapIndex - map.width])
-        continue;
-      const pos = map.map[mapIndex];
-      const attrs = table.nodeAt(pos).attrs;
-      const index = attrs.colspan == 1 ? 0 : col - map.colCount(pos);
-      if (attrs.colwidth && attrs.colwidth[index] == width)
-        continue;
-      const colwidth = attrs.colwidth ? attrs.colwidth.slice() : zeroes(attrs.colspan);
-      colwidth[index] = width;
-      tr.setNodeMarkup(start + pos, null, { ...attrs, colwidth });
-    }
-    if (tr.docChanged)
-      view.dispatch(tr);
-  }
-  function displayColumnWidth(view, cell, width, cellMinWidth) {
-    const $cell = view.state.doc.resolve(cell);
-    const table = $cell.node(-1), start = $cell.start(-1);
-    const col = TableMap.get(table).colCount($cell.pos - start) + $cell.nodeAfter.attrs.colspan - 1;
-    let dom = view.domAtPos($cell.start(-1)).node;
-    while (dom && dom.nodeName != "TABLE") {
-      dom = dom.parentNode;
-    }
-    if (!dom)
-      return;
-    updateColumnsOnResize(
-      table,
-      dom.firstChild,
-      dom,
-      cellMinWidth,
-      col,
-      width
-    );
-  }
-  function zeroes(n) {
-    return Array(n).fill(0);
-  }
-  function handleDecorations(state, cell) {
-    const decorations = [];
-    const $cell = state.doc.resolve(cell);
-    const table = $cell.node(-1);
-    if (!table) {
-      return DecorationSet.empty;
-    }
-    const map = TableMap.get(table);
-    const start = $cell.start(-1);
-    const col = map.colCount($cell.pos - start) + $cell.nodeAfter.attrs.colspan;
-    for (let row = 0; row < map.height; row++) {
-      const index = col + row * map.width - 1;
-      if ((col == map.width || map.map[index] != map.map[index + 1]) && (row == 0 || map.map[index - 1] != map.map[index - 1 - map.width])) {
-        const cellPos = map.map[index];
-        const pos = start + cellPos + table.nodeAt(cellPos).nodeSize - 1;
-        const dom = document.createElement("div");
-        dom.className = "column-resize-handle";
-        decorations.push(Decoration.widget(pos, dom));
-      }
-    }
-    return DecorationSet.create(state.doc, decorations);
-  }
-  function selectedRect(state) {
-    const sel = state.selection;
-    const $pos = selectionCell(state);
-    const table = $pos.node(-1);
-    const tableStart = $pos.start(-1);
-    const map = TableMap.get(table);
-    const rect = sel instanceof CellSelection ? map.rectBetween(
-      sel.$anchorCell.pos - tableStart,
-      sel.$headCell.pos - tableStart
-    ) : map.findCell($pos.pos - tableStart);
-    return { ...rect, tableStart, map, table };
-  }
-  function addColumn(tr, { map, tableStart, table }, col) {
-    let refColumn = col > 0 ? -1 : 0;
-    if (columnIsHeader(map, table, col + refColumn)) {
-      refColumn = col == 0 || col == map.width ? null : 0;
-    }
-    for (let row = 0; row < map.height; row++) {
-      const index = row * map.width + col;
-      if (col > 0 && col < map.width && map.map[index - 1] == map.map[index]) {
-        const pos = map.map[index];
-        const cell = table.nodeAt(pos);
-        tr.setNodeMarkup(
-          tr.mapping.map(tableStart + pos),
-          null,
-          addColSpan(cell.attrs, col - map.colCount(pos))
-        );
-        row += cell.attrs.rowspan - 1;
-      } else {
-        const type = refColumn == null ? tableNodeTypes(table.type.schema).cell : table.nodeAt(map.map[index + refColumn]).type;
-        const pos = map.positionAt(row, col, table);
-        tr.insert(tr.mapping.map(tableStart + pos), type.createAndFill());
-      }
-    }
-    return tr;
-  }
-  function addColumnBefore(state, dispatch) {
-    if (!isInTable(state))
-      return false;
-    if (dispatch) {
-      const rect = selectedRect(state);
-      dispatch(addColumn(state.tr, rect, rect.left));
-    }
-    return true;
-  }
-  function addColumnAfter(state, dispatch) {
-    if (!isInTable(state))
-      return false;
-    if (dispatch) {
-      const rect = selectedRect(state);
-      dispatch(addColumn(state.tr, rect, rect.right));
-    }
-    return true;
-  }
-  function removeColumn(tr, { map, table, tableStart }, col) {
-    const mapStart = tr.mapping.maps.length;
-    for (let row = 0; row < map.height; ) {
-      const index = row * map.width + col;
-      const pos = map.map[index];
-      const cell = table.nodeAt(pos);
-      const attrs = cell.attrs;
-      if (col > 0 && map.map[index - 1] == pos || col < map.width - 1 && map.map[index + 1] == pos) {
-        tr.setNodeMarkup(
-          tr.mapping.slice(mapStart).map(tableStart + pos),
-          null,
-          removeColSpan(attrs, col - map.colCount(pos))
-        );
-      } else {
-        const start = tr.mapping.slice(mapStart).map(tableStart + pos);
-        tr.delete(start, start + cell.nodeSize);
-      }
-      row += attrs.rowspan;
-    }
-  }
-  function deleteColumn(state, dispatch) {
-    if (!isInTable(state))
-      return false;
-    if (dispatch) {
-      const rect = selectedRect(state);
-      const tr = state.tr;
-      if (rect.left == 0 && rect.right == rect.map.width)
-        return false;
-      for (let i = rect.right - 1; ; i--) {
-        removeColumn(tr, rect, i);
-        if (i == rect.left)
-          break;
-        const table = rect.tableStart ? tr.doc.nodeAt(rect.tableStart - 1) : tr.doc;
-        if (!table) {
-          throw RangeError("No table found");
-        }
-        rect.table = table;
-        rect.map = TableMap.get(table);
-      }
-      dispatch(tr);
-    }
-    return true;
-  }
-  function rowIsHeader(map, table, row) {
-    var _a;
-    const headerCell = tableNodeTypes(table.type.schema).header_cell;
-    for (let col = 0; col < map.width; col++)
-      if (((_a = table.nodeAt(map.map[col + row * map.width])) == null ? void 0 : _a.type) != headerCell)
-        return false;
-    return true;
-  }
-  function addRow(tr, { map, tableStart, table }, row) {
-    var _a;
-    let rowPos = tableStart;
-    for (let i = 0; i < row; i++)
-      rowPos += table.child(i).nodeSize;
-    const cells = [];
-    let refRow = row > 0 ? -1 : 0;
-    if (rowIsHeader(map, table, row + refRow))
-      refRow = row == 0 || row == map.height ? null : 0;
-    for (let col = 0, index = map.width * row; col < map.width; col++, index++) {
-      if (row > 0 && row < map.height && map.map[index] == map.map[index - map.width]) {
-        const pos = map.map[index];
-        const attrs = table.nodeAt(pos).attrs;
-        tr.setNodeMarkup(tableStart + pos, null, {
-          ...attrs,
-          rowspan: attrs.rowspan + 1
-        });
-        col += attrs.colspan - 1;
-      } else {
-        const type = refRow == null ? tableNodeTypes(table.type.schema).cell : (_a = table.nodeAt(map.map[index + refRow * map.width])) == null ? void 0 : _a.type;
-        const node = type == null ? void 0 : type.createAndFill();
-        if (node)
-          cells.push(node);
-      }
-    }
-    tr.insert(rowPos, tableNodeTypes(table.type.schema).row.create(null, cells));
-    return tr;
-  }
-  function addRowBefore(state, dispatch) {
-    if (!isInTable(state))
-      return false;
-    if (dispatch) {
-      const rect = selectedRect(state);
-      dispatch(addRow(state.tr, rect, rect.top));
-    }
-    return true;
-  }
-  function addRowAfter(state, dispatch) {
-    if (!isInTable(state))
-      return false;
-    if (dispatch) {
-      const rect = selectedRect(state);
-      dispatch(addRow(state.tr, rect, rect.bottom));
-    }
-    return true;
-  }
-  function removeRow(tr, { map, table, tableStart }, row) {
-    let rowPos = 0;
-    for (let i = 0; i < row; i++)
-      rowPos += table.child(i).nodeSize;
-    const nextRow = rowPos + table.child(row).nodeSize;
-    const mapFrom = tr.mapping.maps.length;
-    tr.delete(rowPos + tableStart, nextRow + tableStart);
-    for (let col = 0, index = row * map.width; col < map.width; col++, index++) {
-      const pos = map.map[index];
-      if (row > 0 && pos == map.map[index - map.width]) {
-        const attrs = table.nodeAt(pos).attrs;
-        tr.setNodeMarkup(tr.mapping.slice(mapFrom).map(pos + tableStart), null, {
-          ...attrs,
-          rowspan: attrs.rowspan - 1
-        });
-        col += attrs.colspan - 1;
-      } else if (row < map.width && pos == map.map[index + map.width]) {
-        const cell = table.nodeAt(pos);
-        const attrs = cell.attrs;
-        const copy = cell.type.create(
-          { ...attrs, rowspan: cell.attrs.rowspan - 1 },
-          cell.content
-        );
-        const newPos = map.positionAt(row + 1, col, table);
-        tr.insert(tr.mapping.slice(mapFrom).map(tableStart + newPos), copy);
-        col += attrs.colspan - 1;
-      }
-    }
-  }
-  function deleteRow(state, dispatch) {
-    if (!isInTable(state))
-      return false;
-    if (dispatch) {
-      const rect = selectedRect(state), tr = state.tr;
-      if (rect.top == 0 && rect.bottom == rect.map.height)
-        return false;
-      for (let i = rect.bottom - 1; ; i--) {
-        removeRow(tr, rect, i);
-        if (i == rect.top)
-          break;
-        const table = rect.tableStart ? tr.doc.nodeAt(rect.tableStart - 1) : tr.doc;
-        if (!table) {
-          throw RangeError("No table found");
-        }
-        rect.table = table;
-        rect.map = TableMap.get(rect.table);
-      }
-      dispatch(tr);
-    }
-    return true;
-  }
-  function isEmpty(cell) {
-    const c = cell.content;
-    return c.childCount == 1 && c.child(0).isTextblock && c.child(0).childCount == 0;
-  }
-  function cellsOverlapRectangle({ width, height, map }, rect) {
-    let indexTop = rect.top * width + rect.left, indexLeft = indexTop;
-    let indexBottom = (rect.bottom - 1) * width + rect.left, indexRight = indexTop + (rect.right - rect.left - 1);
-    for (let i = rect.top; i < rect.bottom; i++) {
-      if (rect.left > 0 && map[indexLeft] == map[indexLeft - 1] || rect.right < width && map[indexRight] == map[indexRight + 1])
-        return true;
-      indexLeft += width;
-      indexRight += width;
-    }
-    for (let i = rect.left; i < rect.right; i++) {
-      if (rect.top > 0 && map[indexTop] == map[indexTop - width] || rect.bottom < height && map[indexBottom] == map[indexBottom + width])
-        return true;
-      indexTop++;
-      indexBottom++;
-    }
-    return false;
-  }
-  function mergeCells(state, dispatch) {
-    const sel = state.selection;
-    if (!(sel instanceof CellSelection) || sel.$anchorCell.pos == sel.$headCell.pos)
-      return false;
-    const rect = selectedRect(state), { map } = rect;
-    if (cellsOverlapRectangle(map, rect))
-      return false;
-    if (dispatch) {
-      const tr = state.tr;
-      const seen = {};
-      let content = Fragment.empty;
-      let mergedPos;
-      let mergedCell;
-      for (let row = rect.top; row < rect.bottom; row++) {
-        for (let col = rect.left; col < rect.right; col++) {
-          const cellPos = map.map[row * map.width + col];
-          const cell = rect.table.nodeAt(cellPos);
-          if (seen[cellPos] || !cell)
-            continue;
-          seen[cellPos] = true;
-          if (mergedPos == null) {
-            mergedPos = cellPos;
-            mergedCell = cell;
-          } else {
-            if (!isEmpty(cell))
-              content = content.append(cell.content);
-            const mapped = tr.mapping.map(cellPos + rect.tableStart);
-            tr.delete(mapped, mapped + cell.nodeSize);
-          }
-        }
-      }
-      if (mergedPos == null || mergedCell == null) {
-        return true;
-      }
-      tr.setNodeMarkup(mergedPos + rect.tableStart, null, {
-        ...addColSpan(
-          mergedCell.attrs,
-          mergedCell.attrs.colspan,
-          rect.right - rect.left - mergedCell.attrs.colspan
-        ),
-        rowspan: rect.bottom - rect.top
-      });
-      if (content.size) {
-        const end = mergedPos + 1 + mergedCell.content.size;
-        const start = isEmpty(mergedCell) ? mergedPos + 1 : end;
-        tr.replaceWith(start + rect.tableStart, end + rect.tableStart, content);
-      }
-      tr.setSelection(
-        new CellSelection(tr.doc.resolve(mergedPos + rect.tableStart))
-      );
-      dispatch(tr);
-    }
-    return true;
-  }
-  function splitCell(state, dispatch) {
-    const nodeTypes = tableNodeTypes(state.schema);
-    return splitCellWithType(({ node }) => {
-      return nodeTypes[node.type.spec.tableRole];
-    })(state, dispatch);
-  }
-  function splitCellWithType(getCellType) {
-    return (state, dispatch) => {
-      var _a;
-      const sel = state.selection;
-      let cellNode;
-      let cellPos;
-      if (!(sel instanceof CellSelection)) {
-        cellNode = cellWrapping(sel.$from);
-        if (!cellNode)
-          return false;
-        cellPos = (_a = cellAround(sel.$from)) == null ? void 0 : _a.pos;
-      } else {
-        if (sel.$anchorCell.pos != sel.$headCell.pos)
-          return false;
-        cellNode = sel.$anchorCell.nodeAfter;
-        cellPos = sel.$anchorCell.pos;
-      }
-      if (cellNode == null || cellPos == null) {
-        return false;
-      }
-      if (cellNode.attrs.colspan == 1 && cellNode.attrs.rowspan == 1) {
-        return false;
-      }
-      if (dispatch) {
-        let baseAttrs = cellNode.attrs;
-        const attrs = [];
-        const colwidth = baseAttrs.colwidth;
-        if (baseAttrs.rowspan > 1)
-          baseAttrs = { ...baseAttrs, rowspan: 1 };
-        if (baseAttrs.colspan > 1)
-          baseAttrs = { ...baseAttrs, colspan: 1 };
-        const rect = selectedRect(state), tr = state.tr;
-        for (let i = 0; i < rect.right - rect.left; i++)
-          attrs.push(
-            colwidth ? {
-              ...baseAttrs,
-              colwidth: colwidth && colwidth[i] ? [colwidth[i]] : null
-            } : baseAttrs
-          );
-        let lastCell;
-        for (let row = rect.top; row < rect.bottom; row++) {
-          let pos = rect.map.positionAt(row, rect.left, rect.table);
-          if (row == rect.top)
-            pos += cellNode.nodeSize;
-          for (let col = rect.left, i = 0; col < rect.right; col++, i++) {
-            if (col == rect.left && row == rect.top)
-              continue;
-            tr.insert(
-              lastCell = tr.mapping.map(pos + rect.tableStart, 1),
-              getCellType({ node: cellNode, row, col }).createAndFill(attrs[i])
-            );
-          }
-        }
-        tr.setNodeMarkup(
-          cellPos,
-          getCellType({ node: cellNode, row: rect.top, col: rect.left }),
-          attrs[0]
-        );
-        if (sel instanceof CellSelection)
-          tr.setSelection(
-            new CellSelection(
-              tr.doc.resolve(sel.$anchorCell.pos),
-              lastCell ? tr.doc.resolve(lastCell) : void 0
-            )
-          );
-        dispatch(tr);
-      }
-      return true;
-    };
-  }
-  function setCellAttr(name, value) {
-    return function(state, dispatch) {
-      if (!isInTable(state))
-        return false;
-      const $cell = selectionCell(state);
-      if ($cell.nodeAfter.attrs[name] === value)
-        return false;
-      if (dispatch) {
-        const tr = state.tr;
-        if (state.selection instanceof CellSelection)
-          state.selection.forEachCell((node, pos) => {
-            if (node.attrs[name] !== value)
-              tr.setNodeMarkup(pos, null, {
-                ...node.attrs,
-                [name]: value
-              });
-          });
-        else
-          tr.setNodeMarkup($cell.pos, null, {
-            ...$cell.nodeAfter.attrs,
-            [name]: value
-          });
-        dispatch(tr);
-      }
-      return true;
-    };
-  }
-  function deprecated_toggleHeader(type) {
-    return function(state, dispatch) {
-      if (!isInTable(state))
-        return false;
-      if (dispatch) {
-        const types = tableNodeTypes(state.schema);
-        const rect = selectedRect(state), tr = state.tr;
-        const cells = rect.map.cellsInRect(
-          type == "column" ? {
-            left: rect.left,
-            top: 0,
-            right: rect.right,
-            bottom: rect.map.height
-          } : type == "row" ? {
-            left: 0,
-            top: rect.top,
-            right: rect.map.width,
-            bottom: rect.bottom
-          } : rect
-        );
-        const nodes = cells.map((pos) => rect.table.nodeAt(pos));
-        for (let i = 0; i < cells.length; i++)
-          if (nodes[i].type == types.header_cell)
-            tr.setNodeMarkup(
-              rect.tableStart + cells[i],
-              types.cell,
-              nodes[i].attrs
-            );
-        if (tr.steps.length == 0)
-          for (let i = 0; i < cells.length; i++)
-            tr.setNodeMarkup(
-              rect.tableStart + cells[i],
-              types.header_cell,
-              nodes[i].attrs
-            );
-        dispatch(tr);
-      }
-      return true;
-    };
-  }
-  function isHeaderEnabledByType(type, rect, types) {
-    const cellPositions = rect.map.cellsInRect({
-      left: 0,
-      top: 0,
-      right: type == "row" ? rect.map.width : 1,
-      bottom: type == "column" ? rect.map.height : 1
-    });
-    for (let i = 0; i < cellPositions.length; i++) {
-      const cell = rect.table.nodeAt(cellPositions[i]);
-      if (cell && cell.type !== types.header_cell) {
-        return false;
-      }
-    }
-    return true;
-  }
-  function toggleHeader(type, options) {
-    options = options || { useDeprecatedLogic: false };
-    if (options.useDeprecatedLogic)
-      return deprecated_toggleHeader(type);
-    return function(state, dispatch) {
-      if (!isInTable(state))
-        return false;
-      if (dispatch) {
-        const types = tableNodeTypes(state.schema);
-        const rect = selectedRect(state), tr = state.tr;
-        const isHeaderRowEnabled = isHeaderEnabledByType("row", rect, types);
-        const isHeaderColumnEnabled = isHeaderEnabledByType(
-          "column",
-          rect,
-          types
-        );
-        const isHeaderEnabled = type === "column" ? isHeaderRowEnabled : type === "row" ? isHeaderColumnEnabled : false;
-        const selectionStartsAt = isHeaderEnabled ? 1 : 0;
-        const cellsRect = type == "column" ? {
-          left: 0,
-          top: selectionStartsAt,
-          right: 1,
-          bottom: rect.map.height
-        } : type == "row" ? {
-          left: selectionStartsAt,
-          top: 0,
-          right: rect.map.width,
-          bottom: 1
-        } : rect;
-        const newType = type == "column" ? isHeaderColumnEnabled ? types.cell : types.header_cell : type == "row" ? isHeaderRowEnabled ? types.cell : types.header_cell : types.cell;
-        rect.map.cellsInRect(cellsRect).forEach((relativeCellPos) => {
-          const cellPos = relativeCellPos + rect.tableStart;
-          const cell = tr.doc.nodeAt(cellPos);
-          if (cell) {
-            tr.setNodeMarkup(cellPos, newType, cell.attrs);
-          }
-        });
-        dispatch(tr);
-      }
-      return true;
-    };
-  }
-  var toggleHeaderRow = toggleHeader("row", {
-    useDeprecatedLogic: true
-  });
-  var toggleHeaderColumn = toggleHeader("column", {
-    useDeprecatedLogic: true
-  });
-  var toggleHeaderCell = toggleHeader("cell", {
-    useDeprecatedLogic: true
-  });
-  function findNextCell($cell, dir) {
-    if (dir < 0) {
-      const before = $cell.nodeBefore;
-      if (before)
-        return $cell.pos - before.nodeSize;
-      for (let row = $cell.index(-1) - 1, rowEnd = $cell.before(); row >= 0; row--) {
-        const rowNode = $cell.node(-1).child(row);
-        const lastChild = rowNode.lastChild;
-        if (lastChild) {
-          return rowEnd - 1 - lastChild.nodeSize;
-        }
-        rowEnd -= rowNode.nodeSize;
-      }
-    } else {
-      if ($cell.index() < $cell.parent.childCount - 1) {
-        return $cell.pos + $cell.nodeAfter.nodeSize;
-      }
-      const table = $cell.node(-1);
-      for (let row = $cell.indexAfter(-1), rowStart = $cell.after(); row < table.childCount; row++) {
-        const rowNode = table.child(row);
-        if (rowNode.childCount)
-          return rowStart + 1;
-        rowStart += rowNode.nodeSize;
-      }
-    }
-    return null;
-  }
-  function goToNextCell(direction) {
-    return function(state, dispatch) {
-      if (!isInTable(state))
-        return false;
-      const cell = findNextCell(selectionCell(state), direction);
-      if (cell == null)
-        return false;
-      if (dispatch) {
-        const $cell = state.doc.resolve(cell);
-        dispatch(
-          state.tr.setSelection(TextSelection.between($cell, moveCellForward($cell))).scrollIntoView()
-        );
-      }
-      return true;
-    };
-  }
-  function deleteTable(state, dispatch) {
-    const $pos = state.selection.$anchor;
-    for (let d = $pos.depth; d > 0; d--) {
-      const node = $pos.node(d);
-      if (node.type.spec.tableRole == "table") {
-        if (dispatch)
-          dispatch(
-            state.tr.delete($pos.before(d), $pos.after(d)).scrollIntoView()
-          );
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // src/index.ts
-  function tableEditing({
-    allowTableNodeSelection = false
-  } = {}) {
-    return new Plugin({
-      key: tableEditingKey,
-      state: {
-        init() {
-          return null;
-        },
-        apply(tr, cur) {
-          const set = tr.getMeta(tableEditingKey);
-          if (set != null)
-            return set == -1 ? null : set;
-          if (cur == null || !tr.docChanged)
-            return cur;
-          const { deleted, pos } = tr.mapping.mapResult(cur);
-          return deleted ? null : pos;
-        }
-      },
-      props: {
-        decorations: drawCellSelection,
-        handleDOMEvents: {
-          mousedown: handleMouseDown
-        },
-        createSelectionBetween(view) {
-          return tableEditingKey.getState(view.state) != null ? view.state.selection : null;
-        },
-        handleTripleClick,
-        handleKeyDown,
-        handlePaste
-      },
-      appendTransaction(_, oldState, state) {
-        return normalizeSelection(
-          state,
-          fixTables(state, oldState),
-          allowTableNodeSelection
-        );
-      }
-    });
-  }
-
-  var index$1 = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    CellBookmark: CellBookmark,
-    CellSelection: CellSelection,
-    ResizeState: ResizeState,
-    TableMap: TableMap,
-    TableView: TableView,
-    __clipCells: clipCells,
-    __insertCells: insertCells,
-    __pastedCells: pastedCells,
-    addColSpan: addColSpan,
-    addColumn: addColumn,
-    addColumnAfter: addColumnAfter,
-    addColumnBefore: addColumnBefore,
-    addRow: addRow,
-    addRowAfter: addRowAfter,
-    addRowBefore: addRowBefore,
-    cellAround: cellAround,
-    colCount: colCount,
-    columnIsHeader: columnIsHeader,
-    columnResizing: columnResizing,
-    columnResizingPluginKey: columnResizingPluginKey,
-    deleteColumn: deleteColumn,
-    deleteRow: deleteRow,
-    deleteTable: deleteTable,
-    findCell: findCell,
-    fixTables: fixTables,
-    fixTablesKey: fixTablesKey,
-    goToNextCell: goToNextCell,
-    handlePaste: handlePaste,
-    inSameTable: inSameTable,
-    isInTable: isInTable,
-    mergeCells: mergeCells,
-    moveCellForward: moveCellForward,
-    nextCell: nextCell,
-    pointsAtCell: pointsAtCell,
-    removeColSpan: removeColSpan,
-    removeColumn: removeColumn,
-    removeRow: removeRow,
-    rowIsHeader: rowIsHeader,
-    selectedRect: selectedRect,
-    selectionCell: selectionCell,
-    setCellAttr: setCellAttr,
-    splitCell: splitCell,
-    splitCellWithType: splitCellWithType,
-    tableEditing: tableEditing,
-    tableEditingKey: tableEditingKey,
-    tableNodeTypes: tableNodeTypes,
-    tableNodes: tableNodes,
-    toggleHeader: toggleHeader,
-    toggleHeaderCell: toggleHeaderCell,
-    toggleHeaderColumn: toggleHeaderColumn,
-    toggleHeaderRow: toggleHeaderRow,
-    updateColumnsOnResize: updateColumnsOnResize
-  });
 
   /**
    * A class responsible for building a menu for a ProseMirror instance.
@@ -18538,8 +15888,11 @@ var ProseMirror = (function (exports) {
      * @protected
      */
     _createDropDowns() {
-      const dropdowns = Object.values(this._getDropDownMenus()).map(({title, cssClass, icon, entries}) => {
-        return new ProseMirrorDropDown(title, entries, { cssClass, icon, onAction: this._onAction.bind(this) });
+      const dropdowns = Object.values(this._getDropDownMenus()).map(({title, cssClass, entries}) => {
+        return new ProseMirrorDropDown(title, entries, {
+          cssClass,
+          onAction: this._onAction.bind(this)
+        });
       });
 
       /**
@@ -18561,8 +15914,6 @@ var ProseMirror = (function (exports) {
      * @property {MarkType} [mark]           The mark to apply to the selected text.
      * @property {NodeType} [node]           The node to wrap the selected text in.
      * @property {object} [attrs]            An object of attributes for the node or mark.
-     * @property {number} [group]            Entries with the same group number will be grouped together in the drop-down.
-     *                                       Lower-numbered groups appear higher in the list.
      * @property {number} [priority]         A numeric priority which determines whether this item is displayed as the
      *                                       dropdown title. Lower priority takes precedence.
      * @property {ProseMirrorCommand} [cmd]  The command to run when the menu item is clicked.
@@ -18578,7 +15929,6 @@ var ProseMirror = (function (exports) {
      * @typedef {object} ProseMirrorDropDownConfig
      * @property {string} title                        The default title of the drop-down.
      * @property {string} cssClass                     The menu CSS class.
-     * @property {string} [icon]                       An optional icon to use instead of a text label.
      * @property {ProseMirrorDropDownEntry[]} entries  The drop-down entries.
      */
 
@@ -18754,63 +16104,6 @@ var ProseMirror = (function (exports) {
         };
       }
 
-      menus.table = {
-        title: "EDITOR.Table",
-        cssClass: "tables",
-        icon: '<i class="fas fa-table"></i>',
-        entries: [{
-          action: "insert-table",
-          title: "EDITOR.TableInsert",
-          group: 1,
-          cmd: this._insertTablePrompt.bind(this)
-        }, {
-          action: "delete-table",
-          title: "EDITOR.TableDelete",
-          group: 1,
-          cmd: deleteTable
-        }, {
-          action: "add-col-after",
-          title: "EDITOR.TableAddColumnAfter",
-          group: 2,
-          cmd: addColumnAfter
-        }, {
-          action: "add-col-before",
-          title: "EDITOR.TableAddColumnBefore",
-          group: 2,
-          cmd: addColumnBefore
-        }, {
-          action: "delete-col",
-          title: "EDITOR.TableDeleteColumn",
-          group: 2,
-          cmd: deleteColumn
-        }, {
-          action: "add-row-after",
-          title: "EDITOR.TableAddRowAfter",
-          group: 3,
-          cmd: addRowAfter
-        }, {
-          action: "add-row-before",
-          title: "EDITOR.TableAddRowBefore",
-          group: 3,
-          cmd: addRowBefore
-        }, {
-          action: "delete-row",
-          title: "EDITOR.TableDeleteRow",
-          group: 3,
-          cmd: deleteRow
-        }, {
-          action: "merge-cells",
-          title: "EDITOR.TableMergeCells",
-          group: 4,
-          cmd: mergeCells
-        }, {
-          action: "split-cell",
-          title: "EDITOR.TableSplitCell",
-          group: 4,
-          cmd: splitCell
-        }]
-      };
-
       Hooks.callAll("getProseMirrorMenuDropDowns", this, menus);
       return menus;
     }
@@ -18853,7 +16146,6 @@ var ProseMirror = (function (exports) {
           title: "EDITOR.InsertImage",
           icon: '<i class="fa-solid fa-image"></i>',
           scope: scopes.TEXT,
-          node: this.schema.nodes.image,
           cmd: this._insertImagePrompt.bind(this)
         },
         {
@@ -18861,7 +16153,6 @@ var ProseMirror = (function (exports) {
           title: "EDITOR.Link",
           icon: '<i class="fa-solid fa-link"></i>',
           scope: scopes.TEXT,
-          mark: this.schema.marks.link,
           cmd: this._insertLinkPrompt.bind(this)
         },
         {
@@ -18879,18 +16170,6 @@ var ProseMirror = (function (exports) {
           cmd: this.#clearSourceTextarea.bind(this)
         }
       ];
-
-      if ( this.view.state.plugins.some(p => p.spec.isHighlightMatchesPlugin) ) {
-        items.push({
-          action: "toggle-matches",
-          title: "EDITOR.EnableHighlightDocumentMatches",
-          icon: '<i class="fa-solid fa-wand-magic-sparkles"></i>',
-          scope: scopes.TEXT,
-          cssClass: "toggle-matches",
-          cmd: this._toggleMatches.bind(this),
-          active: game.settings.get("core", "pmHighlightDocumentMatches")
-        });
-      }
 
       if ( this.options.onSave ) {
         items.push({
@@ -18927,7 +16206,6 @@ var ProseMirror = (function (exports) {
      */
     _isItemActive(item) {
       if ( item.action === "source-code" ) return !!this.#editingSource;
-      if ( item.action === "toggle-matches" ) return game.settings.get("core", "pmHighlightDocumentMatches");
       if ( item.mark ) return this._isMarkActive(item);
       if ( item.node ) return this._isNodeActive(item);
       return false;
@@ -18976,7 +16254,7 @@ var ProseMirror = (function (exports) {
       // If the selection spans multiple nodes, give up on detecting whether we're in a given block.
       // TODO: Add more complex logic for detecting if all selected nodes belong to the same parent.
       if ( !sameParent ) return false;
-      return (state.doc.nodeAt($from.pos)?.type === item.node) || $from.hasAncestor(item.node, item.attrs);
+      return $from.hasAncestor(item.node, item.attrs);
     }
 
     /* -------------------------------------------- */
@@ -19095,15 +16373,7 @@ var ProseMirror = (function (exports) {
      * @protected
      */
     async _insertImagePrompt() {
-      const state = this.view.state;
-      const { $from, empty } = state.selection;
-      const image = this.schema.nodes.image;
-      const data = { src: "", alt: "", width: "", height: "" };
-      if ( !empty ) {
-        const selected = state.doc.nodeAt($from.pos);
-        Object.assign(data, selected?.attrs ?? {});
-      }
-      const dialog = await this._showDialog("image", "templates/journal/insert-image.html", { data });
+      const dialog = await this._showDialog("image", "templates/journal/insert-image.html");
       const form = dialog.querySelector("form");
       const src = form.elements.src;
       const filePicker = src.nextElementSibling;
@@ -19112,6 +16382,7 @@ var ProseMirror = (function (exports) {
       });
       form.elements.save.addEventListener("click", () => {
         if ( !src.value ) return;
+        const image = this.schema.nodes.image;
         this.view.dispatch(this.view.state.tr.replaceSelectionWith(image.create({
           src: src.value,
           alt: form.elements.alt.value,
@@ -19174,30 +16445,6 @@ var ProseMirror = (function (exports) {
     /* -------------------------------------------- */
 
     /**
-     * Display the insert table prompt.
-     * @protected
-     */
-    async _insertTablePrompt() {
-      const dialog = await this._showDialog("insert-table", "templates/journal/insert-table.html");
-      const form = dialog.querySelector("form");
-      form.elements.save.addEventListener("click", () => {
-        const rows = Number(form.elements.rows.value) || 1;
-        const cols = Number(form.elements.cols.value) || 1;
-        const html = `
-        <table>
-          ${Array.fromRange(rows).reduce(row => row + `
-            <tr>${Array.fromRange(cols).reduce(col => col + "<td></td>", "")}</tr>
-          `, "")}
-        </table>
-      `;
-        const table = ProseMirror.dom.parseString(html, this.schema);
-        this.view.dispatch(this.view.state.tr.replaceSelectionWith(table).scrollIntoView());
-      });
-    }
-
-    /* -------------------------------------------- */
-
-    /**
      * Create a dialog for a menu button.
      * @param {string} action                      The unique menu button action.
      * @param {string} template                    The dialog's template.
@@ -19207,7 +16454,7 @@ var ProseMirror = (function (exports) {
      * @protected
      */
     async _showDialog(action, template, {data={}}={}) {
-      const button = this.view.dom.closest(".editor").querySelector(`[data-action="${action}"]`);
+      const button = this.view.dom.closest(".editor").querySelector(`button[data-action="${action}"]`);
       button.classList.add("active");
       const dialog = document.createElement("dialog");
       dialog.classList.add("menu-dialog", "prosemirror");
@@ -19264,19 +16511,6 @@ var ProseMirror = (function (exports) {
         tr.setNodeMarkup(pos, null, attrs);
       });
       this.view.dispatch(tr);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Toggle link recommendations
-     * @protected
-     */
-    async _toggleMatches() {
-      const enabled = game.settings.get("core", "pmHighlightDocumentMatches");
-      await game.settings.set("core", "pmHighlightDocumentMatches", !enabled);
-      this.items.find(i => i.action === "toggle-matches").active = !enabled;
-      this.render();
     }
 
     /* -------------------------------------------- */
@@ -19543,7 +16777,7 @@ var ProseMirror = (function (exports) {
       return collabKey.getState(state).version;
   }
 
-  var index = /*#__PURE__*/Object.freeze({
+  var index$1 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     collab: collab,
     getVersion: getVersion,
@@ -19923,44 +17157,92 @@ var ProseMirror = (function (exports) {
   }
 
   /**
-   * @callback ProseMirrorSliceTransformer
-   * @param {Node} node    The candidate node.
-   * @returns {Node|void}  A new node to replace the candidate node, or nothing if a replacement should not be made.
+   * A class responsible for encapsulating logic around image nodes in the ProseMirror schema.
    */
-
-  /**
-   * Apply a transformation to some nodes in a slice, and return the new slice.
-   * @param {Slice} slice           The slice to transform.
-   * @param {function} transformer  The transformation function.
-   * @returns {Slice}               Either the original slice if no changes were made, or the newly-transformed slice.
-   */
-  function transformSlice(slice, transformer) {
-    const nodeTree = new Map();
-    slice.content.nodesBetween(0, slice.content.size, (node, start, parent, index) => {
-      nodeTree.set(node, { parent, index });
-    });
-    let newSlice;
-    const replaceNode = (node, { parent, index }) => {
-      // If there is a parent, make the replacement, then recurse up the tree to the root, creating new nodes as we go.
-      if ( parent ) {
-        const newContent = parent.content.replaceChild(index, node);
-        const newParent = parent.copy(newContent);
-        replaceNode(newParent, nodeTree.get(parent));
-        return;
-      }
-
-      // Otherwise, handle replacing the root slice's content.
-      const targetSlice = newSlice ?? slice;
-      const fragment = targetSlice.content;
-      const newFragment = fragment.replaceChild(index, node);
-      newSlice = new Slice(newFragment, targetSlice.openStart, targetSlice.openEnd);
-    };
-    for ( const [node, treeInfo] of nodeTree.entries() ) {
-      const newNode = transformer(node);
-      if ( newNode ) replaceNode(newNode, treeInfo);
+  class ImageNode {
+    /**
+     * Image node schema attributes.
+     * @returns {object}
+     */
+    static get attrs() {
+      return {
+        src: {},
+        alt: {default: null},
+        title: {default: null},
+        width: {default: ""},
+        height: {default: ""},
+        alignment: {default: "", formatting: true}
+      };
     }
-    return newSlice ?? slice;
+
+    /* -------------------------------------------- */
+
+    /**
+     * Check if an HTML element is appropriate to represent as this node, and if so, extract its schema attributes.
+     * @param {HTMLElement} el    The HTML element.
+     * @returns {object|boolean}  Returns false if the HTML element is not appropriate for this schema node.
+     */
+    static getAttrs(el) {
+      const attrs = {
+        src: el.getAttribute("src"),
+        title: el.title,
+        alt: el.alt
+      };
+      if ( el.classList.contains("centered") ) attrs.alignment = "center";
+      else if ( el.style.float ) attrs.alignment = el.style.float;
+      if ( el.hasAttribute("width") ) attrs.width = el.width;
+      if ( el.hasAttribute("height") ) attrs.height = el.height;
+      return attrs;
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Convert a ProseMirror image node back into an HTML element.
+     * @param {Node} node  The ProseMirror node.
+     * @returns {[string, any]}
+     */
+    static toDOM(node) {
+      const {src, alt, title, width, height, alignment} = node.attrs;
+      const attrs = {src};
+      if ( alignment === "center" ) attrs.class = "centered";
+      else if ( alignment ) attrs.style = `float: ${alignment};`;
+      if ( alt ) attrs.alt = alt;
+      if ( title ) attrs.title = title;
+      if ( width ) attrs.width = width;
+      if ( height ) attrs.height = height;
+      return ["img", attrs];
+    }
+
+    /* -------------------------------------------- */
+
+    /**
+     * Create a ProseMirror schema node that represents an image element.
+     * @returns {NodeSpec}
+     */
+    static makeNode() {
+      return {
+        attrs: this.attrs,
+        managed: {styles: ["float"], classes: ["centered"]},
+        group: "block",
+        draggable: true,
+        parseDOM: [{tag: "img[src]", getAttrs: this.getAttrs.bind(this)}],
+        toDOM: this.toDOM.bind(this)
+      };
+    }
   }
+
+  /* -------------------------------------------- */
+  /*  Nodes                                       */
+  /* -------------------------------------------- */
+
+  const doc = {
+    content: "block+"
+  };
+
+  const text = {
+    group: "inline"
+  };
 
   const paragraph = {
     attrs: {alignment: {default: "left", formatting: true}},
@@ -19975,8 +17257,6 @@ var ProseMirror = (function (exports) {
     }
   };
 
-  /* -------------------------------------------- */
-
   const blockquote = {
     content: "block+",
     group: "block",
@@ -19985,15 +17265,35 @@ var ProseMirror = (function (exports) {
     toDOM: () => ["blockquote", 0]
   };
 
-  /* -------------------------------------------- */
+  const secret = {
+    attrs: {
+      revealed: {default: false},
+      id: {}
+    },
+    content: "block+",
+    group: "block",
+    defining: true,
+    parseDOM: [{tag: "section", getAttrs: el => {
+      if ( !el.classList.contains("secret") ) return false;
+      return {
+        revealed: el.classList.contains("revealed"),
+        id: el.id || `secret-${randomID()}`
+      };
+    }}],
+    toDOM: node => {
+      const attrs = {
+        id: node.attrs.id,
+        class: `secret${node.attrs.revealed ? " revealed" : ""}`
+      };
+      return ["section", attrs, 0];
+    }
+  };
 
   const hr = {
     group: "block",
     parseDOM: [{tag: "hr"}],
     toDOM: () => ["hr"]
   };
-
-  /* -------------------------------------------- */
 
   const heading = {
     attrs: {level: {default: 1}},
@@ -20011,8 +17311,6 @@ var ProseMirror = (function (exports) {
     toDOM: node => [`h${node.attrs.level}`, 0]
   };
 
-  /* -------------------------------------------- */
-
   const pre = {
     content: "text*",
     marks: "",
@@ -20023,7 +17321,31 @@ var ProseMirror = (function (exports) {
     toDOM: () => ["pre", ["code", 0]]
   };
 
-  /* -------------------------------------------- */
+  const image = ImageNode.makeNode();
+
+  const imageLink = {
+    group: "block",
+    draggable: true,
+    managed: {styles: ["float"], classes: ["centered"]},
+    parseDOM: [{tag: "a", getAttrs: el => {
+      if ( (el.children.length !== 1) || (el.children[0].tagName !== "IMG") ) return false;
+      const attrs = ImageNode.getAttrs(el.children[0]);
+      attrs.href = el.href;
+      attrs.title = el.title;
+      return attrs;
+    }}],
+    toDOM: node => {
+      const {href, title} = node.attrs;
+      const attrs = {};
+      if ( href ) attrs.href = href;
+      if ( title ) attrs.title = title;
+      return ["a", attrs, ImageNode.toDOM(node)];
+    }
+  };
+  imageLink.attrs = mergeObject(ImageNode.attrs, {
+    href: {default: null},
+    title: {default: null}
+  });
 
   const br = {
     inline: true,
@@ -20032,80 +17354,6 @@ var ProseMirror = (function (exports) {
     parseDOM: [{tag: "br"}],
     toDOM: () => ["br"]
   };
-
-  // A list of tag names that are considered allowable inside a node that only supports inline content.
-  const INLINE_TAGS = new Set(["A", "EM", "I", "STRONG", "B", "CODE", "U", "S", "DEL", "SUP", "SUB", "SPAN"]);
-
-  /**
-   * Determine if an HTML element contains purely inline content, i.e. only text nodes and 'mark' elements.
-   * @param {HTMLElement} element  The element.
-   * @returns {boolean}
-   */
-  function onlyInlineContent(element) {
-    for ( const child of element.children ) {
-      if ( !INLINE_TAGS.has(child.tagName) ) return false;
-    }
-    return true;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Determine if an HTML element is empty.
-   * @param {HTMLElement} element  The element.
-   * @returns {boolean}
-   */
-  function isElementEmpty(element) {
-    return !element.childNodes.length;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Convert an element's style attribute string into an object.
-   * @param {string} str  The style string.
-   * @returns {object}
-   */
-  function stylesFromString(str) {
-    return Object.fromEntries(str.split(/;\s*/g).map(prop => prop.split(/:\s*/)));
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Merge two style attribute strings.
-   * @param {string} a  The first style string.
-   * @param {string} b  The second style string.
-   * @returns {string}
-   */
-  function mergeStyle(a, b) {
-    const allStyles = mergeObject(stylesFromString(a), stylesFromString(b));
-    return Object.entries(allStyles).map(([k, v]) => v ? `${k}: ${v}` : null).filterJoin("; ");
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Convert an element's class attribute string into an array of class names.
-   * @param {string} str  The class string.
-   * @returns {string[]}
-   */
-  function classesFromString(str) {
-    return str.split(/\s+/g);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Merge two class attribute strings.
-   * @param {string} a  The first class string.
-   * @param {string} b  The second class string.
-   * @returns {string}
-   */
-  function mergeClass(a, b) {
-    const allClasses = classesFromString(a).concat(classesFromString(b));
-    return Array.from(new Set(allClasses)).join(" ");
-  }
 
   const ol = {
     content: "(list_item | list_item_text)+",
@@ -20116,16 +17364,12 @@ var ProseMirror = (function (exports) {
     toDOM: node => node.attrs.order === 1 ? ["ol", 0] : ["ol", {start: node.attrs.order}, 0]
   };
 
-  /* -------------------------------------------- */
-
   const ul = {
     content: "(list_item | list_item_text)+",
     group: "block",
     parseDOM: [{tag: "ul"}],
     toDOM: () => ["ul", 0]
   };
-
-  /* -------------------------------------------- */
 
   /**
    * ProseMirror enforces a stricter subset of HTML where block and inline content cannot be mixed. For example, the
@@ -20161,52 +17405,38 @@ var ProseMirror = (function (exports) {
     content: "paragraph block*",
     defining: true,
     parseDOM: [{tag: "li", getAttrs: el => {
-        // If this contains only inline content and no other elements, do not use this node type.
-        if ( !isElementEmpty(el) && onlyInlineContent(el) ) return false;
-      }}],
+      // If this contains only inline content and no other elements, do not use this node type.
+      if ( !isElementEmpty(el) && onlyInlineContent(el) ) return false;
+    }}],
     toDOM: () => ["li", 0]
   };
-
-  /* -------------------------------------------- */
 
   const liText = {
     content: "text*",
     defining: true,
     parseDOM: [{tag: "li", getAttrs: el => {
-        // If this contains any non-inline elements, do not use this node type.
-        if ( isElementEmpty(el) || !onlyInlineContent(el) ) return false;
-      }}],
+      // If this contains any non-inline elements, do not use this node type.
+      if ( isElementEmpty(el) || !onlyInlineContent(el) ) return false;
+    }}],
     toDOM: () => ["li", 0]
   };
-
-  const CELL_ATTRS = {
-    colspan: {default: 1},
-    rowspan: {default: 1},
-    colwidth: {default: null}
-  };
-
-  const MANAGED_CELL_ATTRS = {
-    attributes: ["colspan", "rowspan", "data-colwidth"]
-  };
-
-  // If any of these elements are part of a table, consider it a 'complex' table and do not attempt to make it editable.
-  const COMPLEX_TABLE_ELEMENTS = new Set(["CAPTION", "COLGROUP", "THEAD", "TFOOT"]);
-
-  /* -------------------------------------------- */
-  /*  Utilities                                   */
-  /* -------------------------------------------- */
 
   /**
    * Determine node attributes for a table cell when parsing the DOM.
    * @param {HTMLTableCellElement} cell  The table cell DOM node.
-   * @returns {{colspan: number, rowspan: number}}
+   * @returns {{colspan: number, rowspan: number, colwidth: number|null}}
    */
   function getTableCellAttrs(cell) {
+    // TODO: Not entirely sure what the colwidth is for, but it seems to be used by the prosemirror-tables package
+    // internally, so we preserve it here.
+    const colwidth = cell.dataset.colwidth;
+    const widths = /^\d+(,\d+)*$/.test(colwidth) ? colwidth.split(",").map(w => Number(w)) : null;
     const colspan = cell.getAttribute("colspan") || 1;
     const rowspan = cell.getAttribute("rowspan") || 1;
     return {
       colspan: Number(colspan),
-      rowspan: Number(rowspan)
+      rowspan: Number(rowspan),
+      colwidth: widths?.length === colspan ? widths : null
     };
   }
 
@@ -20217,185 +17447,139 @@ var ProseMirror = (function (exports) {
    */
   function setTableCellAttrs(node) {
     const attrs = {};
-    const {colspan, rowspan} = node.attrs;
+    const {colspan, rowspan, colwidth} = node.attrs;
     if ( colspan !== 1 ) attrs.colspan = colspan;
     if ( rowspan !== 1 ) attrs.rowspan = rowspan;
+    if ( colwidth?.length ) attrs["data-colwidth"] = colwidth.join(",");
     return attrs;
   }
 
-  /**
-   * Whether this element exists as part of a 'complex' table.
-   * @param {HTMLElement} el  The element to test.
-   * @returns {boolean|void}
-   */
-  function inComplexTable(el) {
-    const table = el.closest("table");
-    if ( !table ) return;
-    return Array.from(table.children).some(child => COMPLEX_TABLE_ELEMENTS.has(child.tagName));
-  }
-
-  /* -------------------------------------------- */
-  /*  Built-in Tables                             */
-  /* -------------------------------------------- */
-
-  const builtInTableNodes = tableNodes({
-    tableGroup: "block",
-    cellContent: "block+"
-  });
-
-  /* -------------------------------------------- */
-  /*  'Complex' Tables                            */
-  /* -------------------------------------------- */
-
-  const tableComplex = {
-    content: "(caption | caption_block)? colgroup? thead? tbody tfoot?",
+  const table = {
+    content: "(caption | caption_block)? thead? tbody tfoot?",
+    tableRole: "table",
     isolating: true,
     group: "block",
-    parseDOM: [{tag: "table", getAttrs: el => {
-        if ( inComplexTable(el) === false ) return false;
-      }}],
+    parseDOM: [{tag: "table"}],
     toDOM: () => ["table", 0]
   };
 
-  /* -------------------------------------------- */
-
-  const colgroup = {
-    content: "col*",
-    isolating: true,
-    parseDOM: [{tag: "colgroup"}],
-    toDOM: () => ["colgroup", 0]
-  };
-
-  /* -------------------------------------------- */
-
-  const col = {
-    tableRole: "col",
-    parseDOM: [{tag: "col"}],
-    toDOM: () => ["col"]
-  };
-
-  /* -------------------------------------------- */
-
   const thead = {
-    content: "table_row_complex+",
+    content: "table_row+",
+    tableRole: "table",
     isolating: true,
+    group: "block",
     parseDOM: [{tag: "thead"}],
     toDOM: () => ["thead", 0]
   };
 
-  /* -------------------------------------------- */
-
   const tbody = {
-    content: "table_row_complex+",
+    content: "table_row+",
+    tableRole: "table",
     isolating: true,
-    parseDOM: [{tag: "tbody", getAttrs: el => {
-        if ( inComplexTable(el) === false ) return false;
-      }}],
+    group: "block",
+    parseDOM: [{tag: "tbody"}],
     toDOM: () => ["tbody", 0]
   };
 
-  /* -------------------------------------------- */
-
   const tfoot = {
-    content: "table_row_complex+",
+    content: "table_row+",
+    tableRole: "table",
     isolating: true,
+    group: "block",
     parseDOM: [{tag: "tfoot"}],
     toDOM: () => ["tfoot", 0]
   };
 
-  /* -------------------------------------------- */
-
   const caption = {
     content: "text*",
+    tableRole: "caption",
     isolating: true,
     parseDOM: [{tag: "caption", getAttrs: el => {
-        if ( !isElementEmpty(el) && !onlyInlineContent(el) ) return false;
-      }}],
+      if ( !isElementEmpty(el) && !onlyInlineContent(el) ) return false;
+    }}],
     toDOM: () => ["caption", 0]
   };
-
-  /* -------------------------------------------- */
 
   const captionBlock = {
     content: "block*",
+    tableRole: "caption",
     isolating: true,
     parseDOM: [{tag: "caption", getAttrs: el => {
-        if ( isElementEmpty(el) || onlyInlineContent(el) ) return false;
-      }}],
+      if ( isElementEmpty(el) || onlyInlineContent(el) ) return false;
+    }}],
     toDOM: () => ["caption", 0]
   };
 
-  /* -------------------------------------------- */
-
-  const tableRowComplex = {
-    content: "(table_cell_complex | table_header_complex | table_cell_complex_block | table_header_complex_block)*",
-    parseDOM: [{tag: "tr", getAttrs: el => {
-        if ( inComplexTable(el) === false ) return false;
-      }}],
+  const tableRow = {
+    content: "(table_cell | table_header | table_cell_block | table_header_block)*",
+    tableRole: "row",
+    parseDOM: [{tag: "tr"}],
     toDOM: () => ["tr", 0]
   };
 
-  /* -------------------------------------------- */
+  const cellAttrs = {
+    colspan: {default: 1},
+    rowspan: {default: 1},
+    colwidth: {default: null}
+  };
 
-  const tableCellComplex = {
+  const managedCellAttrs = {
+    attributes: ["colspan", "rowspan", "data-colwidth"]
+  };
+
+  const tableCell = {
     content: "text*",
-    attrs: CELL_ATTRS,
-    managed: MANAGED_CELL_ATTRS,
+    attrs: cellAttrs,
+    managed: managedCellAttrs,
+    tableRole: "cell",
     isolating: true,
     parseDOM: [{tag: "td", getAttrs: el => {
-        if ( inComplexTable(el) === false ) return false;
-        if ( !isElementEmpty(el) && !onlyInlineContent(el) ) return false;
-        return getTableCellAttrs(el);
-      }}],
+      if ( !isElementEmpty(el) && !onlyInlineContent(el) ) return false;
+      return getTableCellAttrs(el);
+    }}],
     toDOM: node => ["td", setTableCellAttrs(node), 0]
   };
 
-  /* -------------------------------------------- */
-
-  const tableCellComplexBlock = {
+  const tableCellBlock = {
     content: "block*",
-    attrs: CELL_ATTRS,
-    managed: MANAGED_CELL_ATTRS,
+    attrs: cellAttrs,
+    managed: managedCellAttrs,
+    tableRole: "cell",
     isolating: true,
     parseDOM: [{tag: "td", getAttrs: el => {
-        if ( inComplexTable(el) === false ) return false;
-        if ( isElementEmpty(el) || onlyInlineContent(el) ) return false;
-        return getTableCellAttrs(el);
-      }}],
+      if ( isElementEmpty(el) || onlyInlineContent(el) ) return false;
+      return getTableCellAttrs(el);
+    }}],
     toDOM: node => ["td", setTableCellAttrs(node), 0]
   };
 
-  /* -------------------------------------------- */
-
-  const tableHeaderComplex = {
+  const tableHeader = {
     content: "text*",
-    attrs: CELL_ATTRS,
-    managed: MANAGED_CELL_ATTRS,
+    attrs: cellAttrs,
+    managed: managedCellAttrs,
+    tableRole: "cell",
     isolating: true,
     parseDOM: [{tag: "th", getAttrs: el => {
-        if ( inComplexTable(el) === false ) return false;
-        if ( !isElementEmpty(el) && !onlyInlineContent(el) ) return false;
-        return getTableCellAttrs(el);
-      }}],
+      if ( !isElementEmpty(el) && !onlyInlineContent(el) ) return false;
+      return getTableCellAttrs(el);
+    }}],
     toDOM: node => ["th", setTableCellAttrs(node), 0]
   };
 
-  /* -------------------------------------------- */
-
-  const tableHeaderComplexBlock = {
+  const tableHeaderBlock = {
     content: "block*",
-    attrs: CELL_ATTRS,
-    managed: MANAGED_CELL_ATTRS,
+    attrs: cellAttrs,
+    managed: managedCellAttrs,
+    tableRole: "cell",
     isolating: true,
     parseDOM: [{tag: "th", getAttrs: el => {
-        if ( inComplexTable(el) === false ) return false;
-        if ( isElementEmpty(el) || onlyInlineContent(el) ) return false;
-        return getTableCellAttrs(el);
-      }}],
+      if ( isElementEmpty(el) || onlyInlineContent(el) ) return false;
+      return getTableCellAttrs(el);
+    }}],
     toDOM: node => ["th", setTableCellAttrs(node), 0]
   };
 
-  // These nodes are supported for HTML preservation purposes, but do not have robust editing support for now.
+  // Nodes beyond here are supported for HTML preservation purposes, but do not have robust editing support for now.
 
   const details = {
     content: "(summary | summary_block) block*",
@@ -20405,31 +17589,25 @@ var ProseMirror = (function (exports) {
     toDOM: () => ["details", 0]
   };
 
-  /* -------------------------------------------- */
-
   const summary = {
     content: "text*",
     defining: true,
     parseDOM: [{tag: "summary", getAttrs: el => {
-        // If this contains any non-inline elements, do not use this node type.
-        if ( !isElementEmpty(el) && !onlyInlineContent(el) ) return false;
-      }}],
+      // If this contains any non-inline elements, do not use this node type.
+      if ( !isElementEmpty(el) && !onlyInlineContent(el) ) return false;
+    }}],
     toDOM: () => ["summary", 0]
   };
-
-  /* -------------------------------------------- */
 
   const summaryBlock = {
     content: "block+",
     defining: true,
     parseDOM: [{tag: "summary", getAttrs: el => {
-        // If this contains only text nodes and no elements, do not use this node type.
-        if ( isElementEmpty(el) || onlyInlineContent(el) ) return false;
-      }}],
+      // If this contains only text nodes and no elements, do not use this node type.
+      if ( isElementEmpty(el) || onlyInlineContent(el) ) return false;
+    }}],
     toDOM: () => ["summary", 0]
   };
-
-  /* -------------------------------------------- */
 
   const dl = {
     content: "(block|dt|dd)*",
@@ -20439,8 +17617,6 @@ var ProseMirror = (function (exports) {
     toDOM: () => ["dl", 0]
   };
 
-  /* -------------------------------------------- */
-
   const dt = {
     content: "block+",
     defining: true,
@@ -20448,16 +17624,12 @@ var ProseMirror = (function (exports) {
     toDOM: () => ["dt", 0]
   };
 
-  /* -------------------------------------------- */
-
   const dd = {
     content: "block+",
     defining: true,
     parseDOM: [{tag: "dd"}],
     toDOM: () => ["dd", 0]
   };
-
-  /* -------------------------------------------- */
 
   const fieldset = {
     content: "legend block*",
@@ -20467,16 +17639,12 @@ var ProseMirror = (function (exports) {
     toDOM: () => ["fieldset", 0]
   };
 
-  /* -------------------------------------------- */
-
   const legend = {
     content: "inline+",
     defining: true,
     parseDOM: [{tag: "legend"}],
     toDOM: () => ["legend", 0]
   };
-
-  /* -------------------------------------------- */
 
   const picture = {
     content: "source* image",
@@ -20486,16 +17654,12 @@ var ProseMirror = (function (exports) {
     toDOM: () => ["picture", 0]
   };
 
-  /* -------------------------------------------- */
-
   const audio = {
     content: "source* track*",
     group: "block",
     parseDOM: [{tag: "audio"}],
     toDOM: () => ["audio", 0]
   };
-
-  /* -------------------------------------------- */
 
   const video = {
     content: "source* track*",
@@ -20504,21 +17668,15 @@ var ProseMirror = (function (exports) {
     toDOM: () => ["video", 0]
   };
 
-  /* -------------------------------------------- */
-
   const track = {
     parseDOM: [{tag: "track"}],
     toDOM: () => ["track"]
   };
 
-  /* -------------------------------------------- */
-
   const source = {
     parseDOM: [{tag: "source"}],
     toDOM: () => ["source"]
   };
-
-  /* -------------------------------------------- */
 
   const object = {
     inline: true,
@@ -20526,8 +17684,6 @@ var ProseMirror = (function (exports) {
     parseDOM: [{tag: "object"}],
     toDOM: () => ["object"]
   };
-
-  /* -------------------------------------------- */
 
   const figure = {
     content: "(figcaption|block)*",
@@ -20537,16 +17693,12 @@ var ProseMirror = (function (exports) {
     toDOM: () => ["figure", 0]
   };
 
-  /* -------------------------------------------- */
-
   const figcaption = {
     content: "inline+",
     defining: true,
     parseDOM: [{tag: "figcaption"}],
     toDOM: () => ["figcaption", 0]
   };
-
-  /* -------------------------------------------- */
 
   const small = {
     content: "paragraph block*",
@@ -20556,8 +17708,6 @@ var ProseMirror = (function (exports) {
     toDOM: () => ["small", 0]
   };
 
-  /* -------------------------------------------- */
-
   const ruby = {
     content: "(rp|rt|block)+",
     group: "block",
@@ -20566,15 +17716,11 @@ var ProseMirror = (function (exports) {
     toDOM: () => ["ruby", 0]
   };
 
-  /* -------------------------------------------- */
-
   const rp = {
     content: "inline+",
     parseDOM: [{tag: "rp"}],
     toDOM: () => ["rp", 0]
   };
-
-  /* -------------------------------------------- */
 
   const rt = {
     content: "inline+",
@@ -20582,25 +17728,33 @@ var ProseMirror = (function (exports) {
     toDOM: () => ["rt", 0]
   };
 
-  /* -------------------------------------------- */
-
   const iframe = {
-    attrs: { sandbox: { default: "allow-scripts allow-forms" } },
-    managed: { attributes: ["sandbox"] },
     group: "block",
     defining: true,
-    parseDOM: [{tag: "iframe", getAttrs: el => {
-      let sandbox = "allow-scripts allow-forms";
-      const url = URL.parseSafe(el.src);
-      const host = url?.hostname;
-      const isTrusted = CONST.TRUSTED_IFRAME_DOMAINS.some(domain => (host === domain) || host?.endsWith(`.${domain}`));
-      if ( isTrusted ) sandbox = null;
-      return { sandbox };
+    parseDOM: [{tag: "iframe"}],
+    toDOM: () => ["iframe"]
+  };
+
+  /* -------------------------------------------- */
+  /*  Marks                                       */
+  /* -------------------------------------------- */
+
+  const link = {
+    attrs: {
+      href: {default: null},
+      title: {default: null}
+    },
+    inclusive: false,
+    parseDOM: [{tag: "a", getAttrs: el => {
+      if ( (el.children.length === 1) && (el.children[0]?.tagName === "IMG") ) return false;
+      return {href: el.href, title: el.title};
     }}],
     toDOM: node => {
+      const {href, title} = node.attrs;
       const attrs = {};
-      if ( node.attrs.sandbox ) attrs.sandbox = node.attrs.sandbox;
-      return ["iframe", attrs];
+      if ( href ) attrs.href = href;
+      if ( title ) attrs.title = title;
+      return ["a", attrs];
     }
   };
 
@@ -20608,8 +17762,6 @@ var ProseMirror = (function (exports) {
     parseDOM: [{tag: "i"}, {tag: "em"}, {style: "font-style=italic"}],
     toDOM: () => ["em", 0]
   };
-
-  /* -------------------------------------------- */
 
   const strong = {
     parseDOM: [
@@ -20620,52 +17772,38 @@ var ProseMirror = (function (exports) {
     toDOM: () => ["strong", 0]
   };
 
-  /* -------------------------------------------- */
-
   const code = {
     parseDOM: [{tag: "code"}],
     toDOM: () => ["code", 0]
   };
-
-  /* -------------------------------------------- */
 
   const underline = {
     parseDOM: [{tag: "u"}, {style: "text-decoration=underline"}],
     toDOM: () => ["span", {style: "text-decoration: underline;"}, 0]
   };
 
-  /* -------------------------------------------- */
-
   const strikethrough = {
     parseDOM: [{tag: "s"}, {tag: "del"}, {style: "text-decoration=line-through"}],
     toDOM: () => ["s", 0]
   };
-
-  /* -------------------------------------------- */
 
   const superscript = {
     parseDOM: [{tag: "sup"}, {style: "vertical-align=super"}],
     toDOM: () => ["sup", 0]
   };
 
-  /* -------------------------------------------- */
-
   const subscript = {
     parseDOM: [{tag: "sub"}, {style: "vertical-align=sub"}],
     toDOM: () => ["sub", 0]
   };
 
-  /* -------------------------------------------- */
-
   const span = {
     parseDOM: [{tag: "span", getAttrs: el => {
-        if ( el.style.fontFamily ) return false;
-        return {};
-      }}],
+      if ( el.style.fontFamily ) return false;
+      return {};
+    }}],
     toDOM: () => ["span", 0]
   };
-
-  /* -------------------------------------------- */
 
   const font = {
     attrs: {
@@ -20675,509 +17813,21 @@ var ProseMirror = (function (exports) {
     toDOM: node => ["span", {style: `font-family: ${node.attrs.family.replaceAll('"', "'")}`}]
   };
 
-  /**
-   * An abstract interface for a ProseMirror schema definition.
-   * @abstract
-   */
-  class SchemaDefinition {
-    /* -------------------------------------------- */
-    /*  Properties                                  */
-    /* -------------------------------------------- */
-
-    /**
-     * The HTML tag selector this node is associated with.
-     * @type {string}
-     */
-    static tag = "";
-
-    /* -------------------------------------------- */
-    /*  Methods                                     */
-    /* -------------------------------------------- */
-
-    /**
-     * Schema attributes.
-     * @returns {Object<AttributeSpec>}
-     * @abstract
-     */
-    static get attrs() {
-      throw new Error("SchemaDefinition subclasses must implement the attrs getter.");
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Check if an HTML element is appropriate to represent as this node, and if so, extract its schema attributes.
-     * @param {HTMLElement} el    The HTML element.
-     * @returns {object|boolean}  Returns false if the HTML element is not appropriate for this schema node, otherwise
-     *                            returns its attributes.
-     * @abstract
-     */
-    static getAttrs(el) {
-      throw new Error("SchemaDefinition subclasses must implement the getAttrs method.");
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Convert a ProseMirror Node back into an HTML element.
-     * @param {Node} node  The ProseMirror node.
-     * @returns {[string, any]}
-     * @abstract
-     */
-    static toDOM(node) {
-      throw new Error("SchemaDefinition subclasses must implement the toDOM method.");
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Create the ProseMirror schema specification.
-     * @returns {NodeSpec|MarkSpec}
-     * @abstract
-     */
-    static make() {
-      return {
-        attrs: this.attrs,
-        parseDOM: [{tag: this.tag, getAttrs: this.getAttrs.bind(this)}],
-        toDOM: this.toDOM.bind(this)
-      };
-    }
-  }
-
-  /**
-   * A class responsible for encapsulating logic around image nodes in the ProseMirror schema.
-   * @extends {SchemaDefinition}
-   */
-  class ImageNode extends SchemaDefinition {
-    /** @override */
-    static tag = "img[src]";
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static get attrs() {
-      return {
-        src: {},
-        alt: {default: null},
-        title: {default: null},
-        width: {default: ""},
-        height: {default: ""},
-        alignment: {default: "", formatting: true}
-      };
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static getAttrs(el) {
-      const attrs = {
-        src: el.getAttribute("src"),
-        title: el.title,
-        alt: el.alt
-      };
-      if ( el.classList.contains("centered") ) attrs.alignment = "center";
-      else if ( el.style.float ) attrs.alignment = el.style.float;
-      if ( el.hasAttribute("width") ) attrs.width = el.width;
-      if ( el.hasAttribute("height") ) attrs.height = el.height;
-      return attrs;
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static toDOM(node) {
-      const {src, alt, title, width, height, alignment} = node.attrs;
-      const attrs = {src};
-      if ( alignment === "center" ) attrs.class = "centered";
-      else if ( alignment ) attrs.style = `float: ${alignment};`;
-      if ( alt ) attrs.alt = alt;
-      if ( title ) attrs.title = title;
-      if ( width ) attrs.width = width;
-      if ( height ) attrs.height = height;
-      return ["img", attrs];
-    }
-
-    /* -------------------------------------------- */
-
-    /** @inheritdoc */
-    static make() {
-      return mergeObject(super.make(), {
-        managed: {styles: ["float"], classes: ["centered"]},
-        group: "block",
-        draggable: true
-      });
-    }
-  }
-
-  /**
-   * A class responsible for encapsulating logic around link marks in the ProseMirror schema.
-   * @extends {SchemaDefinition}
-   */
-  class LinkMark extends SchemaDefinition {
-    /** @override */
-    static tag = "a";
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static get attrs() {
-      return {
-        href: { default: null },
-        title: { default: null }
-      }
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static getAttrs(el) {
-      if ( (el.children.length === 1) && (el.children[0]?.tagName === "IMG") ) return false;
-      return { href: el.href, title: el.title };
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static toDOM(node) {
-      const { href, title } = node.attrs;
-      const attrs = {};
-      if ( href ) attrs.href = href;
-      if ( title ) attrs.title = title;
-      return ["a", attrs];
-    }
-
-    /* -------------------------------------------- */
-
-    /** @inheritdoc */
-    static make() {
-      return mergeObject(super.make(), {
-        inclusive: false
-      });
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Handle clicks on link marks while editing.
-     * @param {EditorView} view     The ProseMirror editor view.
-     * @param {number} pos          The position in the ProseMirror document that the click occurred at.
-     * @param {PointerEvent} event  The click event.
-     * @param {Mark} mark           The Mark instance.
-     * @returns {boolean|void}      Returns true to indicate the click was handled here and should not be propagated to
-     *                              other plugins.
-     */
-    static onClick(view, pos, event, mark) {
-      if ( (event.ctrlKey || event.metaKey) && mark.attrs.href ) window.open(mark.attrs.href, "_blank");
-      return true;
-    }
-  }
-
-  /**
-   * A class responsible for encapsulating logic around image-link nodes in the ProseMirror schema.
-   * @extends {SchemaDefinition}
-   */
-  class ImageLinkNode extends SchemaDefinition {
-    /** @override */
-    static tag = "a";
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static get attrs() {
-      return mergeObject(ImageNode.attrs, LinkMark.attrs);
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static getAttrs(el) {
-      if ( (el.children.length !== 1) || (el.children[0].tagName !== "IMG") ) return false;
-      const attrs = ImageNode.getAttrs(el.children[0]);
-      attrs.href = el.href;
-      attrs.title = el.title;
-      return attrs;
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static toDOM(node) {
-      const spec = LinkMark.toDOM(node);
-      spec.push(ImageNode.toDOM(node));
-      return spec;
-    }
-
-    /* -------------------------------------------- */
-
-    /** @inheritdoc */
-    static make() {
-      return mergeObject(super.make(), {
-        group: "block",
-        draggable: true,
-        managed: { styles: ["float"], classes: ["centered"] }
-      });
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Handle clicking on image links while editing.
-     * @param {EditorView} view     The ProseMirror editor view.
-     * @param {number} pos          The position in the ProseMirror document that the click occurred at.
-     * @param {PointerEvent} event  The click event.
-     * @param {Node} node           The Node instance.
-     */
-    static onClick(view, pos, event, node) {
-      if ( (event.ctrlKey || event.metaKey) && node.attrs.href ) window.open(node.attrs.href, "_blank");
-      // For some reason, calling event.preventDefault in this (mouseup) handler is not enough to cancel the default click
-      // behaviour. It seems to be related to the outer anchor being set to contenteditable="false" by ProseMirror.
-      // This workaround seems to prevent the click.
-      const parent = event.target.parentElement;
-      if ( (parent.tagName === "A") && !parent.isContentEditable ) parent.contentEditable = "true";
-      return true;
-    }
-  }
-
-  /**
-   * A class responsible for encapsulating logic around secret nodes in the ProseMirror schema.
-   * @extends {SchemaDefinition}
-   */
-  class SecretNode extends SchemaDefinition {
-    /** @override */
-    static tag = "section";
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static get attrs() {
-      return {
-        revealed: { default: false },
-        id: {}
-      };
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static getAttrs(el) {
-      if ( !el.classList.contains("secret") ) return false;
-      return {
-        revealed: el.classList.contains("revealed"),
-        id: el.id || `secret-${randomID()}`
-      };
-    }
-
-    /* -------------------------------------------- */
-
-    /** @override */
-    static toDOM(node) {
-      const attrs = {
-        id: node.attrs.id,
-        class: `secret${node.attrs.revealed ? " revealed" : ""}`
-      };
-      return ["section", attrs, 0];
-    }
-
-    /* -------------------------------------------- */
-
-    /** @inheritdoc */
-    static make() {
-      return mergeObject(super.make(), {
-        content: "block+",
-        group: "block",
-        defining: true,
-        managed: { attributes: ["id"], classes: ["revealed"] }
-      });
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Handle splitting a secret block in two, making sure the new block gets a unique ID.
-     * @param {EditorState} state                   The ProseMirror editor state.
-     * @param {(tr: Transaction) => void} dispatch  The editor dispatch function.
-     */
-    static split(state, dispatch) {
-      const secret = state.schema.nodes.secret;
-      const { $cursor } = state.selection;
-      // Check we are actually on a blank line and not splitting text content.
-      if ( !$cursor || $cursor.parent.content.size ) return false;
-      // Check that we are actually in a secret block.
-      if ( $cursor.node(-1).type !== secret ) return false;
-      // Check that the block continues past the cursor.
-      if ( $cursor.after() === $cursor.end(-1) ) return false;
-      const before = $cursor.before(); // The previous line.
-      // Ensure a new ID assigned to the new secret block.
-      dispatch(state.tr.split(before, 1, [{type: secret, attrs: {id: `secret-${randomID()}`}}]));
-      return true;
-    }
-  }
-
-  /**
-   * @typedef {object} AllowedAttributeConfiguration
-   * @property {Set<string>} attrs   The set of exactly-matching attribute names.
-   * @property {string[]} wildcards  A list of wildcard allowed prefixes for attributes.
-   */
-
-  /**
-   * @typedef {object} ManagedAttributesSpec
-   * @property {string[]} attributes  A list of managed attributes.
-   * @property {string[]} styles      A list of CSS property names that are managed as inline styles.
-   * @property {string[]} classes     A list of managed class names.
-   */
-
-  /**
-   * A class responsible for injecting attribute capture logic into the ProseMirror schema.
-   */
-  class AttributeCapture {
-    constructor() {
-      this.#parseAllowedAttributesConfig(CONST.ALLOWED_HTML_ATTRIBUTES ?? {});
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * The configuration of attributes that are allowed on HTML elements.
-     * @type {Record<string, AllowedAttributeConfiguration>}
-     */
-    #allowedAttrs = {};
-
-    /* -------------------------------------------- */
-
-    /**
-     * Augments the schema definition to allow each node or mark to capture all the attributes on an element and preserve
-     * them when re-serialized back into the DOM.
-     * @param {NodeSpec|MarkSpec} spec  The schema specification.
-     */
-    attributeCapture(spec) {
-      if ( !spec.parseDOM ) return;
-      if ( !spec.attrs ) spec.attrs = {};
-      spec.attrs._preserve = { default: {}, formatting: true };
-      spec.parseDOM.forEach(rule => {
-        if ( rule.style ) return; // This doesn't work for style rules. We need a different solution there.
-        const getAttrs = rule.getAttrs;
-        rule.getAttrs = el => {
-          let attrs = getAttrs?.(el);
-          if ( attrs === false ) return false;
-          if ( typeof attrs !== "object" ) attrs = {};
-          mergeObject(attrs, rule.attrs);
-          mergeObject(attrs, { _preserve: this.#captureAttributes(el, spec.managed) });
-          return attrs;
-        };
-      });
-      const toDOM = spec.toDOM;
-      spec.toDOM = node => {
-        const domSpec = toDOM(node);
-        const attrs = domSpec[1];
-        const preserved = node.attrs._preserve ?? {};
-        if ( preserved.style ) preserved.style = preserved.style.replaceAll('"', "'");
-        if ( getType(attrs) === "Object" ) {
-          domSpec[1] = mergeObject(preserved, attrs, { inplace: false });
-          if ( ("style" in preserved) && ("style" in attrs) ) domSpec[1].style = mergeStyle(preserved.style, attrs.style);
-          if ( ("class" in preserved) && ("class" in attrs) ) domSpec[1].class = mergeClass(preserved.class, attrs.class);
-        }
-        else domSpec.splice(1, 0, { ...preserved });
-        return domSpec;
-      };
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Capture all allowable attributes present on an HTML element and store them in an object for preservation in the
-     * schema.
-     * @param {HTMLElement} el                 The element.
-     * @param {ManagedAttributesSpec} managed  An object containing the attributes, styles, and classes that are managed
-     *                                         by the ProseMirror node and should not be preserved.
-     * @returns {Attrs}
-     */
-    #captureAttributes(el, managed={}) {
-      const allowed = this.#allowedAttrs[el.tagName.toLowerCase()] ?? this.#allowedAttrs["*"];
-      return Array.from(el.attributes).reduce((obj, attr) => {
-        if ( attr.name.startsWith("data-pm-") ) return obj; // Ignore attributes managed by the ProseMirror editor itself.
-        if ( managed.attributes?.includes(attr.name) ) return obj; // Ignore attributes managed by the node.
-        // Ignore attributes that are not allowed.
-        if ( !allowed.wildcards.some(prefix => attr.name.startsWith(prefix)) && !allowed.attrs.has(attr.name) ) {
-          return obj;
-        }
-        if ( (attr.name === "class") && managed.classes?.length ) {
-          obj.class = classesFromString(attr.value).filter(cls => !managed.classes.includes(cls)).join(" ");
-          return obj;
-        }
-        if ( (attr.name === "style") && managed.styles?.length ) {
-          const styles = stylesFromString(attr.value);
-          managed.styles.forEach(style => delete styles[style]);
-          obj.style = Object.entries(styles).map(([k, v]) => v ? `${k}: ${v}` : null).filterJoin("; ");
-          return obj;
-        }
-        obj[attr.name] = attr.value;
-        return obj;
-      }, {});
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Parse the configuration of allowed attributes into a more performant structure.
-     * @param {Record<string, string[]>} config  The allowed attributes configuration.
-     */
-    #parseAllowedAttributesConfig(config) {
-      const all = this.#allowedAttrs["*"] = this.#parseAllowedAttributes(config["*"] ?? []);
-      for ( const [tag, attrs] of Object.entries(config ?? {}) ) {
-        if ( tag === "*" ) continue;
-        const allowed = this.#allowedAttrs[tag] = this.#parseAllowedAttributes(attrs);
-        all.attrs.forEach(allowed.attrs.add, allowed.attrs);
-        allowed.wildcards.push(...all.wildcards);
-      }
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Parse an allowed attributes configuration into a more efficient structure.
-     * @param {string[]} attrs  The list of allowed attributes.
-     * @returns {AllowedAttributeConfiguration}
-     */
-    #parseAllowedAttributes(attrs) {
-      const allowed = { wildcards: [], attrs: new Set() };
-      for ( const attr of attrs ) {
-        const wildcard = attr.indexOf("*");
-        if ( wildcard < 0 ) allowed.attrs.add(attr);
-        else allowed.wildcards.push(attr.substring(0, wildcard));
-      }
-      return allowed;
-    }
-  }
-
-  const doc = {
-    content: "block+"
-  };
-
-  const text = {
-    group: "inline"
-  };
-
-  const secret = SecretNode.make();
-  const link = LinkMark.make();
-  const image = ImageNode.make();
-  const imageLink = ImageLinkNode.make();
+  // A list of tag names employed by the mark specifications above. These tags are considered allowable inside a node that
+  // only supports inline content.
+  const inlineTags = new Set(["A", "EM", "I", "STRONG", "B", "CODE", "U", "S", "DEL", "SUP", "SUB", "SPAN"]);
+
+  /* -------------------------------------------- */
+  /*  Schema                                      */
+  /* -------------------------------------------- */
 
   const nodes = {
-    // Core Nodes.
     doc, text, paragraph, blockquote, secret, horizontal_rule: hr, heading, code_block: pre, image_link: imageLink, image,
-    hard_break: br,
-
-    // Lists.
-    ordered_list: ol, bullet_list: ul, list_item: li, list_item_text: liText,
-
-    // Tables
-    table_complex: tableComplex, tbody, thead, tfoot, caption, caption_block: captionBlock, colgroup, col, table_row_complex: tableRowComplex, table_cell_complex: tableCellComplex,
-    table_header_complex: tableHeaderComplex, table_cell_complex_block: tableCellComplexBlock, table_header_complex_block: tableHeaderComplexBlock,
-    ...builtInTableNodes,
-
-    // Misc.
-    details, summary, summary_block: summaryBlock, dl, dt, dd, fieldset, legend, picture, audio, video, track, source, object, figure,
-    figcaption, small, ruby, rp, rt, iframe
+    hard_break: br, ordered_list: ol, bullet_list: ul, list_item: li, list_item_text: liText, details, summary,
+    summary_block: summaryBlock, dl, dt, dd, fieldset, legend, picture, audio, video, track, source, object, figure,
+    figcaption, small, ruby, rp, rt, table, tbody, thead, tfoot, caption, caption_block: captionBlock,
+    table_row: tableRow, table_cell: tableCell, table_header: tableHeader, table_cell_block: tableCellBlock,
+    table_header_block: tableHeaderBlock, iframe
   };
 
   const marks = {superscript, subscript, span, font, link, em, strong, underline, strikethrough, code};
@@ -21200,20 +17850,155 @@ var ProseMirror = (function (exports) {
     };
   });
 
+  /**
+   * Augments the schema definitions to allow each node or mark to capture all the attributes on an element and preserve
+   * them when re-serialized back into the DOM.
+   * @param {NodeSpec|MarkSpec} spec  The schema specification.
+   */
+  function attributeCapture(spec) {
+    if ( !spec.parseDOM ) return;
+    if ( !spec.attrs ) spec.attrs = {};
+    spec.attrs._preserve = {default: {}, formatting: true};
+    spec.parseDOM.forEach(rule => {
+      if ( rule.style ) return; // This doesn't work for style rules. We need a different solution there.
+      const getAttrs = rule.getAttrs;
+      rule.getAttrs = el => {
+        let attrs = getAttrs?.(el);
+        if ( attrs === false ) return false;
+        if ( typeof attrs !== "object" ) attrs = {};
+        foundry.utils.mergeObject(attrs, rule.attrs);
+        foundry.utils.mergeObject(attrs, {_preserve: captureAttributes(el, spec.managed)});
+        return attrs;
+      };
+    });
+    const toDOM = spec.toDOM;
+    spec.toDOM = node => {
+      const domSpec = toDOM(node);
+      const attrs = domSpec[1];
+      const preserved = node.attrs._preserve ?? {};
+      if ( preserved.style ) preserved.style = preserved.style.replaceAll('"', "'");
+      if ( getType(attrs) === "Object" ) {
+        domSpec[1] = foundry.utils.mergeObject(preserved, attrs, {inplace: false});
+        if ( ("style" in preserved) && ("style" in attrs) ) domSpec[1].style = mergeStyle(preserved.style, attrs.style);
+        if ( ("class" in preserved) && ("class" in attrs) ) domSpec[1].class = mergeClass(preserved.class, attrs.class);
+      } else domSpec.splice(1, 0, {...preserved});
+      return domSpec;
+    };
+  }
+
+  /**
+   * Capture all attributes present on an HTML element and store them in an object for preservation in the schema.
+   * @param {HTMLElement} el                                                       The element.
+   * @param {{attributes: string[], styles: string[], classes: string[]}} managed  An object containing the attributes,
+   *                                                                               styles, and classes that are managed by
+   *                                                                               the ProseMirror node and should not be
+   *                                                                               preserved.
+   * @returns {object}
+   */
+  function captureAttributes(el, managed={}) {
+    return Array.from(el.attributes).reduce((obj, attr) => {
+      if ( attr.name.startsWith("data-pm-") ) return obj;
+      if ( managed.attributes?.includes(attr.name) ) return obj;
+      if ( (attr.name === "class") && managed.classes?.length ) {
+        obj.class = classesFromString(attr.value).filter(cls => !managed.classes.includes(cls)).join(" ");
+        return obj;
+      }
+      if ( (attr.name === "style") && managed.styles?.length ) {
+        const styles = stylesFromString(attr.value);
+        managed.styles.forEach(style => delete styles[style]);
+        obj.style = Object.entries(styles).map(([k, v]) => v ? `${k}: ${v}` : null).filterJoin("; ");
+        return obj;
+      }
+      obj[attr.name] = attr.value;
+      return obj;
+    }, {});
+  }
+
+  /**
+   * Convert an element's style attribute string into an object.
+   * @param {string} str  The style string.
+   * @returns {object}
+   */
+  function stylesFromString(str) {
+    return Object.fromEntries(str.split(/;\s*/g).map(prop => prop.split(/:\s*/)));
+  }
+
+  /**
+   * Convert an element's class attribute string into an array of class names.
+   * @param {string} str  The class string.
+   * @returns {string[]}
+   */
+  function classesFromString(str) {
+    return str.split(/\s+/g);
+  }
+
+  /**
+   * Merge two style attribute strings.
+   * @param {string} a  The first style string.
+   * @param {string} b  The second style string.
+   * @returns {string}
+   */
+  function mergeStyle(a, b) {
+    return Object.entries(mergeObject(stylesFromString(a), stylesFromString(b)))
+      .map(([k, v]) => v ? `${k}: ${v}` : null)
+      .filterJoin("; ");
+  }
+
+  /**
+   * Merge two class attribute strings.
+   * @param {string} a  The first class string.
+   * @param {string} b  The second class string.
+   */
+  function mergeClass(a, b) {
+    return Array.from(new Set(classesFromString(a).concat(classesFromString(b)))).join(" ");
+  }
+
+  /**
+   * Determine if an HTML element contains purely inline content, i.e. only text nodes and 'mark' elements.
+   * @param {HTMLElement} element  The element.
+   * @returns {boolean}
+   */
+  function onlyInlineContent(element) {
+    for ( const child of element.children ) {
+      if ( !inlineTags.has(child.tagName) ) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Determine if an HTML element is empty.
+   * @param {HTMLElement} element  The element.
+   * @returns {boolean}
+   */
+  function isElementEmpty(element) {
+    return !element.childNodes.length;
+  }
+
   const all = Object.values(nodes).concat(Object.values(marks));
-  const capture = new AttributeCapture();
-  all.forEach(capture.attributeCapture.bind(capture));
+  all.forEach(attributeCapture);
 
   const schema = new Schema({nodes, marks});
 
   /* -------------------------------------------- */
-  /*  Handlers                                    */
+  /*  Node Manipulation                           */
   /* -------------------------------------------- */
 
   schema.nodes.list_item.split = splitListItem(schema.nodes.list_item);
-  schema.nodes.secret.split = SecretNode.split;
-  schema.marks.link.onClick = LinkMark.onClick;
-  schema.nodes.image_link.onClick = ImageLinkNode.onClick;
+
+  schema.nodes.secret.split = (state, dispatch) => {
+    const secret = state.schema.nodes.secret;
+    const {$cursor} = state.selection;
+    // Check we are actually on a blank line and not splitting text content.
+    if ( !$cursor || $cursor.parent.content.size ) return false;
+    // Check that we are actually in a secret block.
+    if ( $cursor.node(-1).type !== secret ) return false;
+    // Check that the block continues past the cursor.
+    if ( $cursor.after() === $cursor.end(-1) ) return false;
+    const before = $cursor.before(); // The previous line.
+    // Ensure a new ID assigned to the new secret block.
+    dispatch(state.tr.split(before, 1, [{type: secret, attrs: {id: `secret-${randomID()}`}}]));
+    return true;
+  };
 
   /** @module validators */
 
@@ -21236,7 +18021,7 @@ var ProseMirror = (function (exports) {
    * @return {boolean}
    */
   function isBase64Data(data, types) {
-    if ( types === undefined ) return /^data:([a-z]+)\/([a-z0-9]+);base64,/.test(data);
+    if ( types === undefined ) return /^data:([a-z]+)\/([a-z]+);base64,/.test(data);
     return types.some(type => data.startsWith(`data:${type};base64,`))
   }
 
@@ -21511,238 +18296,2726 @@ var ProseMirror = (function (exports) {
     }
   }
 
-  /**
-   * A class responsible for handling the display of automated link recommendations when a user highlights text in a
-   * ProseMirror editor.
-   * @param {EditorView} view   The editor view.
-   */
-  class PossibleMatchesTooltip {
+  // Because working with row and column-spanning cells is not quite
+  // trivial, this code builds up a descriptive structure for a given
+  // table node. The structures are cached with the (persistent) table
+  // nodes as key, so that they only have to be recomputed when the
+  // content of the table changes.
+  //
+  // This does mean that they have to store table-relative, not
+  // document-relative positions. So code that uses them will typically
+  // compute the start position of the table and offset positions passed
+  // to or gotten from this structure by that amount.
 
-    /**
-     * @param {EditorView} view   The editor view.
-     */
-    constructor(view) {
-      this.update(view, null);
-    }
+  let readFromCache, addToCache;
+  // Prefer using a weak map to cache table maps. Fall back on a
+  // fixed-size cache if that's not supported.
+  if (typeof WeakMap != 'undefined') {
+    // eslint-disable-next-line
+    let cache = new WeakMap();
+    readFromCache = (key) => cache.get(key);
+    addToCache = (key, value) => {
+      cache.set(key, value);
+      return value;
+    };
+  } else {
+    let cache = [],
+      cacheSize = 10,
+      cachePos = 0;
+    readFromCache = (key) => {
+      for (let i = 0; i < cache.length; i += 2)
+        if (cache[i] == key) return cache[i + 1];
+    };
+    addToCache = (key, value) => {
+      if (cachePos == cacheSize) cachePos = 0;
+      cache[cachePos++] = key;
+      return (cache[cachePos++] = value);
+    };
+  }
 
-    /* -------------------------------------------- */
-
-    /**
-     * A reference to any existing tooltip that has been generated as part of a highlight match.
-     * @type {HTMLElement}
-     */
-    tooltip;
-
-    /* -------------------------------------------- */
-
-    /**
-     * Update the tooltip based on changes to the selected text.
-     * @param {EditorView} view   The editor view.
-     * @param {State} lastState   The previous state of the document.
-     */
-    async update(view, lastState) {
-      if ( !game.settings.get("core", "pmHighlightDocumentMatches") ) return;
-      const state = view.state;
-
-      // Deactivate tooltip if the document/selection didn't change or is empty
-      const stateUnchanged = lastState && (lastState.doc.eq(state.doc) && lastState.selection.eq(state.selection));
-      if ( stateUnchanged || state.selection.empty ) return this._deactivateTooltip();
-
-      const selection = state.selection.content().content;
-      const highlighted = selection.textBetween(0, selection.size);
-
-      // If the user selected fewer than a certain amount of characters appropriate for the language, we bail out.
-      if ( highlighted.length < CONFIG.i18n.searchMinimumCharacterLength ) return this._deactivateTooltip();
-
-      // Look for any matches based on the contents of the selection
-      let html = this._findMatches(highlighted);
-
-      // If html is an empty string bail out and deactivate tooltip
-      if ( !html ) return this._deactivateTooltip();
-
-      // Enrich the matches HTML to get proper content links
-      html = await TextEditor.enrichHTML(html, {async: true});
-      html = html.replace(/data-tooltip="[^"]+"/g, "");
-      const {from, to} = state.selection;
-
-      // In-screen coordinates
-      const start = view.coordsAtPos(from);
-      view.coordsAtPos(to);
-
-      // Position the tooltip. This needs to be very close to the user's cursor, otherwise the locked tooltip will be
-      // immediately dismissed for being too far from the tooltip.
-      // TODO: We use the selection endpoints here which works fine for single-line selections, but not multi-line.
-      const left = (start.left + 3) + "px";
-      const bottom = window.innerHeight - start.bottom + 25 + "px";
-      const position = {bottom, left};
-
-      if ( this.tooltip ) this._updateTooltip(html);
-      else this._createTooltip(position, html, {cssClass: "link-matches"});
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Create a locked tooltip at the given position.
-     * @param {object} position             A position object with coordinates for where the tooltip should be placed
-     * @param {string} position.top         Explicit top position for the tooltip
-     * @param {string} position.right       Explicit right position for the tooltip
-     * @param {string} position.bottom      Explicit bottom position for the tooltip
-     * @param {string} position.left        Explicit left position for the tooltip
-     * @param {string} text                 Explicit tooltip text or HTML to display.
-     * @param {object} [options={}]         Additional options which can override tooltip behavior.
-     * @param {array} [options.cssClass]    An optional, space-separated list of CSS classes to apply to the activated
-     *                                      tooltip.
-     */
-    _createTooltip(position, text, options) {
-      this.tooltip = game.tooltip.createLockedTooltip(position, text, options);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Update the tooltip with new HTML
-     * @param {string} html      The HTML to be included in the tooltip
-     */
-    _updateTooltip(html) {
-      this.tooltip.innerHTML = html;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Dismiss all locked tooltips and set this tooltip to undefined.
-     */
-    _deactivateTooltip() {
-      if ( !this.tooltip ) return;
-      game.tooltip.dismissLockedTooltip(this.tooltip);
-      this.tooltip = undefined;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Find all Documents in the world/compendia with names that match the selection insensitive to case.
-     * @param {string} text      A string which will be matched against document names
-     * @returns {string}
-     */
-    _findMatches(text) {
-      let html = "";
-      const matches = game.documentIndex.lookup(text);
-      for ( const [type, collection] of Object.entries(matches) ) {
-        if ( collection.length === 0 ) continue;
-        html += `<section><h4>${type}</h4><p>`;
-        for ( const document of collection ) {
-          html += document.entry?.link ? document.entry.link : `@UUID[${document.uuid}]{${document.entry.name}}`;
-        }
-        html += "</p></section>";
-      }
-      return html;
+  class Rect {
+    constructor(left, top, right, bottom) {
+      this.left = left;
+      this.top = top;
+      this.right = right;
+      this.bottom = bottom;
     }
   }
 
-  /**
-   * A ProseMirrorPlugin wrapper around the {@link PossibleMatchesTooltip} class.
-   * @extends {ProseMirrorPlugin}
-   */
-  class ProseMirrorHighlightMatchesPlugin extends ProseMirrorPlugin {
-    /**
-     * @param {Schema} schema                     The ProseMirror schema.
-     * @param {ProseMirrorMenuOptions} [options]  Additional options to configure the plugin's behaviour.
-     */
-    constructor(schema, options={}) {
-      super(schema);
-      this.options = options;
+  // ::- A table map describes the structore of a given table. To avoid
+  // recomputing them all the time, they are cached per table node. To
+  // be able to do that, positions saved in the map are relative to the
+  // start of the table, rather than the start of the document.
+  class TableMap {
+    constructor(width, height, map, problems) {
+      // :: number The width of the table
+      this.width = width;
+      // :: number The table's height
+      this.height = height;
+      // :: [number] A width * height array with the start position of
+      // the cell covering that part of the table in each slot
+      this.map = map;
+      // An optional array of problems (cell overlap or non-rectangular
+      // shape) for the table, used by the table normalizer.
+      this.problems = problems;
     }
 
-    /* -------------------------------------------- */
+    // :: (number) → Rect
+    // Find the dimensions of the cell at the given position.
+    findCell(pos) {
+      for (let i = 0; i < this.map.length; i++) {
+        let curPos = this.map[i];
+        if (curPos != pos) continue;
+        let left = i % this.width,
+          top = (i / this.width) | 0;
+        let right = left + 1,
+          bottom = top + 1;
+        for (let j = 1; right < this.width && this.map[i + j] == curPos; j++)
+          right++;
+        for (
+          let j = 1;
+          bottom < this.height && this.map[i + this.width * j] == curPos;
+          j++
+        )
+          bottom++;
+        return new Rect(left, top, right, bottom);
+      }
+      throw new RangeError('No cell with offset ' + pos + ' found');
+    }
 
-    /** @inheritdoc */
-    static build(schema, options={}) {
-      return new Plugin({
-        view(editorView) {
-          return new PossibleMatchesTooltip(editorView);
+    // :: (number) → number
+    // Find the left side of the cell at the given position.
+    colCount(pos) {
+      for (let i = 0; i < this.map.length; i++)
+        if (this.map[i] == pos) return i % this.width;
+      throw new RangeError('No cell with offset ' + pos + ' found');
+    }
+
+    // :: (number, string, number) → ?number
+    // Find the next cell in the given direction, starting from the cell
+    // at `pos`, if any.
+    nextCell(pos, axis, dir) {
+      let { left, right, top, bottom } = this.findCell(pos);
+      if (axis == 'horiz') {
+        if (dir < 0 ? left == 0 : right == this.width) return null;
+        return this.map[top * this.width + (dir < 0 ? left - 1 : right)];
+      } else {
+        if (dir < 0 ? top == 0 : bottom == this.height) return null;
+        return this.map[left + this.width * (dir < 0 ? top - 1 : bottom)];
+      }
+    }
+
+    // :: (number, number) → Rect
+    // Get the rectangle spanning the two given cells.
+    rectBetween(a, b) {
+      let {
+        left: leftA,
+        right: rightA,
+        top: topA,
+        bottom: bottomA,
+      } = this.findCell(a);
+      let {
+        left: leftB,
+        right: rightB,
+        top: topB,
+        bottom: bottomB,
+      } = this.findCell(b);
+      return new Rect(
+        Math.min(leftA, leftB),
+        Math.min(topA, topB),
+        Math.max(rightA, rightB),
+        Math.max(bottomA, bottomB),
+      );
+    }
+
+    // :: (Rect) → [number]
+    // Return the position of all cells that have the top left corner in
+    // the given rectangle.
+    cellsInRect(rect) {
+      let result = [],
+        seen = {};
+      for (let row = rect.top; row < rect.bottom; row++) {
+        for (let col = rect.left; col < rect.right; col++) {
+          let index = row * this.width + col,
+            pos = this.map[index];
+          if (seen[pos]) continue;
+          seen[pos] = true;
+          if (
+            (col != rect.left || !col || this.map[index - 1] != pos) &&
+            (row != rect.top || !row || this.map[index - this.width] != pos)
+          )
+            result.push(pos);
+        }
+      }
+      return result;
+    }
+
+    // :: (number, number, Node) → number
+    // Return the position at which the cell at the given row and column
+    // starts, or would start, if a cell started there.
+    positionAt(row, col, table) {
+      for (let i = 0, rowStart = 0; ; i++) {
+        let rowEnd = rowStart + table.child(i).nodeSize;
+        if (i == row) {
+          let index = col + row * this.width,
+            rowEndIndex = (row + 1) * this.width;
+          // Skip past cells from previous rows (via rowspan)
+          while (index < rowEndIndex && this.map[index] < rowStart) index++;
+          return index == rowEndIndex ? rowEnd - 1 : this.map[index];
+        }
+        rowStart = rowEnd;
+      }
+    }
+
+    // :: (Node) → TableMap
+    // Find the table map for the given table node.
+    static get(table) {
+      return readFromCache(table) || addToCache(table, computeMap(table));
+    }
+  }
+
+  // Compute a table map.
+  function computeMap(table) {
+    if (table.type.spec.tableRole != 'table')
+      throw new RangeError('Not a table node: ' + table.type.name);
+    let width = findWidth(table),
+      height = table.childCount;
+    let map = [],
+      mapPos = 0,
+      problems = null,
+      colWidths = [];
+    for (let i = 0, e = width * height; i < e; i++) map[i] = 0;
+
+    for (let row = 0, pos = 0; row < height; row++) {
+      let rowNode = table.child(row);
+      pos++;
+      for (let i = 0; ; i++) {
+        while (mapPos < map.length && map[mapPos] != 0) mapPos++;
+        if (i == rowNode.childCount) break;
+        let cellNode = rowNode.child(i),
+          { colspan, rowspan, colwidth } = cellNode.attrs;
+        for (let h = 0; h < rowspan; h++) {
+          if (h + row >= height) {
+            (problems || (problems = [])).push({
+              type: 'overlong_rowspan',
+              pos,
+              n: rowspan - h,
+            });
+            break;
+          }
+          let start = mapPos + h * width;
+          for (let w = 0; w < colspan; w++) {
+            if (map[start + w] == 0) map[start + w] = pos;
+            else
+              (problems || (problems = [])).push({
+                type: 'collision',
+                row,
+                pos,
+                n: colspan - w,
+              });
+            let colW = colwidth && colwidth[w];
+            if (colW) {
+              let widthIndex = ((start + w) % width) * 2,
+                prev = colWidths[widthIndex];
+              if (
+                prev == null ||
+                (prev != colW && colWidths[widthIndex + 1] == 1)
+              ) {
+                colWidths[widthIndex] = colW;
+                colWidths[widthIndex + 1] = 1;
+              } else if (prev == colW) {
+                colWidths[widthIndex + 1]++;
+              }
+            }
+          }
+        }
+        mapPos += colspan;
+        pos += cellNode.nodeSize;
+      }
+      let expectedPos = (row + 1) * width,
+        missing = 0;
+      while (mapPos < expectedPos) if (map[mapPos++] == 0) missing++;
+      if (missing)
+        (problems || (problems = [])).push({ type: 'missing', row, n: missing });
+      pos++;
+    }
+
+    let tableMap = new TableMap(width, height, map, problems),
+      badWidths = false;
+
+    // For columns that have defined widths, but whose widths disagree
+    // between rows, fix up the cells whose width doesn't match the
+    // computed one.
+    for (let i = 0; !badWidths && i < colWidths.length; i += 2)
+      if (colWidths[i] != null && colWidths[i + 1] < height) badWidths = true;
+    if (badWidths) findBadColWidths(tableMap, colWidths, table);
+
+    return tableMap;
+  }
+
+  function findWidth(table) {
+    let width = -1,
+      hasRowSpan = false;
+    for (let row = 0; row < table.childCount; row++) {
+      let rowNode = table.child(row),
+        rowWidth = 0;
+      if (hasRowSpan)
+        for (let j = 0; j < row; j++) {
+          let prevRow = table.child(j);
+          for (let i = 0; i < prevRow.childCount; i++) {
+            let cell = prevRow.child(i);
+            if (j + cell.attrs.rowspan > row) rowWidth += cell.attrs.colspan;
+          }
+        }
+      for (let i = 0; i < rowNode.childCount; i++) {
+        let cell = rowNode.child(i);
+        rowWidth += cell.attrs.colspan;
+        if (cell.attrs.rowspan > 1) hasRowSpan = true;
+      }
+      if (width == -1) width = rowWidth;
+      else if (width != rowWidth) width = Math.max(width, rowWidth);
+    }
+    return width;
+  }
+
+  function findBadColWidths(map, colWidths, table) {
+    if (!map.problems) map.problems = [];
+    for (let i = 0, seen = {}; i < map.map.length; i++) {
+      let pos = map.map[i];
+      if (seen[pos]) continue;
+      seen[pos] = true;
+      let node = table.nodeAt(pos),
+        updated = null;
+      for (let j = 0; j < node.attrs.colspan; j++) {
+        let col = (i + j) % map.width,
+          colWidth = colWidths[col * 2];
+        if (
+          colWidth != null &&
+          (!node.attrs.colwidth || node.attrs.colwidth[j] != colWidth)
+        )
+          (updated || (updated = freshColWidth(node.attrs)))[j] = colWidth;
+      }
+      if (updated)
+        map.problems.unshift({
+          type: 'colwidth mismatch',
+          pos,
+          colwidth: updated,
+        });
+    }
+  }
+
+  function freshColWidth(attrs) {
+    if (attrs.colwidth) return attrs.colwidth.slice();
+    let result = [];
+    for (let i = 0; i < attrs.colspan; i++) result.push(0);
+    return result;
+  }
+
+  // Helper for creating a schema that supports tables.
+
+  function getCellAttrs(dom, extraAttrs) {
+    let widthAttr = dom.getAttribute('data-colwidth');
+    let widths =
+      widthAttr && /^\d+(,\d+)*$/.test(widthAttr)
+        ? widthAttr.split(',').map((s) => Number(s))
+        : null;
+    let colspan = Number(dom.getAttribute('colspan') || 1);
+    let result = {
+      colspan,
+      rowspan: Number(dom.getAttribute('rowspan') || 1),
+      colwidth: widths && widths.length == colspan ? widths : null,
+    };
+    for (let prop in extraAttrs) {
+      let getter = extraAttrs[prop].getFromDOM;
+      let value = getter && getter(dom);
+      if (value != null) result[prop] = value;
+    }
+    return result;
+  }
+
+  function setCellAttrs(node, extraAttrs) {
+    let attrs = {};
+    if (node.attrs.colspan != 1) attrs.colspan = node.attrs.colspan;
+    if (node.attrs.rowspan != 1) attrs.rowspan = node.attrs.rowspan;
+    if (node.attrs.colwidth)
+      attrs['data-colwidth'] = node.attrs.colwidth.join(',');
+    for (let prop in extraAttrs) {
+      let setter = extraAttrs[prop].setDOMAttr;
+      if (setter) setter(node.attrs[prop], attrs);
+    }
+    return attrs;
+  }
+
+  // :: (Object) → Object
+  //
+  // This function creates a set of [node
+  // specs](http://prosemirror.net/docs/ref/#model.SchemaSpec.nodes) for
+  // `table`, `table_row`, and `table_cell` nodes types as used by this
+  // module. The result can then be added to the set of nodes when
+  // creating a a schema.
+  //
+  //   options::- The following options are understood:
+  //
+  //     tableGroup:: ?string
+  //     A group name (something like `"block"`) to add to the table
+  //     node type.
+  //
+  //     cellContent:: string
+  //     The content expression for table cells.
+  //
+  //     cellAttributes:: ?Object
+  //     Additional attributes to add to cells. Maps attribute names to
+  //     objects with the following properties:
+  //
+  //       default:: any
+  //       The attribute's default value.
+  //
+  //       getFromDOM:: ?(dom.Node) → any
+  //       A function to read the attribute's value from a DOM node.
+  //
+  //       setDOMAttr:: ?(value: any, attrs: Object)
+  //       A function to add the attribute's value to an attribute
+  //       object that's used to render the cell's DOM.
+  function tableNodes(options) {
+    let extraAttrs = options.cellAttributes || {};
+    let cellAttrs = {
+      colspan: { default: 1 },
+      rowspan: { default: 1 },
+      colwidth: { default: null },
+    };
+    for (let prop in extraAttrs)
+      cellAttrs[prop] = { default: extraAttrs[prop].default };
+
+    return {
+      table: {
+        content: 'table_row+',
+        tableRole: 'table',
+        isolating: true,
+        group: options.tableGroup,
+        parseDOM: [{ tag: 'table' }],
+        toDOM() {
+          return ['table', ['tbody', 0]];
         },
-        isHighlightMatchesPlugin: true
-      });
+      },
+      table_row: {
+        content: '(table_cell | table_header)*',
+        tableRole: 'row',
+        parseDOM: [{ tag: 'tr' }],
+        toDOM() {
+          return ['tr', 0];
+        },
+      },
+      table_cell: {
+        content: options.cellContent,
+        attrs: cellAttrs,
+        tableRole: 'cell',
+        isolating: true,
+        parseDOM: [
+          { tag: 'td', getAttrs: (dom) => getCellAttrs(dom, extraAttrs) },
+        ],
+        toDOM(node) {
+          return ['td', setCellAttrs(node, extraAttrs), 0];
+        },
+      },
+      table_header: {
+        content: options.cellContent,
+        attrs: cellAttrs,
+        tableRole: 'header_cell',
+        isolating: true,
+        parseDOM: [
+          { tag: 'th', getAttrs: (dom) => getCellAttrs(dom, extraAttrs) },
+        ],
+        toDOM(node) {
+          return ['th', setCellAttrs(node, extraAttrs), 0];
+        },
+      },
+    };
+  }
+
+  function tableNodeTypes(schema) {
+    let result = schema.cached.tableNodeTypes;
+    if (!result) {
+      result = schema.cached.tableNodeTypes = {};
+      for (let name in schema.nodes) {
+        let type = schema.nodes[name],
+          role = type.spec.tableRole;
+        if (role) result[role] = type;
+      }
+    }
+    return result;
+  }
+
+  // Various helper function for working with tables
+
+  const key$1 = new PluginKey('selectingCells');
+
+  function cellAround($pos) {
+    for (let d = $pos.depth - 1; d > 0; d--)
+      if ($pos.node(d).type.spec.tableRole == 'row')
+        return $pos.node(0).resolve($pos.before(d + 1));
+    return null;
+  }
+
+  function cellWrapping($pos) {
+    for (let d = $pos.depth; d > 0; d--) {
+      // Sometimes the cell can be in the same depth.
+      const role = $pos.node(d).type.spec.tableRole;
+      if (role === 'cell' || role === 'header_cell') return $pos.node(d);
+    }
+    return null;
+  }
+
+  function isInTable(state) {
+    let $head = state.selection.$head;
+    for (let d = $head.depth; d > 0; d--)
+      if ($head.node(d).type.spec.tableRole == 'row') return true;
+    return false;
+  }
+
+  function selectionCell(state) {
+    let sel = state.selection;
+    if (sel.$anchorCell) {
+      return sel.$anchorCell.pos > sel.$headCell.pos
+        ? sel.$anchorCell
+        : sel.$headCell;
+    } else if (sel.node && sel.node.type.spec.tableRole == 'cell') {
+      return sel.$anchor;
+    }
+    return cellAround(sel.$head) || cellNear(sel.$head);
+  }
+
+  function cellNear($pos) {
+    for (
+      let after = $pos.nodeAfter, pos = $pos.pos;
+      after;
+      after = after.firstChild, pos++
+    ) {
+      let role = after.type.spec.tableRole;
+      if (role == 'cell' || role == 'header_cell') return $pos.doc.resolve(pos);
+    }
+    for (
+      let before = $pos.nodeBefore, pos = $pos.pos;
+      before;
+      before = before.lastChild, pos--
+    ) {
+      let role = before.type.spec.tableRole;
+      if (role == 'cell' || role == 'header_cell')
+        return $pos.doc.resolve(pos - before.nodeSize);
     }
   }
 
-  /**
-   * A class responsible for managing click events inside a ProseMirror editor.
-   * @extends {ProseMirrorPlugin}
-   */
-  class ProseMirrorClickHandler extends ProseMirrorPlugin {
-    /** @override */
-    static build(schema, options={}) {
-      const plugin = new ProseMirrorClickHandler(schema);
-      return new Plugin({
-        props: {
-          handleClickOn: plugin._onClick.bind(plugin)
-        }
+  function pointsAtCell($pos) {
+    return $pos.parent.type.spec.tableRole == 'row' && $pos.nodeAfter;
+  }
+
+  function moveCellForward($pos) {
+    return $pos.node(0).resolve($pos.pos + $pos.nodeAfter.nodeSize);
+  }
+
+  function inSameTable($a, $b) {
+    return $a.depth == $b.depth && $a.pos >= $b.start(-1) && $a.pos <= $b.end(-1);
+  }
+
+  function findCell($pos) {
+    return TableMap.get($pos.node(-1)).findCell($pos.pos - $pos.start(-1));
+  }
+
+  function colCount($pos) {
+    return TableMap.get($pos.node(-1)).colCount($pos.pos - $pos.start(-1));
+  }
+
+  function nextCell($pos, axis, dir) {
+    let start = $pos.start(-1),
+      map = TableMap.get($pos.node(-1));
+    let moved = map.nextCell($pos.pos - start, axis, dir);
+    return moved == null ? null : $pos.node(0).resolve(start + moved);
+  }
+
+  function setAttr(attrs, name, value) {
+    let result = {};
+    for (let prop in attrs) result[prop] = attrs[prop];
+    result[name] = value;
+    return result;
+  }
+
+  function removeColSpan(attrs, pos, n = 1) {
+    let result = setAttr(attrs, 'colspan', attrs.colspan - n);
+    if (result.colwidth) {
+      result.colwidth = result.colwidth.slice();
+      result.colwidth.splice(pos, n);
+      if (!result.colwidth.some((w) => w > 0)) result.colwidth = null;
+    }
+    return result;
+  }
+
+  function addColSpan(attrs, pos, n = 1) {
+    let result = setAttr(attrs, 'colspan', attrs.colspan + n);
+    if (result.colwidth) {
+      result.colwidth = result.colwidth.slice();
+      for (let i = 0; i < n; i++) result.colwidth.splice(pos, 0, 0);
+    }
+    return result;
+  }
+
+  function columnIsHeader(map, table, col) {
+    let headerCell = tableNodeTypes(table.type.schema).header_cell;
+    for (let row = 0; row < map.height; row++)
+      if (table.nodeAt(map.map[col + row * map.width]).type != headerCell)
+        return false;
+    return true;
+  }
+
+  // This file defines a ProseMirror selection subclass that models
+
+  // ::- A [`Selection`](http://prosemirror.net/docs/ref/#state.Selection)
+  // subclass that represents a cell selection spanning part of a table.
+  // With the plugin enabled, these will be created when the user
+  // selects across cells, and will be drawn by giving selected cells a
+  // `selectedCell` CSS class.
+  class CellSelection extends Selection {
+    // :: (ResolvedPos, ?ResolvedPos)
+    // A table selection is identified by its anchor and head cells. The
+    // positions given to this constructor should point _before_ two
+    // cells in the same table. They may be the same, to select a single
+    // cell.
+    constructor($anchorCell, $headCell = $anchorCell) {
+      let table = $anchorCell.node(-1),
+        map = TableMap.get(table),
+        start = $anchorCell.start(-1);
+      let rect = map.rectBetween($anchorCell.pos - start, $headCell.pos - start);
+      let doc = $anchorCell.node(0);
+      let cells = map.cellsInRect(rect).filter((p) => p != $headCell.pos - start);
+      // Make the head cell the first range, so that it counts as the
+      // primary part of the selection
+      cells.unshift($headCell.pos - start);
+      let ranges = cells.map((pos) => {
+        let cell = table.nodeAt(pos),
+          from = pos + start + 1;
+        return new SelectionRange(
+          doc.resolve(from),
+          doc.resolve(from + cell.content.size),
+        );
       });
+      super(ranges[0].$from, ranges[0].$to, ranges);
+      // :: ResolvedPos
+      // A resolved position pointing _in front of_ the anchor cell (the one
+      // that doesn't move when extending the selection).
+      this.$anchorCell = $anchorCell;
+      // :: ResolvedPos
+      // A resolved position pointing in front of the head cell (the one
+      // moves when extending the selection).
+      this.$headCell = $headCell;
     }
 
-    /* -------------------------------------------- */
+    map(doc, mapping) {
+      let $anchorCell = doc.resolve(mapping.map(this.$anchorCell.pos));
+      let $headCell = doc.resolve(mapping.map(this.$headCell.pos));
+      if (
+        pointsAtCell($anchorCell) &&
+        pointsAtCell($headCell) &&
+        inSameTable($anchorCell, $headCell)
+      ) {
+        let tableChanged = this.$anchorCell.node(-1) != $anchorCell.node(-1);
+        if (tableChanged && this.isRowSelection())
+          return CellSelection.rowSelection($anchorCell, $headCell);
+        else if (tableChanged && this.isColSelection())
+          return CellSelection.colSelection($anchorCell, $headCell);
+        else return new CellSelection($anchorCell, $headCell);
+      }
+      return TextSelection.between($anchorCell, $headCell);
+    }
 
-    /**
-     * Handle a click on the editor.
-     * @param {EditorView} view     The ProseMirror editor view.
-     * @param {number} pos          The position in the ProseMirror document that the click occurred at.
-     * @param {Node} node           The current ProseMirror Node that the click has bubbled to.
-     * @param {number} nodePos      The position of the click within this Node.
-     * @param {PointerEvent} event  The click event.
-     * @param {boolean} direct      Whether this Node is the one that was directly clicked on.
-     * @returns {boolean|void}      A return value of true indicates the event has been handled, it will not propagate to
-     *                              other plugins, and ProseMirror will call preventDefault on it.
-     * @protected
-     */
-    _onClick(view, pos, node, nodePos, event, direct) {
-      // If this is the inner-most click bubble, check marks for onClick handlers.
-      if ( direct ) {
-        const $pos = view.state.doc.resolve(pos);
-        for ( const mark of $pos.marks() ) {
-          if ( mark.type.onClick?.(view, pos, event, mark) === true ) return true;
+    // :: () → Slice
+    // Returns a rectangular slice of table rows containing the selected
+    // cells.
+    content() {
+      let table = this.$anchorCell.node(-1),
+        map = TableMap.get(table),
+        start = this.$anchorCell.start(-1);
+      let rect = map.rectBetween(
+        this.$anchorCell.pos - start,
+        this.$headCell.pos - start,
+      );
+      let seen = {},
+        rows = [];
+      for (let row = rect.top; row < rect.bottom; row++) {
+        let rowContent = [];
+        for (
+          let index = row * map.width + rect.left, col = rect.left;
+          col < rect.right;
+          col++, index++
+        ) {
+          let pos = map.map[index];
+          if (!seen[pos]) {
+            seen[pos] = true;
+            let cellRect = map.findCell(pos),
+              cell = table.nodeAt(pos);
+            let extraLeft = rect.left - cellRect.left,
+              extraRight = cellRect.right - rect.right;
+            if (extraLeft > 0 || extraRight > 0) {
+              let attrs = cell.attrs;
+              if (extraLeft > 0) attrs = removeColSpan(attrs, 0, extraLeft);
+              if (extraRight > 0)
+                attrs = removeColSpan(
+                  attrs,
+                  attrs.colspan - extraRight,
+                  extraRight,
+                );
+              if (cellRect.left < rect.left)
+                cell = cell.type.createAndFill(attrs);
+              else cell = cell.type.create(attrs, cell.content);
+            }
+            if (cellRect.top < rect.top || cellRect.bottom > rect.bottom) {
+              let attrs = setAttr(
+                cell.attrs,
+                'rowspan',
+                Math.min(cellRect.bottom, rect.bottom) -
+                  Math.max(cellRect.top, rect.top),
+              );
+              if (cellRect.top < rect.top) cell = cell.type.createAndFill(attrs);
+              else cell = cell.type.create(attrs, cell.content);
+            }
+            rowContent.push(cell);
+          }
         }
+        rows.push(table.child(row).copy(Fragment.from(rowContent)));
       }
 
-      // Check the current Node for onClick handlers.
-      return node.type.onClick?.(view, pos, event, node);
+      const fragment =
+        this.isColSelection() && this.isRowSelection() ? table : rows;
+      return new Slice(Fragment.from(fragment), 1, 1);
+    }
+
+    replace(tr, content = Slice.empty) {
+      let mapFrom = tr.steps.length,
+        ranges = this.ranges;
+      for (let i = 0; i < ranges.length; i++) {
+        let { $from, $to } = ranges[i],
+          mapping = tr.mapping.slice(mapFrom);
+        tr.replace(
+          mapping.map($from.pos),
+          mapping.map($to.pos),
+          i ? Slice.empty : content,
+        );
+      }
+      let sel = Selection.findFrom(
+        tr.doc.resolve(tr.mapping.slice(mapFrom).map(this.to)),
+        -1,
+      );
+      if (sel) tr.setSelection(sel);
+    }
+
+    replaceWith(tr, node) {
+      this.replace(tr, new Slice(Fragment.from(node), 0, 0));
+    }
+
+    forEachCell(f) {
+      let table = this.$anchorCell.node(-1),
+        map = TableMap.get(table),
+        start = this.$anchorCell.start(-1);
+      let cells = map.cellsInRect(
+        map.rectBetween(this.$anchorCell.pos - start, this.$headCell.pos - start),
+      );
+      for (let i = 0; i < cells.length; i++)
+        f(table.nodeAt(cells[i]), start + cells[i]);
+    }
+
+    // :: () → bool
+    // True if this selection goes all the way from the top to the
+    // bottom of the table.
+    isColSelection() {
+      let anchorTop = this.$anchorCell.index(-1),
+        headTop = this.$headCell.index(-1);
+      if (Math.min(anchorTop, headTop) > 0) return false;
+      let anchorBot = anchorTop + this.$anchorCell.nodeAfter.attrs.rowspan,
+        headBot = headTop + this.$headCell.nodeAfter.attrs.rowspan;
+      return Math.max(anchorBot, headBot) == this.$headCell.node(-1).childCount;
+    }
+
+    // :: (ResolvedPos, ?ResolvedPos) → CellSelection
+    // Returns the smallest column selection that covers the given anchor
+    // and head cell.
+    static colSelection($anchorCell, $headCell = $anchorCell) {
+      let map = TableMap.get($anchorCell.node(-1)),
+        start = $anchorCell.start(-1);
+      let anchorRect = map.findCell($anchorCell.pos - start),
+        headRect = map.findCell($headCell.pos - start);
+      let doc = $anchorCell.node(0);
+      if (anchorRect.top <= headRect.top) {
+        if (anchorRect.top > 0)
+          $anchorCell = doc.resolve(start + map.map[anchorRect.left]);
+        if (headRect.bottom < map.height)
+          $headCell = doc.resolve(
+            start + map.map[map.width * (map.height - 1) + headRect.right - 1],
+          );
+      } else {
+        if (headRect.top > 0)
+          $headCell = doc.resolve(start + map.map[headRect.left]);
+        if (anchorRect.bottom < map.height)
+          $anchorCell = doc.resolve(
+            start + map.map[map.width * (map.height - 1) + anchorRect.right - 1],
+          );
+      }
+      return new CellSelection($anchorCell, $headCell);
+    }
+
+    // :: () → bool
+    // True if this selection goes all the way from the left to the
+    // right of the table.
+    isRowSelection() {
+      let map = TableMap.get(this.$anchorCell.node(-1)),
+        start = this.$anchorCell.start(-1);
+      let anchorLeft = map.colCount(this.$anchorCell.pos - start),
+        headLeft = map.colCount(this.$headCell.pos - start);
+      if (Math.min(anchorLeft, headLeft) > 0) return false;
+      let anchorRight = anchorLeft + this.$anchorCell.nodeAfter.attrs.colspan,
+        headRight = headLeft + this.$headCell.nodeAfter.attrs.colspan;
+      return Math.max(anchorRight, headRight) == map.width;
+    }
+
+    eq(other) {
+      return (
+        other instanceof CellSelection &&
+        other.$anchorCell.pos == this.$anchorCell.pos &&
+        other.$headCell.pos == this.$headCell.pos
+      );
+    }
+
+    // :: (ResolvedPos, ?ResolvedPos) → CellSelection
+    // Returns the smallest row selection that covers the given anchor
+    // and head cell.
+    static rowSelection($anchorCell, $headCell = $anchorCell) {
+      let map = TableMap.get($anchorCell.node(-1)),
+        start = $anchorCell.start(-1);
+      let anchorRect = map.findCell($anchorCell.pos - start),
+        headRect = map.findCell($headCell.pos - start);
+      let doc = $anchorCell.node(0);
+      if (anchorRect.left <= headRect.left) {
+        if (anchorRect.left > 0)
+          $anchorCell = doc.resolve(start + map.map[anchorRect.top * map.width]);
+        if (headRect.right < map.width)
+          $headCell = doc.resolve(
+            start + map.map[map.width * (headRect.top + 1) - 1],
+          );
+      } else {
+        if (headRect.left > 0)
+          $headCell = doc.resolve(start + map.map[headRect.top * map.width]);
+        if (anchorRect.right < map.width)
+          $anchorCell = doc.resolve(
+            start + map.map[map.width * (anchorRect.top + 1) - 1],
+          );
+      }
+      return new CellSelection($anchorCell, $headCell);
+    }
+
+    toJSON() {
+      return {
+        type: 'cell',
+        anchor: this.$anchorCell.pos,
+        head: this.$headCell.pos,
+      };
+    }
+
+    static fromJSON(doc, json) {
+      return new CellSelection(doc.resolve(json.anchor), doc.resolve(json.head));
+    }
+
+    // :: (Node, number, ?number) → CellSelection
+    static create(doc, anchorCell, headCell = anchorCell) {
+      return new CellSelection(doc.resolve(anchorCell), doc.resolve(headCell));
+    }
+
+    getBookmark() {
+      return new CellBookmark(this.$anchorCell.pos, this.$headCell.pos);
     }
   }
 
-  /**
-   * A class responsible for applying transformations to content pasted inside the editor.
-   */
-  class ProseMirrorPasteTransformer extends ProseMirrorPlugin {
-    /** @override */
-    static build(schema, options={}) {
-      const plugin = new ProseMirrorPasteTransformer(schema);
-      return new Plugin({
-        props: {
-          transformPasted: plugin._onPaste.bind(plugin)
-        }
-      });
+  CellSelection.prototype.visible = false;
+
+  Selection.jsonID('cell', CellSelection);
+
+  class CellBookmark {
+    constructor(anchor, head) {
+      this.anchor = anchor;
+      this.head = head;
     }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Transform content before it is injected into the ProseMirror document.
-     * @param {Slice} slice      The content slice.
-     * @param {EditorView} view  The ProseMirror editor view.
-     * @returns {Slice}          The transformed content.
-     */
-    _onPaste(slice, view) {
-      // Give pasted secret blocks new IDs.
-      const secret = view.state.schema.nodes.secret;
-      return transformSlice(slice, node => {
-        if ( node.type === secret ) {
-          return secret.create({ ...node.attrs, id: `secret-${randomID()}` }, node.content, node.marks);
-        }
-      });
+    map(mapping) {
+      return new CellBookmark(mapping.map(this.anchor), mapping.map(this.head));
+    }
+    resolve(doc) {
+      let $anchorCell = doc.resolve(this.anchor),
+        $headCell = doc.resolve(this.head);
+      if (
+        $anchorCell.parent.type.spec.tableRole == 'row' &&
+        $headCell.parent.type.spec.tableRole == 'row' &&
+        $anchorCell.index() < $anchorCell.parent.childCount &&
+        $headCell.index() < $headCell.parent.childCount &&
+        inSameTable($anchorCell, $headCell)
+      )
+        return new CellSelection($anchorCell, $headCell);
+      else return Selection.near($headCell, 1);
     }
   }
+
+  function drawCellSelection(state) {
+    if (!(state.selection instanceof CellSelection)) return null;
+    let cells = [];
+    state.selection.forEachCell((node, pos) => {
+      cells.push(
+        Decoration.node(pos, pos + node.nodeSize, { class: 'selectedCell' }),
+      );
+    });
+    return DecorationSet.create(state.doc, cells);
+  }
+
+  function isCellBoundarySelection({ $from, $to }) {
+    if ($from.pos == $to.pos || $from.pos < $from.pos - 6) return false; // Cheap elimination
+    let afterFrom = $from.pos,
+      beforeTo = $to.pos,
+      depth = $from.depth;
+    for (; depth >= 0; depth--, afterFrom++)
+      if ($from.after(depth + 1) < $from.end(depth)) break;
+    for (let d = $to.depth; d >= 0; d--, beforeTo--)
+      if ($to.before(d + 1) > $to.start(d)) break;
+    return (
+      afterFrom == beforeTo &&
+      /row|table/.test($from.node(depth).type.spec.tableRole)
+    );
+  }
+
+  function isTextSelectionAcrossCells({ $from, $to }) {
+    let fromCellBoundaryNode;
+    let toCellBoundaryNode;
+
+    for (let i = $from.depth; i > 0; i--) {
+      let node = $from.node(i);
+      if (
+        node.type.spec.tableRole === 'cell' ||
+        node.type.spec.tableRole === 'header_cell'
+      ) {
+        fromCellBoundaryNode = node;
+        break;
+      }
+    }
+
+    for (let i = $to.depth; i > 0; i--) {
+      let node = $to.node(i);
+      if (
+        node.type.spec.tableRole === 'cell' ||
+        node.type.spec.tableRole === 'header_cell'
+      ) {
+        toCellBoundaryNode = node;
+        break;
+      }
+    }
+
+    return fromCellBoundaryNode !== toCellBoundaryNode && $to.parentOffset === 0;
+  }
+
+  function normalizeSelection(state, tr, allowTableNodeSelection) {
+    let sel = (tr || state).selection,
+      doc = (tr || state).doc,
+      normalize,
+      role;
+    if (sel instanceof NodeSelection && (role = sel.node.type.spec.tableRole)) {
+      if (role == 'cell' || role == 'header_cell') {
+        normalize = CellSelection.create(doc, sel.from);
+      } else if (role == 'row') {
+        let $cell = doc.resolve(sel.from + 1);
+        normalize = CellSelection.rowSelection($cell, $cell);
+      } else if (!allowTableNodeSelection) {
+        let map = TableMap.get(sel.node),
+          start = sel.from + 1;
+        let lastCell = start + map.map[map.width * map.height - 1];
+        normalize = CellSelection.create(doc, start + 1, lastCell);
+      }
+    } else if (sel instanceof TextSelection && isCellBoundarySelection(sel)) {
+      normalize = TextSelection.create(doc, sel.from);
+    } else if (sel instanceof TextSelection && isTextSelectionAcrossCells(sel)) {
+      normalize = TextSelection.create(doc, sel.$from.start(), sel.$from.end());
+    }
+    if (normalize) (tr || (tr = state.tr)).setSelection(normalize);
+    return tr;
+  }
+
+  // Utilities used for copy/paste handling.
+
+  // Utilities to help with copying and pasting table cells
+
+  // : (Slice) → ?{width: number, height: number, rows: [Fragment]}
+  // Get a rectangular area of cells from a slice, or null if the outer
+  // nodes of the slice aren't table cells or rows.
+  function pastedCells(slice) {
+    if (!slice.size) return null;
+    let { content, openStart, openEnd } = slice;
+    while (
+      content.childCount == 1 &&
+      ((openStart > 0 && openEnd > 0) ||
+        content.firstChild.type.spec.tableRole == 'table')
+    ) {
+      openStart--;
+      openEnd--;
+      content = content.firstChild.content;
+    }
+    let first = content.firstChild,
+      role = first.type.spec.tableRole;
+    let schema = first.type.schema,
+      rows = [];
+    if (role == 'row') {
+      for (let i = 0; i < content.childCount; i++) {
+        let cells = content.child(i).content;
+        let left = i ? 0 : Math.max(0, openStart - 1);
+        let right = i < content.childCount - 1 ? 0 : Math.max(0, openEnd - 1);
+        if (left || right)
+          cells = fitSlice(
+            tableNodeTypes(schema).row,
+            new Slice(cells, left, right),
+          ).content;
+        rows.push(cells);
+      }
+    } else if (role == 'cell' || role == 'header_cell') {
+      rows.push(
+        openStart || openEnd
+          ? fitSlice(
+              tableNodeTypes(schema).row,
+              new Slice(content, openStart, openEnd),
+            ).content
+          : content,
+      );
+    } else {
+      return null;
+    }
+    return ensureRectangular(schema, rows);
+  }
+
+  // : (Schema, [Fragment]) → {width: number, height: number, rows: [Fragment]}
+  // Compute the width and height of a set of cells, and make sure each
+  // row has the same number of cells.
+  function ensureRectangular(schema, rows) {
+    let widths = [];
+    for (let i = 0; i < rows.length; i++) {
+      let row = rows[i];
+      for (let j = row.childCount - 1; j >= 0; j--) {
+        let { rowspan, colspan } = row.child(j).attrs;
+        for (let r = i; r < i + rowspan; r++)
+          widths[r] = (widths[r] || 0) + colspan;
+      }
+    }
+    let width = 0;
+    for (let r = 0; r < widths.length; r++) width = Math.max(width, widths[r]);
+    for (let r = 0; r < widths.length; r++) {
+      if (r >= rows.length) rows.push(Fragment.empty);
+      if (widths[r] < width) {
+        let empty = tableNodeTypes(schema).cell.createAndFill(),
+          cells = [];
+        for (let i = widths[r]; i < width; i++) cells.push(empty);
+        rows[r] = rows[r].append(Fragment.from(cells));
+      }
+    }
+    return { height: rows.length, width, rows };
+  }
+
+  function fitSlice(nodeType, slice) {
+    let node = nodeType.createAndFill();
+    let tr = new Transform(node).replace(0, node.content.size, slice);
+    return tr.doc;
+  }
+
+  // : ({width: number, height: number, rows: [Fragment]}, number, number) → {width: number, height: number, rows: [Fragment]}
+  // Clip or extend (repeat) the given set of cells to cover the given
+  // width and height. Will clip rowspan/colspan cells at the edges when
+  // they stick out.
+  function clipCells({ width, height, rows }, newWidth, newHeight) {
+    if (width != newWidth) {
+      let added = [],
+        newRows = [];
+      for (let row = 0; row < rows.length; row++) {
+        let frag = rows[row],
+          cells = [];
+        for (let col = added[row] || 0, i = 0; col < newWidth; i++) {
+          let cell = frag.child(i % frag.childCount);
+          if (col + cell.attrs.colspan > newWidth)
+            cell = cell.type.create(
+              removeColSpan(
+                cell.attrs,
+                cell.attrs.colspan,
+                col + cell.attrs.colspan - newWidth,
+              ),
+              cell.content,
+            );
+          cells.push(cell);
+          col += cell.attrs.colspan;
+          for (let j = 1; j < cell.attrs.rowspan; j++)
+            added[row + j] = (added[row + j] || 0) + cell.attrs.colspan;
+        }
+        newRows.push(Fragment.from(cells));
+      }
+      rows = newRows;
+      width = newWidth;
+    }
+
+    if (height != newHeight) {
+      let newRows = [];
+      for (let row = 0, i = 0; row < newHeight; row++, i++) {
+        let cells = [],
+          source = rows[i % height];
+        for (let j = 0; j < source.childCount; j++) {
+          let cell = source.child(j);
+          if (row + cell.attrs.rowspan > newHeight)
+            cell = cell.type.create(
+              setAttr(
+                cell.attrs,
+                'rowspan',
+                Math.max(1, newHeight - cell.attrs.rowspan),
+              ),
+              cell.content,
+            );
+          cells.push(cell);
+        }
+        newRows.push(Fragment.from(cells));
+      }
+      rows = newRows;
+      height = newHeight;
+    }
+
+    return { width, height, rows };
+  }
+
+  // Make sure a table has at least the given width and height. Return
+  // true if something was changed.
+  function growTable(tr, map, table, start, width, height, mapFrom) {
+    let schema = tr.doc.type.schema,
+      types = tableNodeTypes(schema),
+      empty,
+      emptyHead;
+    if (width > map.width) {
+      for (let row = 0, rowEnd = 0; row < map.height; row++) {
+        let rowNode = table.child(row);
+        rowEnd += rowNode.nodeSize;
+        let cells = [],
+          add;
+        if (rowNode.lastChild == null || rowNode.lastChild.type == types.cell)
+          add = empty || (empty = types.cell.createAndFill());
+        else add = emptyHead || (emptyHead = types.header_cell.createAndFill());
+        for (let i = map.width; i < width; i++) cells.push(add);
+        tr.insert(tr.mapping.slice(mapFrom).map(rowEnd - 1 + start), cells);
+      }
+    }
+    if (height > map.height) {
+      let cells = [];
+      for (
+        let i = 0, start = (map.height - 1) * map.width;
+        i < Math.max(map.width, width);
+        i++
+      ) {
+        let header =
+          i >= map.width
+            ? false
+            : table.nodeAt(map.map[start + i]).type == types.header_cell;
+        cells.push(
+          header
+            ? emptyHead || (emptyHead = types.header_cell.createAndFill())
+            : empty || (empty = types.cell.createAndFill()),
+        );
+      }
+
+      let emptyRow = types.row.create(null, Fragment.from(cells)),
+        rows = [];
+      for (let i = map.height; i < height; i++) rows.push(emptyRow);
+      tr.insert(tr.mapping.slice(mapFrom).map(start + table.nodeSize - 2), rows);
+    }
+    return !!(empty || emptyHead);
+  }
+
+  // Make sure the given line (left, top) to (right, top) doesn't cross
+  // any rowspan cells by splitting cells that cross it. Return true if
+  // something changed.
+  function isolateHorizontal(tr, map, table, start, left, right, top, mapFrom) {
+    if (top == 0 || top == map.height) return false;
+    let found = false;
+    for (let col = left; col < right; col++) {
+      let index = top * map.width + col,
+        pos = map.map[index];
+      if (map.map[index - map.width] == pos) {
+        found = true;
+        let cell = table.nodeAt(pos);
+        let { top: cellTop, left: cellLeft } = map.findCell(pos);
+        tr.setNodeMarkup(
+          tr.mapping.slice(mapFrom).map(pos + start),
+          null,
+          setAttr(cell.attrs, 'rowspan', top - cellTop),
+        );
+        tr.insert(
+          tr.mapping.slice(mapFrom).map(map.positionAt(top, cellLeft, table)),
+          cell.type.createAndFill(
+            setAttr(cell.attrs, 'rowspan', cellTop + cell.attrs.rowspan - top),
+          ),
+        );
+        col += cell.attrs.colspan - 1;
+      }
+    }
+    return found;
+  }
+
+  // Make sure the given line (left, top) to (left, bottom) doesn't
+  // cross any colspan cells by splitting cells that cross it. Return
+  // true if something changed.
+  function isolateVertical(tr, map, table, start, top, bottom, left, mapFrom) {
+    if (left == 0 || left == map.width) return false;
+    let found = false;
+    for (let row = top; row < bottom; row++) {
+      let index = row * map.width + left,
+        pos = map.map[index];
+      if (map.map[index - 1] == pos) {
+        found = true;
+        let cell = table.nodeAt(pos),
+          cellLeft = map.colCount(pos);
+        let updatePos = tr.mapping.slice(mapFrom).map(pos + start);
+        tr.setNodeMarkup(
+          updatePos,
+          null,
+          removeColSpan(
+            cell.attrs,
+            left - cellLeft,
+            cell.attrs.colspan - (left - cellLeft),
+          ),
+        );
+        tr.insert(
+          updatePos + cell.nodeSize,
+          cell.type.createAndFill(removeColSpan(cell.attrs, 0, left - cellLeft)),
+        );
+        row += cell.attrs.rowspan - 1;
+      }
+    }
+    return found;
+  }
+
+  // Insert the given set of cells (as returned by `pastedCells`) into a
+  // table, at the position pointed at by rect.
+  function insertCells(state, dispatch, tableStart, rect, cells) {
+    let table = tableStart ? state.doc.nodeAt(tableStart - 1) : state.doc,
+      map = TableMap.get(table);
+    let { top, left } = rect;
+    let right = left + cells.width,
+      bottom = top + cells.height;
+    let tr = state.tr,
+      mapFrom = 0;
+    function recomp() {
+      table = tableStart ? tr.doc.nodeAt(tableStart - 1) : tr.doc;
+      map = TableMap.get(table);
+      mapFrom = tr.mapping.maps.length;
+    }
+    // Prepare the table to be large enough and not have any cells
+    // crossing the boundaries of the rectangle that we want to
+    // insert into. If anything about it changes, recompute the table
+    // map so that subsequent operations can see the current shape.
+    if (growTable(tr, map, table, tableStart, right, bottom, mapFrom)) recomp();
+    if (isolateHorizontal(tr, map, table, tableStart, left, right, top, mapFrom))
+      recomp();
+    if (
+      isolateHorizontal(tr, map, table, tableStart, left, right, bottom, mapFrom)
+    )
+      recomp();
+    if (isolateVertical(tr, map, table, tableStart, top, bottom, left, mapFrom))
+      recomp();
+    if (isolateVertical(tr, map, table, tableStart, top, bottom, right, mapFrom))
+      recomp();
+
+    for (let row = top; row < bottom; row++) {
+      let from = map.positionAt(row, left, table),
+        to = map.positionAt(row, right, table);
+      tr.replace(
+        tr.mapping.slice(mapFrom).map(from + tableStart),
+        tr.mapping.slice(mapFrom).map(to + tableStart),
+        new Slice(cells.rows[row - top], 0, 0),
+      );
+    }
+    recomp();
+    tr.setSelection(
+      new CellSelection(
+        tr.doc.resolve(tableStart + map.positionAt(top, left, table)),
+        tr.doc.resolve(tableStart + map.positionAt(bottom - 1, right - 1, table)),
+      ),
+    );
+    dispatch(tr);
+  }
+
+  // This file defines a number of helpers for wiring up user input to
+
+  const handleKeyDown = keydownHandler({
+    ArrowLeft: arrow('horiz', -1),
+    ArrowRight: arrow('horiz', 1),
+    ArrowUp: arrow('vert', -1),
+    ArrowDown: arrow('vert', 1),
+
+    'Shift-ArrowLeft': shiftArrow('horiz', -1),
+    'Shift-ArrowRight': shiftArrow('horiz', 1),
+    'Shift-ArrowUp': shiftArrow('vert', -1),
+    'Shift-ArrowDown': shiftArrow('vert', 1),
+
+    Backspace: deleteCellSelection,
+    'Mod-Backspace': deleteCellSelection,
+    Delete: deleteCellSelection,
+    'Mod-Delete': deleteCellSelection,
+  });
+
+  function maybeSetSelection(state, dispatch, selection) {
+    if (selection.eq(state.selection)) return false;
+    if (dispatch) dispatch(state.tr.setSelection(selection).scrollIntoView());
+    return true;
+  }
+
+  function arrow(axis, dir) {
+    return (state, dispatch, view) => {
+      let sel = state.selection;
+      if (sel instanceof CellSelection) {
+        return maybeSetSelection(
+          state,
+          dispatch,
+          Selection.near(sel.$headCell, dir),
+        );
+      }
+      if (axis != 'horiz' && !sel.empty) return false;
+      let end = atEndOfCell(view, axis, dir);
+      if (end == null) return false;
+      if (axis == 'horiz') {
+        return maybeSetSelection(
+          state,
+          dispatch,
+          Selection.near(state.doc.resolve(sel.head + dir), dir),
+        );
+      } else {
+        let $cell = state.doc.resolve(end),
+          $next = nextCell($cell, axis, dir),
+          newSel;
+        if ($next) newSel = Selection.near($next, 1);
+        else if (dir < 0)
+          newSel = Selection.near(state.doc.resolve($cell.before(-1)), -1);
+        else newSel = Selection.near(state.doc.resolve($cell.after(-1)), 1);
+        return maybeSetSelection(state, dispatch, newSel);
+      }
+    };
+  }
+
+  function shiftArrow(axis, dir) {
+    return (state, dispatch, view) => {
+      let sel = state.selection;
+      if (!(sel instanceof CellSelection)) {
+        let end = atEndOfCell(view, axis, dir);
+        if (end == null) return false;
+        sel = new CellSelection(state.doc.resolve(end));
+      }
+      let $head = nextCell(sel.$headCell, axis, dir);
+      if (!$head) return false;
+      return maybeSetSelection(
+        state,
+        dispatch,
+        new CellSelection(sel.$anchorCell, $head),
+      );
+    };
+  }
+
+  function deleteCellSelection(state, dispatch) {
+    let sel = state.selection;
+    if (!(sel instanceof CellSelection)) return false;
+    if (dispatch) {
+      let tr = state.tr,
+        baseContent = tableNodeTypes(state.schema).cell.createAndFill().content;
+      sel.forEachCell((cell, pos) => {
+        if (!cell.content.eq(baseContent))
+          tr.replace(
+            tr.mapping.map(pos + 1),
+            tr.mapping.map(pos + cell.nodeSize - 1),
+            new Slice(baseContent, 0, 0),
+          );
+      });
+      if (tr.docChanged) dispatch(tr);
+    }
+    return true;
+  }
+
+  function handleTripleClick(view, pos) {
+    let doc = view.state.doc,
+      $cell = cellAround(doc.resolve(pos));
+    if (!$cell) return false;
+    view.dispatch(view.state.tr.setSelection(new CellSelection($cell)));
+    return true;
+  }
+
+  function handlePaste(view, _, slice) {
+    if (!isInTable(view.state)) return false;
+    let cells = pastedCells(slice),
+      sel = view.state.selection;
+    if (sel instanceof CellSelection) {
+      if (!cells)
+        cells = {
+          width: 1,
+          height: 1,
+          rows: [
+            Fragment.from(
+              fitSlice(tableNodeTypes(view.state.schema).cell, slice),
+            ),
+          ],
+        };
+      let table = sel.$anchorCell.node(-1),
+        start = sel.$anchorCell.start(-1);
+      let rect = TableMap.get(table).rectBetween(
+        sel.$anchorCell.pos - start,
+        sel.$headCell.pos - start,
+      );
+      cells = clipCells(cells, rect.right - rect.left, rect.bottom - rect.top);
+      insertCells(view.state, view.dispatch, start, rect, cells);
+      return true;
+    } else if (cells) {
+      let $cell = selectionCell(view.state),
+        start = $cell.start(-1);
+      insertCells(
+        view.state,
+        view.dispatch,
+        start,
+        TableMap.get($cell.node(-1)).findCell($cell.pos - start),
+        cells,
+      );
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  function handleMouseDown$1(view, startEvent) {
+    if (startEvent.ctrlKey || startEvent.metaKey) return;
+
+    let startDOMCell = domInCell(view, startEvent.target),
+      $anchor;
+    if (startEvent.shiftKey && view.state.selection instanceof CellSelection) {
+      // Adding to an existing cell selection
+      setCellSelection(view.state.selection.$anchorCell, startEvent);
+      startEvent.preventDefault();
+    } else if (
+      startEvent.shiftKey &&
+      startDOMCell &&
+      ($anchor = cellAround(view.state.selection.$anchor)) != null &&
+      cellUnderMouse(view, startEvent).pos != $anchor.pos
+    ) {
+      // Adding to a selection that starts in another cell (causing a
+      // cell selection to be created).
+      setCellSelection($anchor, startEvent);
+      startEvent.preventDefault();
+    } else if (!startDOMCell) {
+      // Not in a cell, let the default behavior happen.
+      return;
+    }
+
+    // Create and dispatch a cell selection between the given anchor and
+    // the position under the mouse.
+    function setCellSelection($anchor, event) {
+      let $head = cellUnderMouse(view, event);
+      let starting = key$1.getState(view.state) == null;
+      if (!$head || !inSameTable($anchor, $head)) {
+        if (starting) $head = $anchor;
+        else return;
+      }
+      let selection = new CellSelection($anchor, $head);
+      if (starting || !view.state.selection.eq(selection)) {
+        let tr = view.state.tr.setSelection(selection);
+        if (starting) tr.setMeta(key$1, $anchor.pos);
+        view.dispatch(tr);
+      }
+    }
+
+    // Stop listening to mouse motion events.
+    function stop() {
+      view.root.removeEventListener('mouseup', stop);
+      view.root.removeEventListener('dragstart', stop);
+      view.root.removeEventListener('mousemove', move);
+      if (key$1.getState(view.state) != null)
+        view.dispatch(view.state.tr.setMeta(key$1, -1));
+    }
+
+    function move(event) {
+      let anchor = key$1.getState(view.state),
+        $anchor;
+      if (anchor != null) {
+        // Continuing an existing cross-cell selection
+        $anchor = view.state.doc.resolve(anchor);
+      } else if (domInCell(view, event.target) != startDOMCell) {
+        // Moving out of the initial cell -- start a new cell selection
+        $anchor = cellUnderMouse(view, startEvent);
+        if (!$anchor) return stop();
+      }
+      if ($anchor) setCellSelection($anchor, event);
+    }
+    view.root.addEventListener('mouseup', stop);
+    view.root.addEventListener('dragstart', stop);
+    view.root.addEventListener('mousemove', move);
+  }
+
+  // Check whether the cursor is at the end of a cell (so that further
+  // motion would move out of the cell)
+  function atEndOfCell(view, axis, dir) {
+    if (!(view.state.selection instanceof TextSelection)) return null;
+    let { $head } = view.state.selection;
+    for (let d = $head.depth - 1; d >= 0; d--) {
+      let parent = $head.node(d),
+        index = dir < 0 ? $head.index(d) : $head.indexAfter(d);
+      if (index != (dir < 0 ? 0 : parent.childCount)) return null;
+      if (
+        parent.type.spec.tableRole == 'cell' ||
+        parent.type.spec.tableRole == 'header_cell'
+      ) {
+        let cellPos = $head.before(d);
+        let dirStr =
+          axis == 'vert' ? (dir > 0 ? 'down' : 'up') : dir > 0 ? 'right' : 'left';
+        return view.endOfTextblock(dirStr) ? cellPos : null;
+      }
+    }
+    return null;
+  }
+
+  function domInCell(view, dom) {
+    for (; dom && dom != view.dom; dom = dom.parentNode)
+      if (dom.nodeName == 'TD' || dom.nodeName == 'TH') return dom;
+  }
+
+  function cellUnderMouse(view, event) {
+    let mousePos = view.posAtCoords({ left: event.clientX, top: event.clientY });
+    if (!mousePos) return null;
+    return mousePos ? cellAround(view.state.doc.resolve(mousePos.pos)) : null;
+  }
+
+  // This file defines helpers for normalizing tables, making sure no
+
+  const fixTablesKey = new PluginKey('fix-tables');
+
+  // Helper for iterating through the nodes in a document that changed
+  // compared to the given previous document. Useful for avoiding
+  // duplicate work on each transaction.
+  function changedDescendants(old, cur, offset, f) {
+    let oldSize = old.childCount,
+      curSize = cur.childCount;
+    outer: for (let i = 0, j = 0; i < curSize; i++) {
+      let child = cur.child(i);
+      for (let scan = j, e = Math.min(oldSize, i + 3); scan < e; scan++) {
+        if (old.child(scan) == child) {
+          j = scan + 1;
+          offset += child.nodeSize;
+          continue outer;
+        }
+      }
+      f(child, offset);
+      if (j < oldSize && old.child(j).sameMarkup(child))
+        changedDescendants(old.child(j), child, offset + 1, f);
+      else child.nodesBetween(0, child.content.size, f, offset + 1);
+      offset += child.nodeSize;
+    }
+  }
+
+  // :: (EditorState, ?EditorState) → ?Transaction
+  // Inspect all tables in the given state's document and return a
+  // transaction that fixes them, if necessary. If `oldState` was
+  // provided, that is assumed to hold a previous, known-good state,
+  // which will be used to avoid re-scanning unchanged parts of the
+  // document.
+  function fixTables(state, oldState) {
+    let tr,
+      check = (node, pos) => {
+        if (node.type.spec.tableRole == 'table')
+          tr = fixTable(state, node, pos, tr);
+      };
+    if (!oldState) state.doc.descendants(check);
+    else if (oldState.doc != state.doc)
+      changedDescendants(oldState.doc, state.doc, 0, check);
+    return tr;
+  }
+
+  // : (EditorState, Node, number, ?Transaction) → ?Transaction
+  // Fix the given table, if necessary. Will append to the transaction
+  // it was given, if non-null, or create a new one if necessary.
+  function fixTable(state, table, tablePos, tr) {
+    let map = TableMap.get(table);
+    if (!map.problems) return tr;
+    if (!tr) tr = state.tr;
+
+    // Track which rows we must add cells to, so that we can adjust that
+    // when fixing collisions.
+    let mustAdd = [];
+    for (let i = 0; i < map.height; i++) mustAdd.push(0);
+    for (let i = 0; i < map.problems.length; i++) {
+      let prob = map.problems[i];
+      if (prob.type == 'collision') {
+        let cell = table.nodeAt(prob.pos);
+        for (let j = 0; j < cell.attrs.rowspan; j++)
+          mustAdd[prob.row + j] += prob.n;
+        tr.setNodeMarkup(
+          tr.mapping.map(tablePos + 1 + prob.pos),
+          null,
+          removeColSpan(cell.attrs, cell.attrs.colspan - prob.n, prob.n),
+        );
+      } else if (prob.type == 'missing') {
+        mustAdd[prob.row] += prob.n;
+      } else if (prob.type == 'overlong_rowspan') {
+        let cell = table.nodeAt(prob.pos);
+        tr.setNodeMarkup(
+          tr.mapping.map(tablePos + 1 + prob.pos),
+          null,
+          setAttr(cell.attrs, 'rowspan', cell.attrs.rowspan - prob.n),
+        );
+      } else if (prob.type == 'colwidth mismatch') {
+        let cell = table.nodeAt(prob.pos);
+        tr.setNodeMarkup(
+          tr.mapping.map(tablePos + 1 + prob.pos),
+          null,
+          setAttr(cell.attrs, 'colwidth', prob.colwidth),
+        );
+      }
+    }
+    let first, last;
+    for (let i = 0; i < mustAdd.length; i++)
+      if (mustAdd[i]) {
+        if (first == null) first = i;
+        last = i;
+      }
+    // Add the necessary cells, using a heuristic for whether to add the
+    // cells at the start or end of the rows (if it looks like a 'bite'
+    // was taken out of the table, add cells at the start of the row
+    // after the bite. Otherwise add them at the end).
+    for (let i = 0, pos = tablePos + 1; i < map.height; i++) {
+      let row = table.child(i);
+      let end = pos + row.nodeSize;
+      let add = mustAdd[i];
+      if (add > 0) {
+        let tableNodeType = 'cell';
+        if (row.firstChild) {
+          tableNodeType = row.firstChild.type.spec.tableRole;
+        }
+        let nodes = [];
+        for (let j = 0; j < add; j++)
+          nodes.push(tableNodeTypes(state.schema)[tableNodeType].createAndFill());
+        let side = (i == 0 || first == i - 1) && last == i ? pos + 1 : end - 1;
+        tr.insert(tr.mapping.map(side), nodes);
+      }
+      pos = end;
+    }
+    return tr.setMeta(fixTablesKey, { fixTables: true });
+  }
+
+  // This file defines a number of table-related commands.
+
+  // Helper to get the selected rectangle in a table, if any. Adds table
+  // map, table node, and table start offset to the object for
+  // convenience.
+  function selectedRect(state) {
+    let sel = state.selection,
+      $pos = selectionCell(state);
+    let table = $pos.node(-1),
+      tableStart = $pos.start(-1),
+      map = TableMap.get(table);
+    let rect;
+    if (sel instanceof CellSelection)
+      rect = map.rectBetween(
+        sel.$anchorCell.pos - tableStart,
+        sel.$headCell.pos - tableStart,
+      );
+    else rect = map.findCell($pos.pos - tableStart);
+    rect.tableStart = tableStart;
+    rect.map = map;
+    rect.table = table;
+    return rect;
+  }
+
+  // Add a column at the given position in a table.
+  function addColumn(tr, { map, tableStart, table }, col) {
+    let refColumn = col > 0 ? -1 : 0;
+    if (columnIsHeader(map, table, col + refColumn))
+      refColumn = col == 0 || col == map.width ? null : 0;
+
+    for (let row = 0; row < map.height; row++) {
+      let index = row * map.width + col;
+      // If this position falls inside a col-spanning cell
+      if (col > 0 && col < map.width && map.map[index - 1] == map.map[index]) {
+        let pos = map.map[index],
+          cell = table.nodeAt(pos);
+        tr.setNodeMarkup(
+          tr.mapping.map(tableStart + pos),
+          null,
+          addColSpan(cell.attrs, col - map.colCount(pos)),
+        );
+        // Skip ahead if rowspan > 1
+        row += cell.attrs.rowspan - 1;
+      } else {
+        let type =
+          refColumn == null
+            ? tableNodeTypes(table.type.schema).cell
+            : table.nodeAt(map.map[index + refColumn]).type;
+        let pos = map.positionAt(row, col, table);
+        tr.insert(tr.mapping.map(tableStart + pos), type.createAndFill());
+      }
+    }
+    return tr;
+  }
+
+  // :: (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Command to add a column before the column with the selection.
+  function addColumnBefore(state, dispatch) {
+    if (!isInTable(state)) return false;
+    if (dispatch) {
+      let rect = selectedRect(state);
+      dispatch(addColumn(state.tr, rect, rect.left));
+    }
+    return true;
+  }
+
+  // :: (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Command to add a column after the column with the selection.
+  function addColumnAfter(state, dispatch) {
+    if (!isInTable(state)) return false;
+    if (dispatch) {
+      let rect = selectedRect(state);
+      dispatch(addColumn(state.tr, rect, rect.right));
+    }
+    return true;
+  }
+
+  function removeColumn(tr, { map, table, tableStart }, col) {
+    let mapStart = tr.mapping.maps.length;
+    for (let row = 0; row < map.height; ) {
+      let index = row * map.width + col,
+        pos = map.map[index],
+        cell = table.nodeAt(pos);
+      // If this is part of a col-spanning cell
+      if (
+        (col > 0 && map.map[index - 1] == pos) ||
+        (col < map.width - 1 && map.map[index + 1] == pos)
+      ) {
+        tr.setNodeMarkup(
+          tr.mapping.slice(mapStart).map(tableStart + pos),
+          null,
+          removeColSpan(cell.attrs, col - map.colCount(pos)),
+        );
+      } else {
+        let start = tr.mapping.slice(mapStart).map(tableStart + pos);
+        tr.delete(start, start + cell.nodeSize);
+      }
+      row += cell.attrs.rowspan;
+    }
+  }
+
+  // :: (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Command function that removes the selected columns from a table.
+  function deleteColumn(state, dispatch) {
+    if (!isInTable(state)) return false;
+    if (dispatch) {
+      let rect = selectedRect(state),
+        tr = state.tr;
+      if (rect.left == 0 && rect.right == rect.map.width) return false;
+      for (let i = rect.right - 1; ; i--) {
+        removeColumn(tr, rect, i);
+        if (i == rect.left) break;
+        rect.table = rect.tableStart
+          ? tr.doc.nodeAt(rect.tableStart - 1)
+          : tr.doc;
+        rect.map = TableMap.get(rect.table);
+      }
+      dispatch(tr);
+    }
+    return true;
+  }
+
+  function rowIsHeader(map, table, row) {
+    let headerCell = tableNodeTypes(table.type.schema).header_cell;
+    for (let col = 0; col < map.width; col++)
+      if (table.nodeAt(map.map[col + row * map.width]).type != headerCell)
+        return false;
+    return true;
+  }
+
+  function addRow(tr, { map, tableStart, table }, row) {
+    let rowPos = tableStart;
+    for (let i = 0; i < row; i++) rowPos += table.child(i).nodeSize;
+    let cells = [],
+      refRow = row > 0 ? -1 : 0;
+    if (rowIsHeader(map, table, row + refRow))
+      refRow = row == 0 || row == map.height ? null : 0;
+    for (let col = 0, index = map.width * row; col < map.width; col++, index++) {
+      // Covered by a rowspan cell
+      if (
+        row > 0 &&
+        row < map.height &&
+        map.map[index] == map.map[index - map.width]
+      ) {
+        let pos = map.map[index],
+          attrs = table.nodeAt(pos).attrs;
+        tr.setNodeMarkup(
+          tableStart + pos,
+          null,
+          setAttr(attrs, 'rowspan', attrs.rowspan + 1),
+        );
+        col += attrs.colspan - 1;
+      } else {
+        let type =
+          refRow == null
+            ? tableNodeTypes(table.type.schema).cell
+            : table.nodeAt(map.map[index + refRow * map.width]).type;
+        cells.push(type.createAndFill());
+      }
+    }
+    tr.insert(rowPos, tableNodeTypes(table.type.schema).row.create(null, cells));
+    return tr;
+  }
+
+  // :: (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Add a table row before the selection.
+  function addRowBefore(state, dispatch) {
+    if (!isInTable(state)) return false;
+    if (dispatch) {
+      let rect = selectedRect(state);
+      dispatch(addRow(state.tr, rect, rect.top));
+    }
+    return true;
+  }
+
+  // :: (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Add a table row after the selection.
+  function addRowAfter(state, dispatch) {
+    if (!isInTable(state)) return false;
+    if (dispatch) {
+      let rect = selectedRect(state);
+      dispatch(addRow(state.tr, rect, rect.bottom));
+    }
+    return true;
+  }
+
+  function removeRow(tr, { map, table, tableStart }, row) {
+    let rowPos = 0;
+    for (let i = 0; i < row; i++) rowPos += table.child(i).nodeSize;
+    let nextRow = rowPos + table.child(row).nodeSize;
+
+    let mapFrom = tr.mapping.maps.length;
+    tr.delete(rowPos + tableStart, nextRow + tableStart);
+
+    for (let col = 0, index = row * map.width; col < map.width; col++, index++) {
+      let pos = map.map[index];
+      if (row > 0 && pos == map.map[index - map.width]) {
+        // If this cell starts in the row above, simply reduce its rowspan
+        let attrs = table.nodeAt(pos).attrs;
+        tr.setNodeMarkup(
+          tr.mapping.slice(mapFrom).map(pos + tableStart),
+          null,
+          setAttr(attrs, 'rowspan', attrs.rowspan - 1),
+        );
+        col += attrs.colspan - 1;
+      } else if (row < map.width && pos == map.map[index + map.width]) {
+        // Else, if it continues in the row below, it has to be moved down
+        let cell = table.nodeAt(pos);
+        let copy = cell.type.create(
+          setAttr(cell.attrs, 'rowspan', cell.attrs.rowspan - 1),
+          cell.content,
+        );
+        let newPos = map.positionAt(row + 1, col, table);
+        tr.insert(tr.mapping.slice(mapFrom).map(tableStart + newPos), copy);
+        col += cell.attrs.colspan - 1;
+      }
+    }
+  }
+
+  // :: (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Remove the selected rows from a table.
+  function deleteRow(state, dispatch) {
+    if (!isInTable(state)) return false;
+    if (dispatch) {
+      let rect = selectedRect(state),
+        tr = state.tr;
+      if (rect.top == 0 && rect.bottom == rect.map.height) return false;
+      for (let i = rect.bottom - 1; ; i--) {
+        removeRow(tr, rect, i);
+        if (i == rect.top) break;
+        rect.table = rect.tableStart
+          ? tr.doc.nodeAt(rect.tableStart - 1)
+          : tr.doc;
+        rect.map = TableMap.get(rect.table);
+      }
+      dispatch(tr);
+    }
+    return true;
+  }
+
+  function isEmpty(cell) {
+    let c = cell.content;
+    return (
+      c.childCount == 1 &&
+      c.firstChild.isTextblock &&
+      c.firstChild.childCount == 0
+    );
+  }
+
+  function cellsOverlapRectangle({ width, height, map }, rect) {
+    let indexTop = rect.top * width + rect.left,
+      indexLeft = indexTop;
+    let indexBottom = (rect.bottom - 1) * width + rect.left,
+      indexRight = indexTop + (rect.right - rect.left - 1);
+    for (let i = rect.top; i < rect.bottom; i++) {
+      if (
+        (rect.left > 0 && map[indexLeft] == map[indexLeft - 1]) ||
+        (rect.right < width && map[indexRight] == map[indexRight + 1])
+      )
+        return true;
+      indexLeft += width;
+      indexRight += width;
+    }
+    for (let i = rect.left; i < rect.right; i++) {
+      if (
+        (rect.top > 0 && map[indexTop] == map[indexTop - width]) ||
+        (rect.bottom < height && map[indexBottom] == map[indexBottom + width])
+      )
+        return true;
+      indexTop++;
+      indexBottom++;
+    }
+    return false;
+  }
+
+  // :: (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Merge the selected cells into a single cell. Only available when
+  // the selected cells' outline forms a rectangle.
+  function mergeCells(state, dispatch) {
+    let sel = state.selection;
+    if (
+      !(sel instanceof CellSelection) ||
+      sel.$anchorCell.pos == sel.$headCell.pos
+    )
+      return false;
+    let rect = selectedRect(state),
+      { map } = rect;
+    if (cellsOverlapRectangle(map, rect)) return false;
+    if (dispatch) {
+      let tr = state.tr,
+        seen = {},
+        content = Fragment.empty,
+        mergedPos,
+        mergedCell;
+      for (let row = rect.top; row < rect.bottom; row++) {
+        for (let col = rect.left; col < rect.right; col++) {
+          let cellPos = map.map[row * map.width + col],
+            cell = rect.table.nodeAt(cellPos);
+          if (seen[cellPos]) continue;
+          seen[cellPos] = true;
+          if (mergedPos == null) {
+            mergedPos = cellPos;
+            mergedCell = cell;
+          } else {
+            if (!isEmpty(cell)) content = content.append(cell.content);
+            let mapped = tr.mapping.map(cellPos + rect.tableStart);
+            tr.delete(mapped, mapped + cell.nodeSize);
+          }
+        }
+      }
+      tr.setNodeMarkup(
+        mergedPos + rect.tableStart,
+        null,
+        setAttr(
+          addColSpan(
+            mergedCell.attrs,
+            mergedCell.attrs.colspan,
+            rect.right - rect.left - mergedCell.attrs.colspan,
+          ),
+          'rowspan',
+          rect.bottom - rect.top,
+        ),
+      );
+      if (content.size) {
+        let end = mergedPos + 1 + mergedCell.content.size;
+        let start = isEmpty(mergedCell) ? mergedPos + 1 : end;
+        tr.replaceWith(start + rect.tableStart, end + rect.tableStart, content);
+      }
+      tr.setSelection(
+        new CellSelection(tr.doc.resolve(mergedPos + rect.tableStart)),
+      );
+      dispatch(tr);
+    }
+    return true;
+  }
+  // :: (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Split a selected cell, whose rowpan or colspan is greater than one,
+  // into smaller cells. Use the first cell type for the new cells.
+  function splitCell(state, dispatch) {
+    const nodeTypes = tableNodeTypes(state.schema);
+    return splitCellWithType(({ node }) => {
+      return nodeTypes[node.type.spec.tableRole];
+    })(state, dispatch);
+  }
+
+  // :: (getCellType: ({ row: number, col: number, node: Node}) → NodeType) → (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Split a selected cell, whose rowpan or colspan is greater than one,
+  // into smaller cells with the cell type (th, td) returned by getType function.
+  function splitCellWithType(getCellType) {
+    return (state, dispatch) => {
+      let sel = state.selection;
+      let cellNode, cellPos;
+      if (!(sel instanceof CellSelection)) {
+        cellNode = cellWrapping(sel.$from);
+        if (!cellNode) return false;
+        cellPos = cellAround(sel.$from).pos;
+      } else {
+        if (sel.$anchorCell.pos != sel.$headCell.pos) return false;
+        cellNode = sel.$anchorCell.nodeAfter;
+        cellPos = sel.$anchorCell.pos;
+      }
+      if (cellNode.attrs.colspan == 1 && cellNode.attrs.rowspan == 1) {
+        return false;
+      }
+      if (dispatch) {
+        let baseAttrs = cellNode.attrs,
+          attrs = [],
+          colwidth = baseAttrs.colwidth;
+        if (baseAttrs.rowspan > 1) baseAttrs = setAttr(baseAttrs, 'rowspan', 1);
+        if (baseAttrs.colspan > 1) baseAttrs = setAttr(baseAttrs, 'colspan', 1);
+        let rect = selectedRect(state),
+          tr = state.tr;
+        for (let i = 0; i < rect.right - rect.left; i++)
+          attrs.push(
+            colwidth
+              ? setAttr(
+                  baseAttrs,
+                  'colwidth',
+                  colwidth && colwidth[i] ? [colwidth[i]] : null,
+                )
+              : baseAttrs,
+          );
+        let lastCell;
+        for (let row = rect.top; row < rect.bottom; row++) {
+          let pos = rect.map.positionAt(row, rect.left, rect.table);
+          if (row == rect.top) pos += cellNode.nodeSize;
+          for (let col = rect.left, i = 0; col < rect.right; col++, i++) {
+            if (col == rect.left && row == rect.top) continue;
+            tr.insert(
+              (lastCell = tr.mapping.map(pos + rect.tableStart, 1)),
+              getCellType({ node: cellNode, row, col }).createAndFill(attrs[i]),
+            );
+          }
+        }
+        tr.setNodeMarkup(
+          cellPos,
+          getCellType({ node: cellNode, row: rect.top, col: rect.left }),
+          attrs[0],
+        );
+        if (sel instanceof CellSelection)
+          tr.setSelection(
+            new CellSelection(
+              tr.doc.resolve(sel.$anchorCell.pos),
+              lastCell && tr.doc.resolve(lastCell),
+            ),
+          );
+        dispatch(tr);
+      }
+      return true;
+    };
+  }
+
+  // :: (string, any) → (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Returns a command that sets the given attribute to the given value,
+  // and is only available when the currently selected cell doesn't
+  // already have that attribute set to that value.
+  function setCellAttr(name, value) {
+    return function (state, dispatch) {
+      if (!isInTable(state)) return false;
+      let $cell = selectionCell(state);
+      if ($cell.nodeAfter.attrs[name] === value) return false;
+      if (dispatch) {
+        let tr = state.tr;
+        if (state.selection instanceof CellSelection)
+          state.selection.forEachCell((node, pos) => {
+            if (node.attrs[name] !== value)
+              tr.setNodeMarkup(pos, null, setAttr(node.attrs, name, value));
+          });
+        else
+          tr.setNodeMarkup(
+            $cell.pos,
+            null,
+            setAttr($cell.nodeAfter.attrs, name, value),
+          );
+        dispatch(tr);
+      }
+      return true;
+    };
+  }
+
+  function deprecated_toggleHeader(type) {
+    return function (state, dispatch) {
+      if (!isInTable(state)) return false;
+      if (dispatch) {
+        let types = tableNodeTypes(state.schema);
+        let rect = selectedRect(state),
+          tr = state.tr;
+        let cells = rect.map.cellsInRect(
+          type == 'column'
+            ? new Rect(rect.left, 0, rect.right, rect.map.height)
+            : type == 'row'
+            ? new Rect(0, rect.top, rect.map.width, rect.bottom)
+            : rect,
+        );
+        let nodes = cells.map((pos) => rect.table.nodeAt(pos));
+        for (
+          let i = 0;
+          i < cells.length;
+          i++ // Remove headers, if any
+        )
+          if (nodes[i].type == types.header_cell)
+            tr.setNodeMarkup(
+              rect.tableStart + cells[i],
+              types.cell,
+              nodes[i].attrs,
+            );
+        if (tr.steps.length == 0)
+          for (
+            let i = 0;
+            i < cells.length;
+            i++ // No headers removed, add instead
+          )
+            tr.setNodeMarkup(
+              rect.tableStart + cells[i],
+              types.header_cell,
+              nodes[i].attrs,
+            );
+        dispatch(tr);
+      }
+      return true;
+    };
+  }
+
+  function isHeaderEnabledByType(type, rect, types) {
+    // Get cell positions for first row or first column
+    const cellPositions = rect.map.cellsInRect({
+      left: 0,
+      top: 0,
+      right: type == 'row' ? rect.map.width : 1,
+      bottom: type == 'column' ? rect.map.height : 1,
+    });
+
+    for (let i = 0; i < cellPositions.length; i++) {
+      const cell = rect.table.nodeAt(cellPositions[i]);
+      if (cell && cell.type !== types.header_cell) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  // :: (string, ?{ useDeprecatedLogic: bool }) → (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Toggles between row/column header and normal cells (Only applies to first row/column).
+  // For deprecated behavior pass `useDeprecatedLogic` in options with true.
+  function toggleHeader(type, options) {
+    options = options || { useDeprecatedLogic: false };
+
+    if (options.useDeprecatedLogic) return deprecated_toggleHeader(type);
+
+    return function (state, dispatch) {
+      if (!isInTable(state)) return false;
+      if (dispatch) {
+        let types = tableNodeTypes(state.schema);
+        let rect = selectedRect(state),
+          tr = state.tr;
+
+        let isHeaderRowEnabled = isHeaderEnabledByType('row', rect, types);
+        let isHeaderColumnEnabled = isHeaderEnabledByType('column', rect, types);
+
+        let isHeaderEnabled =
+          type === 'column'
+            ? isHeaderRowEnabled
+            : type === 'row'
+            ? isHeaderColumnEnabled
+            : false;
+
+        let selectionStartsAt = isHeaderEnabled ? 1 : 0;
+
+        let cellsRect =
+          type == 'column'
+            ? new Rect(0, selectionStartsAt, 1, rect.map.height)
+            : type == 'row'
+            ? new Rect(selectionStartsAt, 0, rect.map.width, 1)
+            : rect;
+
+        let newType =
+          type == 'column'
+            ? isHeaderColumnEnabled
+              ? types.cell
+              : types.header_cell
+            : type == 'row'
+            ? isHeaderRowEnabled
+              ? types.cell
+              : types.header_cell
+            : types.cell;
+
+        rect.map.cellsInRect(cellsRect).forEach((relativeCellPos) => {
+          const cellPos = relativeCellPos + rect.tableStart;
+          const cell = tr.doc.nodeAt(cellPos);
+
+          if (cell) {
+            tr.setNodeMarkup(cellPos, newType, cell.attrs);
+          }
+        });
+
+        dispatch(tr);
+      }
+      return true;
+    };
+  }
+
+  // :: (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Toggles whether the selected row contains header cells.
+  let toggleHeaderRow = toggleHeader('row', { useDeprecatedLogic: true });
+
+  // :: (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Toggles whether the selected column contains header cells.
+  let toggleHeaderColumn = toggleHeader('column', {
+    useDeprecatedLogic: true,
+  });
+
+  // :: (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Toggles whether the selected cells are header cells.
+  let toggleHeaderCell = toggleHeader('cell', {
+    useDeprecatedLogic: true,
+  });
+
+  function findNextCell($cell, dir) {
+    if (dir < 0) {
+      let before = $cell.nodeBefore;
+      if (before) return $cell.pos - before.nodeSize;
+      for (
+        let row = $cell.index(-1) - 1, rowEnd = $cell.before();
+        row >= 0;
+        row--
+      ) {
+        let rowNode = $cell.node(-1).child(row);
+        if (rowNode.childCount) return rowEnd - 1 - rowNode.lastChild.nodeSize;
+        rowEnd -= rowNode.nodeSize;
+      }
+    } else {
+      if ($cell.index() < $cell.parent.childCount - 1)
+        return $cell.pos + $cell.nodeAfter.nodeSize;
+      let table = $cell.node(-1);
+      for (
+        let row = $cell.indexAfter(-1), rowStart = $cell.after();
+        row < table.childCount;
+        row++
+      ) {
+        let rowNode = table.child(row);
+        if (rowNode.childCount) return rowStart + 1;
+        rowStart += rowNode.nodeSize;
+      }
+    }
+  }
+
+  // :: (number) → (EditorState, dispatch: ?(tr: Transaction)) → bool
+  // Returns a command for selecting the next (direction=1) or previous
+  // (direction=-1) cell in a table.
+  function goToNextCell(direction) {
+    return function (state, dispatch) {
+      if (!isInTable(state)) return false;
+      let cell = findNextCell(selectionCell(state), direction);
+      if (cell == null) return;
+      if (dispatch) {
+        let $cell = state.doc.resolve(cell);
+        dispatch(
+          state.tr
+            .setSelection(TextSelection.between($cell, moveCellForward($cell)))
+            .scrollIntoView(),
+        );
+      }
+      return true;
+    };
+  }
+
+  // :: (EditorState, ?(tr: Transaction)) → bool
+  // Deletes the table around the selection, if any.
+  function deleteTable(state, dispatch) {
+    let $pos = state.selection.$anchor;
+    for (let d = $pos.depth; d > 0; d--) {
+      let node = $pos.node(d);
+      if (node.type.spec.tableRole == 'table') {
+        if (dispatch)
+          dispatch(
+            state.tr.delete($pos.before(d), $pos.after(d)).scrollIntoView(),
+          );
+        return true;
+      }
+    }
+    return false;
+  }
+
+  class TableView {
+    constructor(node, cellMinWidth) {
+      this.node = node;
+      this.cellMinWidth = cellMinWidth;
+      this.dom = document.createElement('div');
+      this.dom.className = 'tableWrapper';
+      this.table = this.dom.appendChild(document.createElement('table'));
+      this.colgroup = this.table.appendChild(document.createElement('colgroup'));
+      updateColumns(node, this.colgroup, this.table, cellMinWidth);
+      this.contentDOM = this.table.appendChild(document.createElement('tbody'));
+    }
+
+    update(node) {
+      if (node.type != this.node.type) return false;
+      this.node = node;
+      updateColumns(node, this.colgroup, this.table, this.cellMinWidth);
+      return true;
+    }
+
+    ignoreMutation(record) {
+      return (
+        record.type == 'attributes' &&
+        (record.target == this.table || this.colgroup.contains(record.target))
+      );
+    }
+  }
+
+  function updateColumns(
+    node,
+    colgroup,
+    table,
+    cellMinWidth,
+    overrideCol,
+    overrideValue,
+  ) {
+    let totalWidth = 0,
+      fixedWidth = true;
+    let nextDOM = colgroup.firstChild,
+      row = node.firstChild;
+    for (let i = 0, col = 0; i < row.childCount; i++) {
+      let { colspan, colwidth } = row.child(i).attrs;
+      for (let j = 0; j < colspan; j++, col++) {
+        let hasWidth =
+          overrideCol == col ? overrideValue : colwidth && colwidth[j];
+        let cssWidth = hasWidth ? hasWidth + 'px' : '';
+        totalWidth += hasWidth || cellMinWidth;
+        if (!hasWidth) fixedWidth = false;
+        if (!nextDOM) {
+          colgroup.appendChild(document.createElement('col')).style.width =
+            cssWidth;
+        } else {
+          if (nextDOM.style.width != cssWidth) nextDOM.style.width = cssWidth;
+          nextDOM = nextDOM.nextSibling;
+        }
+      }
+    }
+
+    while (nextDOM) {
+      let after = nextDOM.nextSibling;
+      nextDOM.parentNode.removeChild(nextDOM);
+      nextDOM = after;
+    }
+
+    if (fixedWidth) {
+      table.style.width = totalWidth + 'px';
+      table.style.minWidth = '';
+    } else {
+      table.style.width = '';
+      table.style.minWidth = totalWidth + 'px';
+    }
+  }
+
+  const key = new PluginKey('tableColumnResizing');
+
+  function columnResizing({
+    handleWidth = 5,
+    cellMinWidth = 25,
+    View = TableView,
+    lastColumnResizable = true,
+  } = {}) {
+    let plugin = new Plugin({
+      key,
+      state: {
+        init(_, state) {
+          this.spec.props.nodeViews[tableNodeTypes(state.schema).table.name] = (
+            node,
+            view,
+          ) => new View(node, cellMinWidth, view);
+          return new ResizeState(-1, false);
+        },
+        apply(tr, prev) {
+          return prev.apply(tr);
+        },
+      },
+      props: {
+        attributes(state) {
+          let pluginState = key.getState(state);
+          return pluginState.activeHandle > -1
+            ? { class: 'resize-cursor' }
+            : null;
+        },
+
+        handleDOMEvents: {
+          mousemove(view, event) {
+            handleMouseMove(
+              view,
+              event,
+              handleWidth,
+              cellMinWidth,
+              lastColumnResizable,
+            );
+          },
+          mouseleave(view) {
+            handleMouseLeave(view);
+          },
+          mousedown(view, event) {
+            handleMouseDown(view, event, cellMinWidth);
+          },
+        },
+
+        decorations(state) {
+          let pluginState = key.getState(state);
+          if (pluginState.activeHandle > -1)
+            return handleDecorations(state, pluginState.activeHandle);
+        },
+
+        nodeViews: {},
+      },
+    });
+    return plugin;
+  }
+
+  class ResizeState {
+    constructor(activeHandle, dragging) {
+      this.activeHandle = activeHandle;
+      this.dragging = dragging;
+    }
+
+    apply(tr) {
+      let state = this,
+        action = tr.getMeta(key);
+      if (action && action.setHandle != null)
+        return new ResizeState(action.setHandle, null);
+      if (action && action.setDragging !== undefined)
+        return new ResizeState(state.activeHandle, action.setDragging);
+      if (state.activeHandle > -1 && tr.docChanged) {
+        let handle = tr.mapping.map(state.activeHandle, -1);
+        if (!pointsAtCell(tr.doc.resolve(handle))) handle = null;
+        state = new ResizeState(handle, state.dragging);
+      }
+      return state;
+    }
+  }
+
+  function handleMouseMove(
+    view,
+    event,
+    handleWidth,
+    cellMinWidth,
+    lastColumnResizable,
+  ) {
+    let pluginState = key.getState(view.state);
+
+    if (!pluginState.dragging) {
+      let target = domCellAround(event.target),
+        cell = -1;
+      if (target) {
+        let { left, right } = target.getBoundingClientRect();
+        if (event.clientX - left <= handleWidth)
+          cell = edgeCell(view, event, 'left');
+        else if (right - event.clientX <= handleWidth)
+          cell = edgeCell(view, event, 'right');
+      }
+
+      if (cell != pluginState.activeHandle) {
+        if (!lastColumnResizable && cell !== -1) {
+          let $cell = view.state.doc.resolve(cell);
+          let table = $cell.node(-1),
+            map = TableMap.get(table),
+            start = $cell.start(-1);
+          let col =
+            map.colCount($cell.pos - start) + $cell.nodeAfter.attrs.colspan - 1;
+
+          if (col == map.width - 1) {
+            return;
+          }
+        }
+
+        updateHandle(view, cell);
+      }
+    }
+  }
+
+  function handleMouseLeave(view) {
+    let pluginState = key.getState(view.state);
+    if (pluginState.activeHandle > -1 && !pluginState.dragging)
+      updateHandle(view, -1);
+  }
+
+  function handleMouseDown(view, event, cellMinWidth) {
+    let pluginState = key.getState(view.state);
+    if (pluginState.activeHandle == -1 || pluginState.dragging) return false;
+
+    let cell = view.state.doc.nodeAt(pluginState.activeHandle);
+    let width = currentColWidth(view, pluginState.activeHandle, cell.attrs);
+    view.dispatch(
+      view.state.tr.setMeta(key, {
+        setDragging: { startX: event.clientX, startWidth: width },
+      }),
+    );
+
+    function finish(event) {
+      window.removeEventListener('mouseup', finish);
+      window.removeEventListener('mousemove', move);
+      let pluginState = key.getState(view.state);
+      if (pluginState.dragging) {
+        updateColumnWidth(
+          view,
+          pluginState.activeHandle,
+          draggedWidth(pluginState.dragging, event, cellMinWidth),
+        );
+        view.dispatch(view.state.tr.setMeta(key, { setDragging: null }));
+      }
+    }
+    function move(event) {
+      if (!event.which) return finish(event);
+      let pluginState = key.getState(view.state);
+      let dragged = draggedWidth(pluginState.dragging, event, cellMinWidth);
+      displayColumnWidth(view, pluginState.activeHandle, dragged, cellMinWidth);
+    }
+
+    window.addEventListener('mouseup', finish);
+    window.addEventListener('mousemove', move);
+    event.preventDefault();
+    return true;
+  }
+
+  function currentColWidth(view, cellPos, { colspan, colwidth }) {
+    let width = colwidth && colwidth[colwidth.length - 1];
+    if (width) return width;
+    let dom = view.domAtPos(cellPos);
+    let node = dom.node.childNodes[dom.offset];
+    let domWidth = node.offsetWidth,
+      parts = colspan;
+    if (colwidth)
+      for (let i = 0; i < colspan; i++)
+        if (colwidth[i]) {
+          domWidth -= colwidth[i];
+          parts--;
+        }
+    return domWidth / parts;
+  }
+
+  function domCellAround(target) {
+    while (target && target.nodeName != 'TD' && target.nodeName != 'TH')
+      target =
+        target.classList && target.classList.contains('ProseMirror')
+          ? null
+          : target.parentNode;
+    return target;
+  }
+
+  function edgeCell(view, event, side) {
+    let found = view.posAtCoords({ left: event.clientX, top: event.clientY });
+    if (!found) return -1;
+    let { pos } = found;
+    let $cell = cellAround(view.state.doc.resolve(pos));
+    if (!$cell) return -1;
+    if (side == 'right') return $cell.pos;
+    let map = TableMap.get($cell.node(-1)),
+      start = $cell.start(-1);
+    let index = map.map.indexOf($cell.pos - start);
+    return index % map.width == 0 ? -1 : start + map.map[index - 1];
+  }
+
+  function draggedWidth(dragging, event, cellMinWidth) {
+    let offset = event.clientX - dragging.startX;
+    return Math.max(cellMinWidth, dragging.startWidth + offset);
+  }
+
+  function updateHandle(view, value) {
+    view.dispatch(view.state.tr.setMeta(key, { setHandle: value }));
+  }
+
+  function updateColumnWidth(view, cell, width) {
+    let $cell = view.state.doc.resolve(cell);
+    let table = $cell.node(-1),
+      map = TableMap.get(table),
+      start = $cell.start(-1);
+    let col = map.colCount($cell.pos - start) + $cell.nodeAfter.attrs.colspan - 1;
+    let tr = view.state.tr;
+    for (let row = 0; row < map.height; row++) {
+      let mapIndex = row * map.width + col;
+      // Rowspanning cell that has already been handled
+      if (row && map.map[mapIndex] == map.map[mapIndex - map.width]) continue;
+      let pos = map.map[mapIndex],
+        { attrs } = table.nodeAt(pos);
+      let index = attrs.colspan == 1 ? 0 : col - map.colCount(pos);
+      if (attrs.colwidth && attrs.colwidth[index] == width) continue;
+      let colwidth = attrs.colwidth
+        ? attrs.colwidth.slice()
+        : zeroes(attrs.colspan);
+      colwidth[index] = width;
+      tr.setNodeMarkup(start + pos, null, setAttr(attrs, 'colwidth', colwidth));
+    }
+    if (tr.docChanged) view.dispatch(tr);
+  }
+
+  function displayColumnWidth(view, cell, width, cellMinWidth) {
+    let $cell = view.state.doc.resolve(cell);
+    let table = $cell.node(-1),
+      start = $cell.start(-1);
+    let col =
+      TableMap.get(table).colCount($cell.pos - start) +
+      $cell.nodeAfter.attrs.colspan -
+      1;
+    let dom = view.domAtPos($cell.start(-1)).node;
+    while (dom.nodeName != 'TABLE') dom = dom.parentNode;
+    updateColumns(table, dom.firstChild, dom, cellMinWidth, col, width);
+  }
+
+  function zeroes(n) {
+    let result = [];
+    for (let i = 0; i < n; i++) result.push(0);
+    return result;
+  }
+
+  function handleDecorations(state, cell) {
+    let decorations = [];
+    let $cell = state.doc.resolve(cell);
+    let table = $cell.node(-1);
+    if (!table) {
+      return DecorationSet.empty;
+    }
+    let map = TableMap.get(table);
+    let start = $cell.start(-1);
+    let col = map.colCount($cell.pos - start) + $cell.nodeAfter.attrs.colspan;
+    for (let row = 0; row < map.height; row++) {
+      let index = col + row * map.width - 1;
+      // For positions that are have either a different cell or the end
+      // of the table to their right, and either the top of the table or
+      // a different cell above them, add a decoration
+      if (
+        (col == map.width || map.map[index] != map.map[index + 1]) &&
+        (row == 0 || map.map[index - 1] != map.map[index - 1 - map.width])
+      ) {
+        let cellPos = map.map[index];
+        let pos = start + cellPos + table.nodeAt(cellPos).nodeSize - 1;
+        let dom = document.createElement('div');
+        dom.className = 'column-resize-handle';
+        decorations.push(Decoration.widget(pos, dom));
+      }
+    }
+    return DecorationSet.create(state.doc, decorations);
+  }
+
+  // This file defines a plugin that handles the drawing of cell
+
+  // :: () → Plugin
+  //
+  // Creates a [plugin](http://prosemirror.net/docs/ref/#state.Plugin)
+  // that, when added to an editor, enables cell-selection, handles
+  // cell-based copy/paste, and makes sure tables stay well-formed (each
+  // row has the same width, and cells don't overlap).
+  //
+  // You should probably put this plugin near the end of your array of
+  // plugins, since it handles mouse and arrow key events in tables
+  // rather broadly, and other plugins, like the gap cursor or the
+  // column-width dragging plugin, might want to get a turn first to
+  // perform more specific behavior.
+  function tableEditing({ allowTableNodeSelection = false } = {}) {
+    return new Plugin({
+      key: key$1,
+
+      // This piece of state is used to remember when a mouse-drag
+      // cell-selection is happening, so that it can continue even as
+      // transactions (which might move its anchor cell) come in.
+      state: {
+        init() {
+          return null;
+        },
+        apply(tr, cur) {
+          let set = tr.getMeta(key$1);
+          if (set != null) return set == -1 ? null : set;
+          if (cur == null || !tr.docChanged) return cur;
+          let { deleted, pos } = tr.mapping.mapResult(cur);
+          return deleted ? null : pos;
+        },
+      },
+
+      props: {
+        decorations: drawCellSelection,
+
+        handleDOMEvents: {
+          mousedown: handleMouseDown$1,
+        },
+
+        createSelectionBetween(view) {
+          if (key$1.getState(view.state) != null)
+            return view.state.selection;
+        },
+
+        handleTripleClick,
+
+        handleKeyDown,
+
+        handlePaste,
+      },
+
+      appendTransaction(_, oldState, state) {
+        return normalizeSelection(
+          state,
+          fixTables(state, oldState),
+          allowTableNodeSelection,
+        );
+      },
+    });
+  }
+
+  var index = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    CellSelection: CellSelection,
+    TableMap: TableMap,
+    TableView: TableView,
+    __clipCells: clipCells,
+    __insertCells: insertCells,
+    __pastedCells: pastedCells,
+    addColSpan: addColSpan,
+    addColumn: addColumn,
+    addColumnAfter: addColumnAfter,
+    addColumnBefore: addColumnBefore,
+    addRow: addRow,
+    addRowAfter: addRowAfter,
+    addRowBefore: addRowBefore,
+    cellAround: cellAround,
+    colCount: colCount,
+    columnIsHeader: columnIsHeader,
+    columnResizing: columnResizing,
+    columnResizingPluginKey: key,
+    deleteColumn: deleteColumn,
+    deleteRow: deleteRow,
+    deleteTable: deleteTable,
+    findCell: findCell,
+    fixTables: fixTables,
+    fixTablesKey: fixTablesKey,
+    goToNextCell: goToNextCell,
+    handlePaste: handlePaste,
+    inSameTable: inSameTable,
+    isInTable: isInTable,
+    mergeCells: mergeCells,
+    moveCellForward: moveCellForward,
+    nextCell: nextCell,
+    pointsAtCell: pointsAtCell,
+    removeColSpan: removeColSpan,
+    removeColumn: removeColumn,
+    removeRow: removeRow,
+    rowIsHeader: rowIsHeader,
+    selectedRect: selectedRect,
+    selectionCell: selectionCell,
+    setAttr: setAttr,
+    setCellAttr: setCellAttr,
+    splitCell: splitCell,
+    splitCellWithType: splitCellWithType,
+    tableEditing: tableEditing,
+    tableEditingKey: key$1,
+    tableNodeTypes: tableNodeTypes,
+    tableNodes: tableNodes,
+    toggleHeader: toggleHeader,
+    toggleHeaderCell: toggleHeaderCell,
+    toggleHeaderColumn: toggleHeaderColumn,
+    toggleHeaderRow: toggleHeaderRow,
+    updateColumnsOnResize: updateColumns
+  });
 
   /** @module prosemirror */
 
@@ -21758,13 +21031,10 @@ var ProseMirror = (function (exports) {
     keyMaps: ProseMirrorKeyMaps.build(schema),
     menu: ProseMirrorMenu.build(schema),
     isDirty: ProseMirrorDirtyPlugin.build(schema),
-    clickHandler: ProseMirrorClickHandler.build(schema),
-    pasteTransformer: ProseMirrorPasteTransformer.build(schema),
     baseKeyMap: keymap(baseKeymap),
     dropCursor: dropCursor(),
     gapCursor: gapCursor(),
     history: history(),
-    columnResizing: columnResizing(),
     tables: tableEditing()
   };
 
@@ -21774,11 +21044,8 @@ var ProseMirror = (function (exports) {
   exports.EditorState = EditorState;
   exports.EditorView = EditorView;
   exports.Plugin = Plugin;
-  exports.PluginKey = PluginKey;
-  exports.ProseMirrorClickHandler = ProseMirrorClickHandler;
   exports.ProseMirrorContentLinkPlugin = ProseMirrorContentLinkPlugin;
   exports.ProseMirrorDirtyPlugin = ProseMirrorDirtyPlugin;
-  exports.ProseMirrorHighlightMatchesPlugin = ProseMirrorHighlightMatchesPlugin;
   exports.ProseMirrorImagePlugin = ProseMirrorImagePlugin;
   exports.ProseMirrorInputRules = ProseMirrorInputRules;
   exports.ProseMirrorKeyMaps = ProseMirrorKeyMaps;
@@ -21787,7 +21054,7 @@ var ProseMirror = (function (exports) {
   exports.Schema = Schema;
   exports.Step = Step;
   exports.TextSelection = TextSelection;
-  exports.collab = index;
+  exports.collab = index$1;
   exports.commands = index$3;
   exports.defaultPlugins = defaultPlugins;
   exports.defaultSchema = schema;
@@ -21795,9 +21062,10 @@ var ProseMirror = (function (exports) {
   exports.input = index$4;
   exports.keymap = keymap;
   exports.list = index$2;
-  exports.state = index$5;
-  exports.tables = index$1;
-  exports.transform = index$6;
+  exports.tables = index;
+  exports.transform = index$5;
+
+  Object.defineProperty(exports, '__esModule', { value: true });
 
   return exports;
 

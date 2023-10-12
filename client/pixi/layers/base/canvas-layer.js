@@ -25,8 +25,7 @@ class CanvasLayer extends PIXI.Container {
    */
   static get layerOptions() {
     return {
-      name: "",
-      baseClass: CanvasLayer
+      name: ""
     };
   }
 
@@ -43,26 +42,11 @@ class CanvasLayer extends PIXI.Container {
   /* -------------------------------------------- */
 
   /**
-   * The canonical name of the CanvasLayer is the name of the constructor that is the immediate child of the
-   * defined baseClass for the layer type.
+   * The canonical name of the CanvasLayer
    * @type {string}
-   *
-   * @example
-   * canvas.lighting.name -> "LightingLayer"
-   * canvas.grid.name -> "GridLayer"
    */
   get name() {
-    const baseCls = this.constructor.layerOptions.baseClass;
-    let cls = Object.getPrototypeOf(this.constructor);
-    let name = this.constructor.name;
-    while ( cls ) {
-      if ( cls !== baseCls ) {
-        name = cls.name;
-        cls = Object.getPrototypeOf(cls);
-      }
-      else break;
-    }
-    return name;
+    return this.constructor.name;
   }
 
   /* -------------------------------------------- */

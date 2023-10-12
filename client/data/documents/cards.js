@@ -117,6 +117,20 @@ class Cards extends ClientDocumentMixin(foundry.documents.BaseCards) {
       else toDelete.push(card.id);
     }
 
+    /**
+     * A hook event that fires when Cards are dealt from a deck to other hands
+     * @function dealCards
+     * @memberof hookEvents
+     * @param {Cards} origin                The origin Cards document
+     * @param {Cards[]} destinations        An array of destination Cards documents
+     * @param {object} context              Additional context which describes the operation
+     * @param {string} context.action       The action name being performed, i.e. "deal", "pass"
+     * @param {Array<object[]>} context.toCreate   An array of Card creation operations to be performed in each
+     *                                        destination Cards document
+     * @param {object[]} context.fromUpdate   Card update operations to be performed in the origin Cards document
+     * @param {object[]} context.fromDelete   Card deletion operations to be performed in the origin Cards document
+     *
+     */
     const allowed = Hooks.call("dealCards", this, to, {
       action: action,
       toCreate: toCreate,
@@ -203,6 +217,20 @@ class Cards extends ClientDocumentMixin(foundry.documents.BaseCards) {
       else if ( !card.isHome ) fromDelete.push(card.id);
     }
 
+    /**
+     * A hook event that fires when Cards are passed from one stack to another
+     * @function passCards
+     * @memberof hookEvents
+     * @param {Cards} origin                The origin Cards document
+     * @param {Cards} destination           The destination Cards document
+     * @param {object} context              Additional context which describes the operation
+     * @param {string} context.action       The action name being performed, i.e. "pass", "play", "discard", "draw"
+     * @param {object[]} context.toCreate     Card creation operations to be performed in the destination Cards document
+     * @param {object[]} context.toUpdate     Card update operations to be performed in the destination Cards document
+     * @param {object[]} context.fromUpdate   Card update operations to be performed in the origin Cards document
+     * @param {object[]} context.fromDelete   Card deletion operations to be performed in the origin Cards document
+     *
+     */
     const allowed = Hooks.call("passCards", this, to, {action, toCreate, toUpdate, fromUpdate, fromDelete});
     if ( allowed === false ) {
       console.debug(`${vtt} | The Cards#pass operation was prevented by a hooked function`);
@@ -351,7 +379,7 @@ class Cards extends ClientDocumentMixin(foundry.documents.BaseCards) {
     const toUpdate = {};
     const fromDelete = [];
     for ( const card of this.cards ) {
-      if ( card.isHome || !card.origin ) continue;
+      if ( card.isHome ) continue;
 
       // Return drawn cards to their origin deck.
       if ( !toUpdate[card.origin.id] ) toUpdate[card.origin.id] = [];
@@ -362,6 +390,18 @@ class Cards extends ClientDocumentMixin(foundry.documents.BaseCards) {
       fromDelete.push(card.id);
     }
 
+    /**
+     * A hook event that fires when a stack of Cards are returned to the decks they originally came from.
+     * @function returnCards
+     * @memberof hookEvents
+     * @param {Cards} origin                               The origin Cards document.
+     * @param {Card[]} returned                            The cards being returned.
+     * @param {object} context                             Additional context which describes the operation.
+     * @param {Object<string, object[]>} context.toUpdate  A mapping of Card deck IDs to the update operations that
+     *                                                     will be performed on them.
+     * @param {object[]} context.fromDelete                Card deletion operations to be performed on the origin Cards
+     *                                                     document.
+     */
     const allowed = Hooks.call("returnCards", this, fromDelete.map(id => this.cards.get(id)), {toUpdate, fromDelete});
     if ( allowed === false ) {
       console.debug(`${vtt} | The Cards#return operation was prevented by a hooked function.`);
@@ -465,7 +505,7 @@ class Cards extends ClientDocumentMixin(foundry.documents.BaseCards) {
       </div>`
     };
     ChatMessage.applyRollMode(messageData, game.settings.get("core", "rollMode"));
-    return ChatMessage.implementation.create(messageData);
+    return ChatMessage.create(messageData);
   }
 
   /* -------------------------------------------- */
@@ -707,8 +747,8 @@ class Cards extends ClientDocumentMixin(foundry.documents.BaseCards) {
   static async createDialog(data={}, {parent=null, pack=null, ...options}={}) {
 
     // Collect data
-    const types = game.documentTypes[this.documentName].filter(t => t !== CONST.BASE_DOCUMENT_TYPE);
-    const folders = parent ? [] : game.cards._formatFolderSelectOptions();
+    const types = game.documentTypes[this.documentName];
+    const folders = parent ? [] : game.folders.filter(f => (f.type === this.documentName) && f.displayed);
     const label = game.i18n.localize(this.metadata.label);
     const title = game.i18n.format("DOCUMENT.Create", {type: label});
 

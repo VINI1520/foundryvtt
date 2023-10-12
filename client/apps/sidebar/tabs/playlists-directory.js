@@ -1,8 +1,8 @@
 /**
  * The sidebar directory which organizes and displays world-level Playlist documents.
- * @extends {DocumentDirectory}
+ * @extends {SidebarDirectory}
  */
-class PlaylistDirectory extends DocumentDirectory {
+class PlaylistDirectory extends SidebarDirectory {
   constructor(options) {
     super(options);
 
@@ -17,7 +17,7 @@ class PlaylistDirectory extends DocumentDirectory {
      * @type {boolean}
      * @private
      */
-    this._volumeExpanded = true;
+    this._volumeExpanded = false;
 
     /**
      * Cache the set of Playlist documents that are displayed as playing when the directory is rendered
@@ -48,7 +48,7 @@ class PlaylistDirectory extends DocumentDirectory {
   static documentName = "Playlist";
 
   /** @override */
-  static entryPartial = "templates/sidebar/partials/playlist-partial.html";
+  static documentPartial = "templates/sidebar/playlist-partial.html";
 
   /* -------------------------------------------- */
 
@@ -107,18 +107,15 @@ class PlaylistDirectory extends DocumentDirectory {
     this._playingPlaylists = [];
     this._playingSounds = [];
     this._playingSoundsData = [];
-    this._prepareTreeData(this.collection.tree);
+    this._prepareTreeData(this.tree);
     const data = await super.getData(options);
     const currentAtTop = this._playingLocation === "top";
     return foundry.utils.mergeObject(data, {
       playingSounds: this._playingSoundsData,
       showPlaying: this._playingSoundsData.length > 0,
       playlistModifier: AudioHelper.volumeToInput(game.settings.get("core", "globalPlaylistVolume")),
-      playlistTooltip: PlaylistDirectory.volumeToTooltip(game.settings.get("core", "globalPlaylistVolume")),
       ambientModifier: AudioHelper.volumeToInput(game.settings.get("core", "globalAmbientVolume")),
-      ambientTooltip: PlaylistDirectory.volumeToTooltip(game.settings.get("core", "globalAmbientVolume")),
       interfaceModifier: AudioHelper.volumeToInput(game.settings.get("core", "globalInterfaceVolume")),
-      interfaceTooltip: PlaylistDirectory.volumeToTooltip(game.settings.get("core", "globalInterfaceVolume")),
       volumeExpanded: this._volumeExpanded,
       currentlyPlaying: {
         class: `location-${currentAtTop ? "top" : "bottom"}`,
@@ -131,23 +128,12 @@ class PlaylistDirectory extends DocumentDirectory {
   /* -------------------------------------------- */
 
   /**
-   * Converts a volume level to a human-friendly % value
-   * @param {number} volume         Value between [0, 1] of the volume level
-   * @returns {string}
-   */
-  static volumeToTooltip(volume) {
-    return game.i18n.format("PLAYLIST.VolumeTooltip", { volume: Math.round(AudioHelper.volumeToInput(volume) * 100) });
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * Augment the tree directory structure with playlist-level data objects for rendering
    * @param {object} node   The tree leaf node being prepared
    * @private
    */
   _prepareTreeData(node) {
-    node.entries = node.entries.map(p => this._preparePlaylistData(p));
+    node.documents = node.documents.map(p => this._preparePlaylistData(p));
     for ( const child of node.children ) this._prepareTreeData(child);
   }
 
@@ -191,7 +177,6 @@ class PlaylistDirectory extends DocumentDirectory {
         s.isPaused = !sound.playing && s.pausedTime;
         s.pauseIcon = this._getPauseIcon(sound);
         s.lvolume = AudioHelper.volumeToInput(s.volume);
-        s.volumeTooltip = this.constructor.volumeToTooltip(s.volume);
         s.currentTime = this._formatTimestamp(sound.playing ? sound.sound.currentTime : s.pausedTime);
         s.durationTime = this._formatTimestamp(sound.sound.duration);
         this._playingSounds.push(sound);
@@ -233,7 +218,7 @@ class PlaylistDirectory extends DocumentDirectory {
   /**
    * Given a constant playback mode, provide the FontAwesome icon used to display it
    * @param {number} mode
-   * @returns {string}
+   * @return {string}
    * @private
    */
   _getModeIcon(mode) {
@@ -250,7 +235,7 @@ class PlaylistDirectory extends DocumentDirectory {
   /**
    * Given a constant playback mode, provide the string tooltip used to describe it
    * @param {number} mode
-   * @returns {string}
+   * @return {string}
    * @private
    */
   _getModeTooltip(mode) {
@@ -271,11 +256,12 @@ class PlaylistDirectory extends DocumentDirectory {
     super.activateListeners(html);
 
     // Volume sliders
-    html.find(".global-volume-slider").change(this._onGlobalVolume.bind(this));
-    html.find(".sound-volume").change(this._onSoundVolume.bind(this));
+    html.find('.global-volume-slider').change(this._onGlobalVolume.bind(this));
+    html.find('.sound-volume').change(this._onSoundVolume.bind(this));
 
     // Collapse/Expand
-    html.find("#global-volume .playlist-header").click(this._onVolumeCollapse.bind(this));
+    html.find(".playlist-name").click(this._onPlaylistCollapse.bind(this));
+    html.find("#global-volume .playlist-header").click(this._onVolumeCollapse.bind(this))
 
     // Currently playing pinning
     html.find("#currently-playing .pin").click(this._onPlayingPin.bind(this));
@@ -323,9 +309,6 @@ class PlaylistDirectory extends DocumentDirectory {
     event.preventDefault();
     const slider = event.currentTarget;
     const volume = AudioHelper.inputToVolume(slider.value);
-    const tooltip = PlaylistDirectory.volumeToTooltip(volume);
-    slider.setAttribute("data-tooltip", tooltip);
-    game.tooltip.activate(slider, {text: tooltip});
     return game.settings.set("core", slider.name, volume);
   }
 
@@ -345,8 +328,13 @@ class PlaylistDirectory extends DocumentDirectory {
 
   /* -------------------------------------------- */
 
-  /** @override */
-  _onClickEntryName(event) {
+  /**
+   * Handle Playlist collapse toggle
+   * @param {MouseEvent} event   The initial click event
+   * @private
+   */
+  _onPlaylistCollapse(event) {
+    event.preventDefault();
     const li = event.currentTarget.closest(".playlist");
     const playlistId = li.dataset.documentId;
     const wasExpanded = this._expanded.has(playlistId);
@@ -491,9 +479,6 @@ class PlaylistDirectory extends DocumentDirectory {
     // Immediately apply a local adjustment
     playlistSound.updateSource({volume});
     playlistSound.sound?.fade(playlistSound.effectiveVolume, {duration: PlaylistSound.VOLUME_DEBOUNCE_MS});
-    const tooltip = PlaylistDirectory.volumeToTooltip(volume);
-    slider.setAttribute("data-tooltip", tooltip);
-    game.tooltip.activate(slider, {text: tooltip});
 
     // Debounce a change to the database
     if ( playlistSound.isOwner ) playlistSound.debounceVolume(volume);
@@ -529,68 +514,59 @@ class PlaylistDirectory extends DocumentDirectory {
     const playlistIds = new Set();
     const soundIds = new Set();
     const folderIds = new Set();
-    const nameOnlySearch = (this.collection.searchMode === CONST.DIRECTORY_SEARCH_MODES.NAME);
 
     // Match documents and folders
-    if ( isSearch ) {
-
-      let results = [];
-      if ( !nameOnlySearch ) results = this.collection.search({query: query});
+    if (isSearch) {
 
       // Match Playlists and Sounds
-      for ( let d of this.documents ) {
+      for (let d of this.documents) {
         let matched = false;
-        for ( let s of d.sounds ) {
-          if ( s.playing || rgx.test(SearchFilter.cleanQuery(s.name)) ) {
-            soundIds.add(s._id);
+        for (let s of d.sounds) {
+          if (s.playing || rgx.test(SearchFilter.cleanQuery(s.name))) {
+            soundIds.add(s.id);
             matched = true;
           }
         }
-        if ( matched || d.playing || ( nameOnlySearch && rgx.test(SearchFilter.cleanQuery(d.name) )
-          || results.some(r => r._id === d._id)) ) {
-          playlistIds.add(d._id);
-          if ( d.folder ) folderIds.add(d.folder._id);
+        if (matched || d.playing || rgx.test(SearchFilter.cleanQuery(d.name))) {
+          playlistIds.add(d.id);
+          if ( d.folder ) folderIds.add(d.folder.id);
         }
       }
 
       // Include parent Folders
-      const folders = this.folders.sort((a, b) => b.depth - a.depth);
-      for ( let f of folders ) {
-        if ( folderIds.has(f.id) && f.folder ) folderIds.add(f.folder._id);
+      const folders = this.folders.sort((a, b) => a.depth - b.depth);
+      for (let f of folders) {
+        if (folderIds.has(f.id) && f.folder) folderIds.add(f.folder.id);
       }
     }
 
     // Toggle each directory item
-    for ( let el of html.querySelectorAll(".directory-item") ) {
-      if ( el.classList.contains("global-volume") ) continue;
+    for (let el of html.querySelectorAll(".directory-item")) {
+      if (el.classList.contains("global-volume")) continue;
 
       // Playlists
-      if ( el.classList.contains("document") ) {
+      if (el.classList.contains("document")) {
         const pid = el.dataset.documentId;
-        let playlistIsMatch = !isSearch || playlistIds.has(pid);
-        el.style.display = playlistIsMatch ? "flex" : "none";
+        let mp = !isSearch || playlistIds.has(pid);
+        el.style.display = mp ? "flex" : "none";
 
         // Sounds
         const sounds = el.querySelector(".playlist-sounds");
-        for ( const li of sounds.children ) {
-          let soundIsMatch = !isSearch || soundIds.has(li.dataset.soundId);
-          li.style.display = soundIsMatch ? "flex" : "none";
-          if ( soundIsMatch ) {
-            playlistIsMatch = true;
-          }
+        for (let li of sounds.children ) {
+          let ms = !isSearch || soundIds.has(li.dataset.soundId);
+          li.style.display = ms ? "flex" : "none";
+          if ( ms ) mp = true;
         }
-        const showExpanded = this._expanded.has(pid) || (isSearch && playlistIsMatch);
+        let showExpanded = this._expanded.has(pid) || (isSearch && mp);
         el.classList.toggle("collapsed", !showExpanded);
       }
 
-
       // Folders
-      else if ( el.classList.contains("folder") ) {
-        const hidden = isSearch && !folderIds.has(el.dataset.folderId);
+      else if (el.classList.contains("folder")) {
+        let hidden = isSearch && !folderIds.has(el.dataset.folderId);
         el.style.display = hidden ? "none" : "flex";
-        const uuid = el.closest("li.folder").dataset.uuid;
-        const expanded = (isSearch && folderIds.has(el.dataset.folderId)) ||
-          (!isSearch && game.folders._expanded[uuid]);
+        let expanded = (isSearch && folderIds.has(el.dataset.folderId)) ||
+          (!isSearch && game.folders._expanded[el.dataset.folderId]);
         el.classList.toggle("collapsed", !expanded);
       }
     }
@@ -636,7 +612,7 @@ class PlaylistDirectory extends DocumentDirectory {
    * @private
    */
   _formatTimestamp(seconds) {
-    if ( !Number.isFinite(seconds) ) return "∞";
+    if ( seconds === Infinity ) return "∞";
     seconds = seconds ?? 0;
     let minutes = Math.floor(seconds / 60);
     seconds = Math.round(seconds % 60);
@@ -676,8 +652,7 @@ class PlaylistDirectory extends DocumentDirectory {
     options.unshift({
       name: "PLAYLIST.Edit",
       icon: '<i class="fas fa-edit"></i>',
-      callback: header => {
-        const li = header.closest(".directory-item");
+      callback: li => {
         const playlist = game.playlists.get(li.data("document-id"));
         const sheet = playlist.sheet;
         sheet.render(true, this.popOut ? {} : {
@@ -685,7 +660,7 @@ class PlaylistDirectory extends DocumentDirectory {
           left: window.innerWidth - ui.sidebar.position.width - sheet.options.width - 10
         });
       }
-    });
+    })
     return options;
   }
 
@@ -693,7 +668,7 @@ class PlaylistDirectory extends DocumentDirectory {
 
   /**
    * Get context menu options for individual sound effects
-   * @returns {Object}   The context options for each sound
+   * @return {Object}   The context options for each sound
    * @private
    */
   _getSoundContextOptions() {

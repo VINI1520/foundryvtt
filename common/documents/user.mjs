@@ -57,17 +57,16 @@ class BaseUser extends Document {
   static defineSchema() {
     return {
       _id: new fields.DocumentIdField(),
-      name: new fields.StringField({required: true, blank: false, textSearch: true}),
+      name: new fields.StringField({required: true, blank: false}),
       role: new fields.NumberField({required: true, choices: Object.values(CONST.USER_ROLES),
         initial: CONST.USER_ROLES.PLAYER, readonly: true}),
-      password: new fields.StringField({required: true, blank: true}),
+      password: new fields.StringField(),
       passwordSalt: new fields.StringField(),
       avatar: new fields.FilePathField({categories: ["IMAGE"]}),
       character: new fields.ForeignDocumentField(BaseActor),
       color: new fields.ColorField({required: true, nullable: false,
         initial: () => Color.fromHSV([Math.random(), 0.8, 0.8]).css
       }),
-      pronouns: new fields.StringField({required: true}),
       hotbar: new fields.ObjectField({required: true, validate: BaseUser.#validateHotbar,
         validationError: "must be a mapping of slots to macro identifiers"}),
       permissions: new fields.ObjectField({required: true, validate: BaseUser.#validatePermissions,
@@ -203,20 +202,15 @@ class BaseUser extends Document {
    * @private
    */
   static #canUpdate(user, doc, changes) {
-    const roles = CONST.USER_ROLES;
-    if ( user.role === roles.GAMEMASTER ) return true; // Full GMs can do everything
-    if ( user.role === roles.NONE ) return false; // Banned users can do nothing
+    if ( user.hasRole(CONST.USER_ROLES.GAMEMASTER) ) return true;
+    const reserved = new Set(["permissions", "name", "passwordSalt"]); // Non-GMs cannot update certain fields.
+    if ( Object.keys(changes).some(k => reserved.has(k)) ) return false;
 
-    // Non-GMs cannot update certain fields.
-    const restricted = ["permissions", "passwordSalt"];
-    if ( user.role < roles.ASSISTANT ) restricted.push("name", "role");
-    if ( doc.role === roles.GAMEMASTER ) restricted.push("password");
-    if ( restricted.some(k => k in changes) ) return false;
+    // Assistant GMs cannot increase the role of other players to eclipse their own
+    if ( ("role" in changes) && (!user.isGM || !user.hasRole(changes.role)) ) return false;
 
-    // Role changes may not escalate
-    if ( ("role" in changes) && !user.hasRole(changes.role) ) return false;
-
-    // Assistant GMs may modify other users. Players may only modify themselves
+    // Users may only change their own password
+    if ( ("password" in changes) && (user.id !== doc.id) ) return false; // A user can only update their own password.
     return user.isGM || (user.id === doc.id);
   }
 

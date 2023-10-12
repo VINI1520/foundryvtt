@@ -1,8 +1,8 @@
 /**
  * The sidebar directory which organizes and displays world-level JournalEntry documents.
- * @extends {DocumentDirectory}
+ * @extends {SidebarDirectory}
  */
-class JournalDirectory extends DocumentDirectory {
+class JournalDirectory extends SidebarDirectory {
 
   /** @override */
   static documentName = "JournalEntry";

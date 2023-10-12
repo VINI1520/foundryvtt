@@ -56,15 +56,11 @@ export function roundDecimals(number, places) {
 }
 
 /**
+ * TODO: Add deprecation in V11 or V12
  * To keep compatibility with previous implementation.
  * roundFast was bugged and the performance advantage was not there.
- * @deprecated since v10
  */
-export const roundFast = value => {
-  const msg = "roundFast is deprecated in favor of Math.round";
-  foundry.utils.logCompatibilityWarning(msg, {since: 10, until: 12});
-  return Math.round(value);
-}
+export const roundFast = Math.round;
 
 /**
  * Transform an angle in radians to a number in degrees
@@ -97,16 +93,5 @@ export function oscillation(minVal, maxVal, t, p = 1, func = Math.cos) {
   return ((maxVal - minVal) * (func((2 * Math.PI * t) / p) + 1) / 2) + minVal;
 }
 
-// Define properties on the Math environment
-Object.defineProperties(Math, {
-  clamped: {value: clamped},
-  mix: {value: mix},
-  normalizeDegrees: {value: normalizeDegrees},
-  normalizeRadians: {value: normalizeRadians},
-  roundDecimals: {value: roundDecimals},
-  roundFast: {value: roundFast},
-  toDegrees: {value: toDegrees},
-  toRadians: {value: toRadians},
-  oscillation: {value: oscillation}
-});
-
+Object.assign(Math, {clamped, mix, normalizeDegrees, normalizeRadians, roundDecimals,
+  roundFast, toDegrees, toRadians, oscillation});

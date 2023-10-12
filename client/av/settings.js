@@ -232,6 +232,13 @@ class AVSettings {
     this.initialize();
     const changed = foundry.utils.diffObject(original, this._original);
     game.webrtc.onSettingsChanged(changed);
+    /**
+     * A hook event that fires when the AV settings are changed.
+     * @function rtcSettingsChanged
+     * @memberof hookEvents
+     * @param {AVSettings} settings The AVSettings manager
+     * @param {object} changed      The delta of the settings that have been changed
+     */
     Hooks.callAll("rtcSettingsChanged", this, changed);
   }
 
@@ -245,10 +252,9 @@ class AVSettings {
   handleUserActivity(userId, settings) {
     const current = this.activity[userId] || {};
     this.activity[userId] = foundry.utils.mergeObject(current, settings, {inplace: false});
-    if ( !ui.webrtc ) return;
     const hiddenChanged = ("hidden" in settings) && (current.hidden !== settings.hidden);
     const mutedChanged = ("muted" in settings) && (current.muted !== settings.muted);
-    if ( (hiddenChanged || mutedChanged) && ui.webrtc.getUserVideoElement(userId) ) ui.webrtc._refreshView(userId);
+    if ( hiddenChanged || mutedChanged ) ui.webrtc.render();
     if ( "speaking" in settings ) ui.webrtc.setUserIsSpeaking(userId, settings.speaking);
   }
 }

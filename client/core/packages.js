@@ -1,13 +1,4 @@
 /**
- * @typedef {Object} PackageCompatibilityBadge
- * @property {string} type        A type in "safe", "unsafe", "warning", "neutral" applied as a CSS class
- * @property {string} tooltip     A tooltip string displayed when hovering over the badge
- * @property {string} [label]     An optional text label displayed in the badge
- * @property {string} [icon]      An optional icon displayed in the badge
- */
-
-
-/**
  * A client-side mixin used for all Package types.
  * @param {typeof BasePackage} BasePackage    The parent BasePackage class being mixed
  * @returns {typeof ClientPackage}            A BasePackage subclass mixed with ClientPackage features
@@ -15,126 +6,34 @@
  */
 function ClientPackageMixin(BasePackage) {
   class ClientPackage extends BasePackage {
-
     /**
-     * Is this package marked as a favorite?
-     * This boolean is currently only populated as true in the /setup view of the software.
-     * @type {boolean}
+     * Associate package availability with certain labels for client-side display.
+     * @returns {{[unavailable]: string, [incompatible]: string}}
      */
-    favorite = false;
-
-    /**
-     * Associate package availability with certain badge for client-side display.
-     * @returns {PackageCompatibilityBadge|null}
-     */
-    getVersionBadge() {
-      return this.constructor.getVersionBadge(this.availability, this);
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * Determine a version badge for the provided compatibility data.
-     * @param {number} availability                The availability level.
-     * @param {Partial<PackageManifestData>} data  The compatibility data.
-     * @returns {PackageCompatibilityBadge|null}
-     */
-    static getVersionBadge(availability, data) {
-      const codes = CONST.PACKAGE_AVAILABILITY_CODES;
-      const { compatibility, version, relationships } = data;
-      switch ( availability ) {
-
-        // Unsafe
-        case codes.UNKNOWN:
-        case codes.REQUIRES_CORE_DOWNGRADE:
-        case codes.REQUIRES_CORE_UPGRADE_STABLE:
-        case codes.REQUIRES_CORE_UPGRADE_UNSTABLE:
-          const labels = {
-            [codes.UNKNOWN]: "SETUP.CompatibilityUnknown",
-            [codes.REQUIRES_CORE_DOWNGRADE]: "SETUP.RequireCoreDowngrade",
-            [codes.REQUIRES_CORE_UPGRADE_STABLE]: "SETUP.RequireCoreUpgrade",
-            [codes.REQUIRES_CORE_UPGRADE_UNSTABLE]: "SETUP.RequireCoreUnstable"
-          };
-          return {
-            type: "error",
-            tooltip: game.i18n.localize(labels[availability]),
-            label: version,
-            icon: "fa fa-file-slash"
-          };
-
-        case codes.MISSING_SYSTEM:
-          return {
-            type: "error",
-            tooltip: game.i18n.format("SETUP.RequireDep", { dependencies: data.system }),
-            label: version,
-            icon: "fa fa-file-slash"
-          };
-
-        case codes.MISSING_DEPENDENCY:
-        case codes.REQUIRES_DEPENDENCY_UPDATE:
-          return {
-            type: "error",
-            label: version,
-            icon: "fa fa-file-slash",
-            tooltip: this._formatBadDependenciesTooltip(availability, data, relationships.requires)
-          };
-
-        // Warning
-        case codes.UNVERIFIED_GENERATION:
-          return {
-            type: "warning",
-            tooltip: game.i18n.format("SETUP.CompatibilityRiskWithVersion", { version: compatibility.verified }),
-            label: version,
-            icon: "fas fa-exclamation-triangle"
-          };
-
-        // Neutral
-        case codes.UNVERIFIED_BUILD:
-          return {
-            type: "neutral",
-            tooltip: game.i18n.format("SETUP.CompatibilityRiskWithVersion", { version: compatibility.verified }),
-            label: version,
-            icon: "fas fa-code-branch"
-          };
-
-        // Safe
-        case codes.VERIFIED:
-          return {
-            type: "success",
-            tooltip: game.i18n.localize("SETUP.Verified"),
-            label: version,
-            icon: "fas fa-code-branch"
-          };
+    getAvailabilityLabels() {
+      const ac = CONST.PACKAGE_AVAILABILITY_CODES;
+      switch (this.availability) {
+        case ac.REQUIRES_SYSTEM:
+          return {unavailable: game.i18n.localize("SETUP.RequireSystem")};
+        case ac.REQUIRES_DEPENDENCY:
+          return {unavailable: game.i18n.localize("SETUP.RequireDep")};
+        case ac.REQUIRES_CORE_DOWNGRADE:
+          return {unavailable: game.i18n.localize("SETUP.RequireCoreDowngrade")};
+        case ac.REQUIRES_CORE_UPGRADE_STABLE:
+          return {unavailable: game.i18n.localize("SETUP.RequireCoreUpgrade")};
+        case ac.REQUIRES_CORE_UPGRADE_UNSTABLE:
+          return {incompatible: game.i18n.localize("SETUP.RequireCoreUnstable")};
+        case ac.REQUIRES_UPDATE:
+          let v = this.compatibility.verified;
+          if ( this.type === "world" ) v ??= game.systems.get(this.system)?.compatibility?.verified;
+          if ( !v ) return {incompatible: game.i18n.format("SETUP.CompatibilityRiskUnknown")};
+          if ( (this.type === "world") && !foundry.utils.isNewerVersion(game.release.generation, v) ) return {};
+          return {incompatible: game.i18n.format("SETUP.CompatibilityRiskWithVersion", {version: v})};
+        case ac.UNKNOWN:
+          return {incompatible: game.i18n.localize("SETUP.CompatibilityUnknown")};
+        default:
+          return {};
       }
-      return null;
-    }
-
-    /* -------------------------------------------- */
-
-    /**
-     * List missing dependencies and format them for display.
-     * @param {number} availability                The availability value.
-     * @param {Partial<PackageManifestData>} data  The compatibility data.
-     * @param {Iterable<RelatedPackage>} deps      The dependencies to format.
-     * @returns {string}
-     * @protected
-     */
-    static _formatBadDependenciesTooltip(availability, data, deps) {
-      const codes = CONST.PACKAGE_AVAILABILITY_CODES;
-      const checked = new Set();
-      const bad = [];
-      for ( const dep of deps ) {
-        if ( (dep.type !== "module") || checked.has(dep.id) ) continue;
-        if ( !game.modules.has(dep.id) ) bad.push(dep.id);
-        else if ( availability === codes.REQUIRES_DEPENDENCY_UPDATE ) {
-          const module = game.modules.get(dep.id);
-          if ( module.availability !== codes.VERIFIED ) bad.push(dep.id);
-        }
-        checked.add(dep.id);
-      }
-      const label = availability === codes.MISSING_DEPENDENCY ? "SETUP.RequireDep" : "SETUP.IncompatibleDep";
-      const formatter = game.i18n.getListFormatter({ style: "short", type: "unit" });
-      return game.i18n.format(label, { dependencies: formatter.format(bad) });
     }
 
     /* ----------------------------------------- */
@@ -154,18 +53,47 @@ function ClientPackageMixin(BasePackage) {
      * When a package has been uninstalled, remove it from the local game data.
      */
     uninstall() {
-      this.constructor.uninstall(this.id);
+      const collection = this.constructor.collection;
+      game.data[collection].findSplice(p => p.id === this.id);
+      game[collection].delete(this.id);
     }
 
     /* -------------------------------------------- */
 
     /**
-     * Remove a package from the local game data when it has been uninstalled.
-     * @param {string} id  The package ID.
+     * Writes the Package migration back to disk. Meant for developers to be able to commit an updated manifest.
+     * @param {boolean} v9Compatible  If true, v9 required fields such as name will be retained
+     * @returns {Promise<void>}
+     *
+     * @example Use a multi-track release workflow that has a v10-only track and want to commit to /v10/manifest.json
+     * ```js
+     * game.modules.get("1000-fish").migrateManifest()
+     * ```
+     * @example You use a single-track release workflow and want to commit to /latest/manifest.json
+     * ```js
+     * game.modules.get("1000-fish").migrateManifest({v9Compatible: true})
+     * ```
      */
-    static uninstall(id) {
-      game.data[this.collection].findSplice(p => p.id === id);
-      game[this.collection].delete(id);
+    async migrateManifest({v9Compatible = false}={}) {
+      if ( game.view !== "setup" ) {
+        throw new Error("You may only migrate package manifests from the /setup view");
+      }
+      const response = await ui.setup._post({
+        action: "migratePackageManifest",
+        type: this.type,
+        id: this.id,
+        v9Compatible
+      });
+      if ( v9Compatible ) {
+        ui.notifications.info(`Wrote migrated package manifest to "${response.path}" with minimum-viable V9
+         compatibility. You may now commit the changes to your main branch, such as /latest/manifest.json.`);
+      }
+      else {
+        ui.notifications.info(`Wrote migrated package manifest to "${response.path}" in a V10-only format. You may 
+        now commit the changes to a branch that does not get read for updates by V9, such as /v10/manifest.json.`);
+      }
+      ui.notifications.warn("If your Package code is both V9 and V10 compatible, you should leave your existing V9"
+        + " fields intact instead of overwriting entirely with this new file.");
     }
 
     /* -------------------------------------------- */
@@ -180,7 +108,7 @@ function ClientPackageMixin(BasePackage) {
      */
     static async fromRemoteManifest(manifest, {strict=false}={}) {
       try {
-        const data = await Setup.post({action: "getPackageFromRemoteManifest", type: this.type, manifest});
+        const data = await ui.setup._post({action: "getPackageFromRemoteManifest", type: this.type, manifest});
         return new this(data, {installed: false, strict: strict});
       }
       catch(e) {
@@ -221,59 +149,8 @@ class System extends ClientPackageMixin(foundry.packages.BaseSystem) {}
  * @mixes ClientPackageMixin
  * @category - Packages
  */
-class World extends ClientPackageMixin(foundry.packages.BaseWorld) {
+class World extends ClientPackageMixin(foundry.packages.BaseWorld) {}
 
-  /** @inheritDoc */
-  static getVersionBadge(availability, data) {
-    const badge = super.getVersionBadge(availability, data);
-    if ( !badge ) return badge;
-    const codes = CONST.PACKAGE_AVAILABILITY_CODES;
-    if ( availability === codes.VERIFIED ) {
-      const system = game.systems.get(data.system);
-      if ( system.availability !== codes.VERIFIED ) badge.type = "neutral";
-    }
-    if ( !data.manifest ) badge.label = "";
-    return badge;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Provide data for a system badge displayed for the world which reflects the system ID and its availability
-   * @returns {PackageCompatibilityBadge|null}
-   */
-  getSystemBadge() {
-    const s = game.systems.get(this.system);
-    if ( !s ) return {
-      type: "unsafe",
-      tooltip: game.i18n.format("SETUP.RequireSystem", { system: this.system }),
-      label: this.system,
-      icon: "fa fa-file-slash"
-    };
-    const badge = s.getVersionBadge();
-    if ( badge.type === "safe" ) {
-      badge.type = "neutral";
-      badge.icon = null;
-    }
-    badge.tooltip = `<p>${s.title}</p><p>${badge.tooltip}</p>`;
-    badge.label = s.id;
-    return badge;
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  static _formatBadDependenciesTooltip(availability, data, deps) {
-    const system = game.systems.get(data.system);
-    if ( system ) deps ??= [...data.relationships.requires.values(), ...system.relationships.requires.values()];
-    return super._formatBadDependenciesTooltip(availability, data, deps);
-  }
-}
-
-/**
- * A mapping of allowed package types and the classes which implement them.
- * @type {{world: World, system: System, module: Module}}
- */
 const PACKAGE_TYPES = {
   world: World,
   system: System,

@@ -50,7 +50,6 @@
   --color-bg-btn-minor-inactive: #c9c7b8;
   --color-bg-btn-minor-active: #b5b3a4;
   --color-bg-option: #dad8cc;
-  --color-checkbox-checked: #666;
   --color-ownership-none: #5500ff;
   --color-ownership-observer: #7a7971;
   --color-ownership-owner: #b5b3a4;
@@ -285,40 +284,6 @@ section.secret button.reveal {
   margin-top: 8px;
   font-size: var(--font-size-13);
   border-style: dashed;
-}
-/* Info Tooltip Icons */
-i.tip {
-  font-size: var(--font-size-12);
-  color: var(--color-text-dark-5);
-}
-/* Reference */
-span.reference {
-  display: inline-block;
-  padding: 0.25rem;
-  color: #c5dbe3;
-  border: 1px solid #def7ff;
-  border-radius: 3px;
-}
-#tooltip .toolclip p,
-.locked-tooltip .toolclip p {
-  text-align: left;
-}
-#tooltip .toolclip h4,
-.locked-tooltip .toolclip h4 {
-  text-align: center;
-  font-size: 18px;
-  font-weight: bold;
-}
-#tooltip .toolclip p.faint,
-.locked-tooltip .toolclip p.faint {
-  text-align: center;
-  font-size: 14px;
-  color: var(--color-text-light-heading);
-}
-#tooltip .toolclip video,
-.locked-tooltip .toolclip video {
-  max-width: 300px;
-  height: 300px;
 }
 /* ---------------------------------------- */
 /* Tables                                   */

@@ -13,21 +13,6 @@ export function difference(other) {
 }
 
 /**
- * Return the symmetric difference of two sets.
- * @param {Set} other  Another set.
- * @returns {Set}      The set of elements that exist in this or other, but not both.
- */
-export function symmetricDifference(other) {
-  if ( !(other instanceof Set) ) throw new Error("Some other Set instance must be provided.");
-  const difference = new Set(this);
-  for ( const element of other ) {
-    if ( difference.has(element) ) difference.delete(element);
-    else difference.add(element);
-  }
-  return difference
-}
-
-/**
  * Test whether this set is equal to some other set.
  * Sets are equal if they share the same members, independent of order
  * @param {Set} other       Some other set to compare against
@@ -73,18 +58,6 @@ export function intersects(other) {
     if ( other.has(element) ) return true;
   }
   return false;
-}
-
-/**
- * Return the union of two sets.
- * @param {Set} other  The other set.
- * @returns {Set}
- */
-export function union(other) {
-  if ( !(other instanceof Set) ) throw new Error("Some other Set instance must be provided.");
-  const union = new Set(this);
-  for ( const element of other ) union.add(element);
-  return union;
 }
 
 /**
@@ -213,20 +186,6 @@ export function some(test) {
 }
 
 // Assign primitives to Set prototype
-Object.defineProperties(Set.prototype, {
-  difference: {value: difference},
-  symmetricDifference: {value: symmetricDifference},
-  equals: {value: equals},
-  every: {value: every},
-  filter: {value: filter},
-  find: {value: find},
-  first: {value: first},
-  intersection: {value: intersection},
-  intersects: {value: intersects},
-  union: {value: union},
-  isSubset: {value: isSubset},
-  map: {value: map},
-  reduce: {value: reduce},
-  some: {value: some},
-  toObject: {value: toObject}
+Object.assign(Set.prototype, {
+  difference, equals, first, intersection, intersects, isSubset, toObject, every, filter, find, map, reduce, some
 });

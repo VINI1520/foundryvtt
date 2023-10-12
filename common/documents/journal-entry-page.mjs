@@ -1,6 +1,7 @@
 import Document from "../abstract/document.mjs";
 import {mergeObject} from "../utils/helpers.mjs";
 import * as fields from "../data/fields.mjs";
+import * as documents from "./module.mjs";
 import * as CONST from "../constants.mjs";
 
 /**
@@ -78,7 +79,7 @@ class BaseJournalEntryPage extends Document {
   static defineSchema() {
     return {
       _id: new fields.DocumentIdField(),
-      name: new fields.StringField({required: true, blank: false, label: "JOURNALENTRYPAGE.PageTitle", textSearch: true}),
+      name: new fields.StringField({required: true, blank: false, label: "JOURNALENTRYPAGE.PageTitle"}),
       type: new fields.StringField({required: true, label: "JOURNALENTRYPAGE.Type", choices: () => this.TYPES,
         initial: "text",
         validationError: "The JournalEntryPage type must be in the array of types supported by the game system."}),
@@ -90,7 +91,7 @@ class BaseJournalEntryPage extends Document {
         caption: new fields.StringField({required: false, initial: undefined})
       }),
       text: new fields.SchemaField({
-        content: new fields.HTMLField({required: false, initial: undefined, textSearch: true}),
+        content: new fields.HTMLField({required: false, initial: undefined}),
         markdown: new fields.StringField({required: false, initial: undefined}),
         format: new fields.NumberField({label: "JOURNALENTRYPAGE.Format",
           initial: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML, choices: Object.values(CONST.JOURNAL_ENTRY_PAGE_FORMATS)})
@@ -106,11 +107,10 @@ class BaseJournalEntryPage extends Document {
       }),
       src: new fields.StringField({required: false, blank: false, nullable: true, initial: null,
         label: "JOURNALENTRYPAGE.Source"}),
-      system: new fields.TypeDataField(this),
+      system: new fields.SystemDataField(this),
       sort: new fields.IntegerSortField(),
       ownership: new fields.DocumentOwnershipField({initial: {default: CONST.DOCUMENT_OWNERSHIP_LEVELS.INHERIT}}),
-      flags: new fields.ObjectField(),
-      _stats: new fields.DocumentStatsField()
+      flags: new fields.ObjectField()
     };
   }
 
@@ -119,7 +119,7 @@ class BaseJournalEntryPage extends Document {
    * @type {string[]}
    */
   static get TYPES() {
-    return game.documentTypes.JournalEntryPage;
+    return game.documentTypes?.JournalEntryPage || [];
   }
 
   /** @inheritdoc */

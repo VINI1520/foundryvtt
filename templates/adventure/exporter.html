@@ -9,7 +9,7 @@
     {{/each}}
     <ol class="document-list">
         {{#each node.documents as |document|}}
-        <h4 class="document {{document.state}}" data-tooltip="{{localize document.stateLabel}}" data-document-id="{{document.id}}">
+        <h4 class="document {{document.state}}" data-document-id="{{document.id}}">
             {{document.name}}
             <a class="control" data-action="remove"><i class="fa-solid fa-xmark"></i></a>
         </h4>
@@ -83,7 +83,7 @@
                 {{/each}}
                 <ol class="document-list">
                     {{#each root.documents as |document|}}
-                    <h4 class="document {{document.state}}" data-tooltip="{{localize document.stateLabel}}" data-document-id="{{document.id}}">
+                    <h4 class="document {{document.state}}" data-document-id="{{document.id}}">
                         {{document.name}}
                         <a class="control" data-action="remove"><i class="fa-solid fa-xmark"></i></a>
                     </h4>

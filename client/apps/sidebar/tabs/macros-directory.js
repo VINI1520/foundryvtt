@@ -1,12 +1,12 @@
 /**
  * The directory, not displayed in the sidebar, which organizes and displays world-level Macro documents.
- * @extends {DocumentDirectory}
+ * @extends {SidebarDirectory}
  *
  * @see {@link Macros}        The WorldCollection of Macro Documents
  * @see {@link Macro}         The Macro Document
  * @see {@link MacroConfig}   The Macro Configuration Sheet
  */
-class MacroDirectory extends DocumentDirectory {
+class MacroDirectory extends SidebarDirectory {
   constructor(options={}) {
     options.popOut = true;
     super(options);

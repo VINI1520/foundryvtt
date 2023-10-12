@@ -1,14 +1,14 @@
 /**
  * The sidebar directory which organizes and displays world-level Scene documents.
- * @extends {DocumentDirectory}
+ * @extends {SidebarDirectory}
  */
-class SceneDirectory extends DocumentDirectory {
+class SceneDirectory extends SidebarDirectory {
 
   /** @override */
   static documentName = "Scene";
 
   /** @override */
-  static entryPartial = "templates/sidebar/scene-partial.html";
+  static documentPartial = "templates/sidebar/scene-partial.html";
 
   /* -------------------------------------------- */
 
@@ -100,7 +100,7 @@ class SceneDirectory extends DocumentDirectory {
           const scene = game.scenes.get(li[0].dataset.documentId);
           scene.createThumbnail().then(data => {
             scene.update({thumb: data.thumb}, {diff: false});
-            ui.notifications.info(game.i18n.format("SCENES.GenerateThumbSuccess", {name: scene.name}));
+            ui.notifications.info(`Regenerated thumbnail image for ${scene.name} background image`);
           }).catch(err => ui.notifications.error(err.message));
         }
       }

@@ -24,16 +24,6 @@ class LightingLayer extends PlaceablesLayer {
   }
 
   /* -------------------------------------------- */
-  /*  Methods                                     */
-  /* -------------------------------------------- */
-
-  /** @override */
-  _activate() {
-    super._activate();
-    for ( const p of this.placeables ) p.renderFlags.set({refreshField: true});
-  }
-
-  /* -------------------------------------------- */
   /*  Event Listeners and Handlers                */
   /* -------------------------------------------- */
 
@@ -42,18 +32,13 @@ class LightingLayer extends PlaceablesLayer {
     await super._onDragLeftStart(event);
 
     // Create a pending AmbientLightDocument
-    const interaction = event.interactionData;
     const cls = getDocumentClass("AmbientLight");
-    const doc = new cls(interaction.origin, {parent: canvas.scene});
+    const doc = new cls(event.data.origin, {parent: canvas.scene});
 
     // Create the preview AmbientLight object
     const preview = new this.constructor.placeableClass(doc);
-
-    // Updating interaction data
-    interaction.preview = this.preview.addChild(preview);
-    interaction.lightsState = 1;
-
-    // Prepare to draw the preview
+    preview.source.preview = true;
+    event.data.preview = this.preview.addChild(preview);
     canvas.effects.lightSources.set(preview.sourceId, preview.source);
     return preview.draw();
   }
@@ -62,8 +47,8 @@ class LightingLayer extends PlaceablesLayer {
 
   /** @override */
   _onDragLeftMove(event) {
-    const {destination, lightsState, preview, origin} = event.interactionData;
-    if ( lightsState === 0 ) return;
+    const { destination, createState, preview, origin } = event.data;
+    if ( createState === 0 ) return;
 
     // Update the light radius
     const radius = Math.hypot(destination.x - origin.x, destination.y - origin.y);
@@ -74,9 +59,10 @@ class LightingLayer extends PlaceablesLayer {
 
     // Refresh the layer display
     preview.updateSource();
+    preview.refresh();
 
     // Confirm the creation state
-    event.interactionData.lightsState = 2;
+    event.data.createState = 2;
   }
 
   /* -------------------------------------------- */
@@ -86,7 +72,6 @@ class LightingLayer extends PlaceablesLayer {
     super._onDragLeftCancel(event);
     canvas.effects.lightSources.delete(`${this.constructor.documentName}.preview`);
     canvas.effects.refreshLighting();
-    event.interactionData.lightsState = 0;
   }
 
   /* -------------------------------------------- */
@@ -113,9 +98,9 @@ class LightingLayer extends PlaceablesLayer {
    * @internal
    */
   _onDarknessChange(darkness, prior) {
-    for ( const light of this.placeables ) {
-      if ( light.emitsLight === light.source.disabled ) light.updateSource();
-      if ( this.active ) light.renderFlags.set({refreshState: true, refreshField: true});
+    if ( !this.active ) return;
+    for ( let light of this.placeables ) {
+      light.refreshControl();
     }
   }
 

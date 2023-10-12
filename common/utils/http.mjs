@@ -30,13 +30,7 @@ export async function fetchWithTimeout(url, data = {}, {timeoutMs=30000, onTimeo
   try {
     response = await fetch(url, data);
   } catch(err) {
-    if ( timedOut ) {
-      const timeoutS = Math.round(timeoutMs / 1000);
-      const msg = game.i18n
-        ? game.i18n.format("SETUP.ErrorTimeout", { url, timeout: timeoutS })
-        : `The request to ${url} timed out after ${timeoutS}s.`;
-      throw new HttpError("Timed Out", 408, msg);
-    }
+    if ( timedOut ) throw new HttpError("Timed Out", 408, `The request to ${url} timed out after ${timeoutMs} ms`);
     throw err;
   } finally {
     if ( enforceTimeout ) clearTimeout(timeout);
@@ -76,12 +70,5 @@ export class HttpError extends Error {
     super(statusText);
     this.code = code;
     this.displayMessage = displayMessage;
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  toString() {
-    return this.displayMessage;
   }
 }

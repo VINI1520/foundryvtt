@@ -29,7 +29,7 @@ class ImageHelper {
     // Reduce to the smaller thumbnail texture
     if ( !canvas.ready && canvas.initializing ) await canvas.initializing;
     const reduced = this.compositeCanvasTexture(object, {width, height, tx, ty, center});
-    const thumb = await this.textureToImage(reduced, {format, quality});
+    const thumb = this.textureToImage(reduced, {format, quality});
     reduced.destroy(true);
 
     // Return the image data
@@ -87,17 +87,14 @@ class ImageHelper {
     transform.translate(tx, ty);
 
     // Create and render a texture with the desired dimensions
-    const renderTexture = PIXI.RenderTexture.create({
+    const texture = PIXI.RenderTexture.create({
       width: width,
       height: height,
       scaleMode: PIXI.SCALE_MODES.LINEAR,
       resolution: canvas.app.renderer.resolution
     });
-    canvas.app.renderer.render(object, {
-      renderTexture,
-      transform
-    });
-    return renderTexture;
+    canvas.app.renderer.render(object, texture, undefined, transform);
+    return texture;
   }
 
   /* -------------------------------------------- */
@@ -105,12 +102,11 @@ class ImageHelper {
   /**
    * Extract a texture to a base64 PNG string
    * @param {PIXI.Texture} texture      The texture object to extract
-   * @param {object} options
-   * @param {string} [options.format]   Image format, e.g. "image/jpeg" or "image/webp".
-   * @param {number} [options.quality]  JPEG or WEBP compression from 0 to 1. Default is 0.92.
-   * @returns {Promise<string>}         A base64 png string of the texture
+   * @param {string} [format]           Image format, e.g. "image/jpeg" or "image/webp".
+   * @param {number} [quality]          JPEG or WEBP compression from 0 to 1. Default is 0.92.
+   * @return {string}                   A base64 png string of the texture
    */
-  static async textureToImage(texture, {format, quality}={}) {
+  static textureToImage(texture, {format, quality}={}) {
     const s = new PIXI.Sprite(texture);
     return canvas.app.renderer.extract.base64(s, format, quality);
   }
@@ -126,21 +122,8 @@ class ImageHelper {
    */
   static async pixiToBase64(target, type, quality) {
     const extracted = canvas.app.renderer.extract.canvas(target);
-    return this.canvasToBase64(extracted, type, quality);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Asynchronously convert a canvas element to base64.
-   * @param {HTMLCanvasElement} canvas
-   * @param {string} [type="image/png"]
-   * @param {number} [quality]
-   * @returns {Promise<string>} The base64 string of the canvas.
-   */
-  static async canvasToBase64(canvas, type, quality) {
     return new Promise((resolve, reject) => {
-      canvas.toBlob(blob => {
+      extracted.toBlob(blob => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = reject;
@@ -159,42 +142,12 @@ class ImageHelper {
    * @param {object} [options]    Additional options which affect uploading
    * @param {string} [options.storage=data]   The data storage location to which the file should be uploaded
    * @param {string} [options.type]           The MIME type of the file being uploaded
-   * @param {boolean} [options.notify=true]   Display a UI notification when the upload is processed.
    * @returns {Promise<object>}   A promise which resolves to the FilePicker upload response
    */
-  static async uploadBase64(base64, fileName, filePath, {storage="data", type, notify=true}={}) {
+  static async uploadBase64(base64, fileName, filePath, {storage="data", type}={}) {
     type ||= base64.split(";")[0].split("data:")[1];
     const blob = await fetch(base64).then(r => r.blob());
     const file = new File([blob], fileName, {type});
-    return FilePicker.upload(storage, filePath, file, {}, { notify });
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Create a canvas element containing the pixel data.
-   * @param {Uint8ClampedArray} pixels              Buffer used to create the image data.
-   * @param {number} width                          Buffered image width.
-   * @param {number} height                         Buffered image height.
-   * @param {object} options
-   * @param {HTMLCanvasElement} [options.element]   The element to use.
-   * @param {number} [options.ew]                   Specified width for the element (default to buffer image width).
-   * @param {number} [options.eh]                   Specified height for the element (default to buffer image height).
-   * @returns {HTMLCanvasElement}
-   */
-  static pixelsToCanvas(pixels, width, height, {element, ew, eh}={}) {
-    // If an element is provided, use it. Otherwise, create a canvas element
-    element ??= document.createElement("canvas");
-
-    // Assign specific element width and height, if provided. Otherwise, assign buffered image dimensions
-    element.width = ew ?? width;
-    element.height = eh ?? height;
-
-    // Get the context and create a new image data with the buffer
-    const context = element.getContext("2d");
-    const imageData = new ImageData(pixels, width, height);
-    context.putImageData(imageData, 0, 0);
-
-    return element;
+    return FilePicker.upload(storage, filePath, file);
   }
 }

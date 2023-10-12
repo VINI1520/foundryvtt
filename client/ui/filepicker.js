@@ -8,11 +8,8 @@
  * @property {boolean} [allowUpload=true]  A flag which permits explicitly disallowing upload, true by default
  * @property {HTMLElement} [field]         An HTML form field that the result of this selection is applied to
  * @property {HTMLButtonElement} [button]  An HTML button element which triggers the display of this picker
- * @property {Map<string, FavoriteFolder>} [favorites] The picker display mode in FilePicker.DISPLAY_MODES
  * @property {string} [displayMode]        The picker display mode in FilePicker.DISPLAY_MODES
  * @property {boolean} [tileSize=false]    Display the tile size configuration.
- * @property {string[]} [redirectToRoot]   Redirect to the root directory rather than starting in the source directory
- *                                         of one of these files.
  */
 
 /**
@@ -145,74 +142,6 @@ class FilePicker extends Application {
    */
   static S3_BUCKETS = null;
 
-  /**
-   * @typedef FavoriteFolder
-   * @property {string} source        The source of the folder (e.g. "data", "public")
-   * @property {string} path          The full path to the folder
-   * @property {string} label         The label for the path
-   */
-
-  /**
-   * Get favorite folders for quick access
-   * @type {string[]}
-   * @return {Map<string, FavoriteFolder>}
-   */
-  static get favorites() {
-    if ( !this._favorites ) this._favorites = game.settings.get("core", "favoritePaths");
-    return this._favorites;
-  }
-
-   /**
-    * Set favorite folders for quick access
-    * @param {Map<string, FavoriteFolder>} favorites  An object of Favorite Folders
-   */
-  static set favorites(favorites) {
-    this._favorites = favorites;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Add the given path for the source to the favorites
-   * @param {string} source     The source of the folder (e.g. "data", "public")
-   * @param {string} path       The path to a folder
-   */
-  static async setFavorite(source, path ) {
-    const favorites = FilePicker.favorites;
-    const lastCharacter = path[path.length - 1];
-
-    // Standardize all paths to end with a "/". Has the side benefit of ensuring that the root path which is normally an empty string has content.
-    path = path.endsWith("/") ? path : `${path}/`;
-
-    const alreadyFavorited = Object.keys(favorites).includes(`${source}-${path}`);
-    if ( alreadyFavorited ) return ui.notifications.info(game.i18n.format("FILES.AlreadyFavorited", {path}));
-
-    let label;
-    if ( path === "/" ) label = "root";
-    else {
-      const directories = path.split("/");
-      label = directories[directories.length - 2]; // Get the final part of the path for the label
-    }
-
-    favorites[`${source}-${path}`] = {source, path, label};
-    FilePicker.favorites = favorites;
-    await game.settings.set("core", "favoritePaths", favorites);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Remove the given path from the favorites
-   * @param {string} source     The source of the folder (e.g. "data", "public")
-   * @param {string} path       The path to a folder
-   */
-  static async removeFavorite(source, path) {
-    const favorites = FilePicker.favorites;
-    delete favorites[`${source}-${path}`];
-    FilePicker.favorites = favorites;
-    await game.settings.set("core", "favoritePaths",  favorites);
-  }
-
   /* -------------------------------------------- */
 
   /**
@@ -241,7 +170,7 @@ class FilePicker extends Application {
   _inferCurrentDirectory(target) {
 
     // Determine target
-    const ignored = [CONST.DEFAULT_TOKEN].concat(this.options.redirectToRoot ?? []);
+    const ignored = [CONST.DEFAULT_TOKEN];
     if ( !target || ignored.includes(target) ) target = this.constructor.LAST_BROWSED_DIRECTORY;
     let source = "data";
 
@@ -263,16 +192,6 @@ class FilePicker extends Application {
       const p0 = target.split("/").shift();
       const publicDirs = ["cards", "css", "fonts", "icons", "lang", "scripts", "sounds", "ui"];
       if ( publicDirs.includes(p0) ) source = "public";
-    }
-
-    // If the preferred source is not available, use the next available source.
-    if ( !this.sources[source] ) {
-      source = game.data.files.storages[0];
-      // If that happens to be S3, pick the first available bucket.
-      if ( source === "s3" ) {
-        this.sources.s3.bucket = game.data.files.s3.buckets?.[0] ?? null;
-        target = "";
-      }
     }
 
     // Split off the file name and retrieve just the directory path
@@ -440,26 +359,8 @@ class FilePicker extends Application {
       target: target,
       tileSize: this.options.tileSize ? (FilePicker.LAST_TILE_SIZE || canvas.dimensions.size) : null,
       user: game.user,
-      submitText: this.type === "folder" ? "FILES.SelectFolder" : "FILES.SelectFile",
-      favorites: FilePicker.favorites
+      submitText: this.type === "folder" ? "FILES.SelectFolder" : "FILES.SelectFile"
     };
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  setPosition(pos={}) {
-    const currentPosition = super.setPosition(pos);
-    const element = this.element[0];
-    const content = element.querySelector(".window-content");
-    const lists = element.querySelectorAll(".filepicker-body > ol");
-    const scroll = content.scrollHeight - content.offsetHeight;
-    if ( (scroll > 0) && lists.length ) {
-      let maxHeight = Number(getComputedStyle(lists[0]).maxHeight.slice(0, -2));
-      maxHeight -= Math.ceil(scroll / lists.length);
-      lists.forEach(list => list.style.maxHeight = `${maxHeight}px`);
-    }
-    return currentPosition;
   }
 
   /* -------------------------------------------- */
@@ -574,7 +475,7 @@ class FilePicker extends Application {
   static async _manageFiles(data, options) {
     return new Promise((resolve, reject) => {
       game.socket.emit("manageFiles", data, options, result => {
-        if ( result.error ) return reject(new Error(result.error));
+        if (result.error) return reject(result.error);
         resolve(result);
       });
     });
@@ -621,20 +522,12 @@ class FilePicker extends Application {
         return;
       }
 
-      // Check for uploads to system or module directories.
-      const [packageType, packageId, folder] = response.path.split("/");
-      if ( ["modules", "systems"].includes(packageType) ) {
-        let pkg;
-        if ( packageType === "modules" ) pkg = game.modules.get(packageId);
-        else if ( packageId === game.system.id ) pkg = game.system;
-        if ( !pkg?.persistentStorage || (folder !== "storage") ) {
+      // Display additional response messages
+      if ( response.message ) {
+        if ( /^(modules|systems)/.test(response.path) ) {
           if ( notify ) ui.notifications.warn(notifications.WarnUploadModules);
           else console.warn(notifications.WarnUploadModules);
         }
-      }
-
-      // Display additional response messages
-      if ( response.message ) {
         if ( notify ) ui.notifications.info(response.message);
         else console.info(response.message);
       }
@@ -648,27 +541,6 @@ class FilePicker extends Application {
       }
       return {};
     }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * A convenience function that uploads a file to a given package's persistent /storage/ directory
-   * @param {string} packageId                The id of the package to which the file should be uploaded. Only supports Systems and Modules.
-   * @param {string} path                     The relative path in the package's storage directory the file should be uploaded to
-   * @param {File} file                       The File object to upload
-   * @param {object} [body={}]                Additional file upload options sent in the POST body
-   * @param {object} [options]                Additional options to configure how the method behaves
-   * @param {boolean} [options.notify=true]   Display a UI notification when the upload is processed
-   * @returns {Promise<object>}               The response object
-   */
-  static async uploadPersistent(packageId, path, file, body={}, {notify=true}={}) {
-    let pack = game.system.id === packageId ? game.system : game.modules.get(packageId);
-    if ( !pack ) throw new Error(`Package ${packageId} not found`);
-    if ( !pack.persistentStorage ) throw new Error(`Package ${packageId} does not have persistent storage enabled. Set the "persistentStorage" flag to true in the package manifest.`);
-    const source = "data";
-    const target = `${pack.type}s/${pack.id}/storage/${path}`;
-    return this.upload(source, target, file, body, {notify});
   }
 
   /* -------------------------------------------- */
@@ -707,9 +579,6 @@ class FilePicker extends Application {
     // Change the S3 bucket
     html.find('select[name="bucket"]').change(this._onChangeBucket.bind(this));
 
-    // Change the tile size.
-    form.elements.tileSize?.addEventListener("change", this._onChangeTileSize.bind(this));
-
     // Activate display mode controls
     const modes = html.find(".display-modes");
     modes.on("click", ".display-mode", this._onChangeDisplayMode.bind(this));
@@ -722,9 +591,6 @@ class FilePicker extends Application {
 
     // Directory-level actions
     html.find(".directory").on("click", "li", this._onPick.bind(this));
-
-    // Directory-level actions
-    html.find(".favorites").on("click", "a", this._onClickFavorite.bind(this));
 
     // Flag the current pick
     let li = form.querySelector(`.file[data-path="${this.request}"]`);
@@ -787,13 +653,13 @@ class FilePicker extends Application {
 
     // Get the tile size ratio
     const tileSize = parseInt(li.closest("form").tileSize.value) || canvas.dimensions.size;
+    FilePicker.LAST_TILE_SIZE = tileSize;
     const ratio = canvas.dimensions.size / tileSize;
 
     // Set drag data
     const dragData = {
       type: "Tile",
       texture: {src: li.dataset.path},
-      fromFilePicker: true,
       tileSize
     };
     event.dataTransfer.setData("text/plain", JSON.stringify(dragData));
@@ -816,9 +682,9 @@ class FilePicker extends Application {
     const target = form.target.value;
 
     // Process the data transfer
-    const data = TextEditor.getDragEventData(event);
-    const files = event.dataTransfer.files;
-    if ( !files || !files.length || data.fromFilePicker ) return;
+    const data = event.dataTransfer;
+    const files = data.files;
+    if ( !files || !files.length ) return;
 
     // Iterate over dropped files
     for ( let upload of files ) {
@@ -850,33 +716,6 @@ class FilePicker extends Application {
       event.preventDefault();
       return this.browse(event.target.value);
     }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle user interaction with the favorites
-   * @param {MouseEvent} event     The originating click event
-   * @private
-   */
-  async _onClickFavorite(event) {
-    const action = event.currentTarget.dataset.action;
-    const source = event.currentTarget.dataset.source || this.activeSource;
-    const path = event.currentTarget.dataset.path || this.target;
-
-    switch (action) {
-      case "goToFavorite":
-        this.activeSource = source;
-        await this.browse(path);
-        break;
-      case "setFavorite":
-        await FilePicker.setFavorite(source, path);
-        break;
-      case "removeFavorite":
-        await FilePicker.removeFavorite(source, path);
-        break;
-    }
-    this.render(true);
   }
 
   /* -------------------------------------------- */
@@ -955,11 +794,7 @@ class FilePicker extends Application {
       yes: async html => {
         const dirname = html.querySelector("input").value;
         const path = [source.target, dirname].filterJoin("/");
-        try {
-          await this.constructor.createDirectory(this.activeSource, path, {bucket: source.bucket});
-        } catch ( err ) {
-          ui.notifications.error(err.message);
-        }
+        await this.constructor.createDirectory(this.activeSource, path, {bucket: source.bucket});
         return this.browse(this.target);
       },
       options: {jQuery: false}
@@ -978,17 +813,6 @@ class FilePicker extends Application {
     const select = event.currentTarget;
     this.sources.s3.bucket = select.value;
     return this.browse("/");
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle changes to the tile size.
-   * @param {Event} event  The triggering event.
-   * @protected
-   */
-  _onChangeTileSize(event) {
-    this.constructor.LAST_TILE_SIZE = event.currentTarget.valueAsNumber;
   }
 
   /* -------------------------------------------- */

@@ -8,7 +8,7 @@
  * @example Keep the highest of the 3 roll expressions
  * ```js
  * let pool = new PoolTerm({
- *   terms: ["4d6", "3d8 - 1", "2d10 + 3"],
+ *   rolls: ["4d6", "3d8 - 1", "2d10 + 3"],
  *   modifiers: ["kh"]
  * });
  * pool.evaluate();

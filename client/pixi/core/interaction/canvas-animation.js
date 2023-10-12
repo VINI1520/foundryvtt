@@ -6,7 +6,6 @@
  * @property {number} [from]                An initial value of the attribute, otherwise parent[attribute] is used
  * @property {number} [delta]               The computed delta between to and from
  * @property {number} [done]                The amount of the total delta which has been animated
- * @property {boolean} [color]              Is this a color animation that applies to RGB channels
  */
 
 /**
@@ -76,7 +75,7 @@ class CanvasAnimation {
    * ```
    */
   static async animate(attributes, {context=canvas.stage, name, duration=1000, easing, ontick, priority}={}) {
-    priority ??= PIXI.UPDATE_PRIORITY.LOW + 1;
+    priority ??= PIXI.UPDATE_PRIORITY.LOW;
     if ( typeof easing === "string" ) easing = this[easing];
 
     // If an animation with this name already exists, terminate it
@@ -87,17 +86,11 @@ class CanvasAnimation {
       a.from = a.from ?? a.parent[a.attribute];
       a.delta = a.to - a.from;
       a.done = 0;
-
-      // Special handling for color transitions
-      if ( a.to instanceof Color ) {
-        a.color = true;
-        a.from = Color.from(a.from);
-      }
       return a;
     });
     if ( attributes.length && attributes.every(a => a.delta === 0) ) return;
     const animation = {attributes, context, duration, easing, name, ontick, time: 0};
-    animation.fn = dt => CanvasAnimation.#animateFrame(dt, animation);
+    animation.fn = dt => this._animateFrame(dt, animation);
 
     // Create a promise which manages the animation lifecycle
     const promise = new Promise((resolve, reject) => {
@@ -189,8 +182,9 @@ class CanvasAnimation {
    *
    * @param {number} deltaTime                The incremental time which has elapsed
    * @param {CanvasAnimationData} animation   The animation which is being performed
+   * @private
    */
-  static #animateFrame(deltaTime, animation) {
+  static _animateFrame(deltaTime, animation) {
     const {attributes, duration, ontick} = animation;
 
     // Compute animation timing and progress
@@ -202,7 +196,23 @@ class CanvasAnimation {
 
     // Update each attribute
     try {
-      for ( let a of attributes ) CanvasAnimation.#updateAttribute(a, pa);
+      for ( let a of attributes ) {
+
+        // Snap to final target
+        if ( complete ) {
+          a.parent[a.attribute] = a.to;
+          a.done = a.delta;
+        }
+
+        // Continue animating
+        else {
+          const da = a.delta * pa;
+          a.parent[a.attribute] = a.from + da;
+          a.done = da;
+        }
+      }
+
+      // Callback function
       if ( ontick ) ontick(dt, animation);
     }
 
@@ -213,32 +223,6 @@ class CanvasAnimation {
 
     // Resolve the original promise once the animation is complete
     if ( complete ) animation.resolve(true);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Update a single attribute according to its animation completion percentage
-   * @param {CanvasAnimationAttribute} attribute    The attribute being animated
-   * @param {number} percentage                     The animation completion percentage
-   */
-  static #updateAttribute(attribute, percentage) {
-    attribute.done = attribute.delta * percentage;
-
-    // Complete animation
-    if ( percentage === 1 ) {
-      attribute.parent[attribute.attribute] = attribute.to;
-      return;
-    }
-
-    // Color animation
-    if ( attribute.color ) {
-      attribute.parent[attribute.attribute] = attribute.from.mix(attribute.to, percentage);
-      return;
-    }
-
-    // Numeric attribute
-    attribute.parent[attribute.attribute] = attribute.from + attribute.done;
   }
 
   /* -------------------------------------------- */

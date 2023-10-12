@@ -6,8 +6,4 @@
 export function escape(string) {
   return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
 }
-
-// Define properties on the RegExp environment
-Object.defineProperties(RegExp, {
-  escape: {value: escape}
-});
+RegExp.escape = escape;

@@ -15,6 +15,8 @@ let game = globalThis.game = {};
 // Utilize SmoothGraphics by default
 PIXI.LegacyGraphics = PIXI.Graphics;
 PIXI.Graphics = PIXI.smooth.SmoothGraphics;
+PIXI.LegacyGraphics.nextRoundedRectBehavior = true;  // Needed until PIXI v7
+PIXI.Graphics.nextRoundedRectBehavior = true;  // Needed until PIXI v7
 
 /**
  * The global boolean for whether the EULA is signed

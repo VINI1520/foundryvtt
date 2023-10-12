@@ -64,20 +64,8 @@ class Item extends ClientDocumentMixin(foundry.documents.BaseItem) {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  async _preCreate(data, options, user) {
-    if ( (this.parent instanceof Actor) && !CONFIG.ActiveEffect.legacyTransferral ) {
-      for ( const effect of this.effects ) {
-        if ( effect.transfer ) effect.updateSource(ActiveEffect.implementation.getInitialDuration());
-      }
-    }
-    return super._preCreate(data, options, user);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
   static async _onCreateDocuments(items, context) {
-    if ( !(context.parent instanceof Actor) || !CONFIG.ActiveEffect.legacyTransferral ) return;
+    if ( !(context.parent instanceof Actor) ) return;
     const toCreate = [];
     for ( let item of items ) {
       for ( let e of item.effects ) {
@@ -96,7 +84,7 @@ class Item extends ClientDocumentMixin(foundry.documents.BaseItem) {
 
   /** @inheritdoc */
   static async _onDeleteDocuments(items, context) {
-    if ( !(context.parent instanceof Actor) || !CONFIG.ActiveEffect.legacyTransferral ) return;
+    if ( !(context.parent instanceof Actor) ) return;
     const actor = context.parent;
     const deletedUUIDs = new Set(items.map(i => {
       if ( actor.isToken ) return i.uuid.split(".").slice(-2).join(".");

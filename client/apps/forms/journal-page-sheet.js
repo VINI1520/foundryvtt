@@ -10,14 +10,12 @@ class JournalPageSheet extends DocumentSheet {
   static get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
       classes: ["sheet", "journal-sheet", "journal-entry-page"],
-      viewClasses: [],
       width: 600,
       height: 680,
       resizable: true,
       closeOnSubmit: false,
       submitOnClose: true,
-      viewPermission: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER,
-      includeTOC: true
+      viewPermission: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER
     });
   }
 
@@ -37,14 +35,14 @@ class JournalPageSheet extends DocumentSheet {
 
   /* -------------------------------------------- */
 
-  /**
-   * The table of contents for this JournalTextPageSheet.
-   * @type {Object<JournalEntryPageHeading>}
-   */
-  toc = {};
+  /** @inheritdoc */
+  async activateEditor(name, options={}, initialContent="") {
+    options.fitToSize = true;
+    const editor = await super.activateEditor(name, options, initialContent);
+    this.form.querySelector('[role="application"]')?.style.removeProperty("height");
+    return editor;
+  }
 
-  /* -------------------------------------------- */
-  /*  Rendering                                   */
   /* -------------------------------------------- */
 
   /** @inheritdoc */
@@ -64,57 +62,7 @@ class JournalPageSheet extends DocumentSheet {
       journalEntryPageHeader: "templates/journal/parts/page-header.html",
       journalEntryPageFooter: "templates/journal/parts/page-footer.html"
     });
-    const html = await super._renderInner(...args);
-    if ( this.options.includeTOC ) this.toc = JournalEntryPage.implementation.buildTOC(html.get());
-    return html;
-  }
-
-  /* -------------------------------------------- */
-  /*  Text Secrets Management                     */
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  _getSecretContent(secret) {
-    return this.object.text.content;
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  _updateSecret(secret, content) {
-    return this.object.update({"text.content": content});
-  }
-
-  /* -------------------------------------------- */
-  /*  Text Editor Integration                     */
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  async activateEditor(name, options={}, initialContent="") {
-    options.fitToSize = true;
-    options.relativeLinks = true;
-    const editor = await super.activateEditor(name, options, initialContent);
-    this.form.querySelector('[role="application"]')?.style.removeProperty("height");
-    return editor;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Update the parent sheet if it is open when the server autosaves the contents of this editor.
-   * @param {string} html  The updated editor contents.
-   */
-  onAutosave(html) {
-    this.object.parent?.sheet?.render(false);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Update the UI appropriately when receiving new steps from another client.
-   */
-  onNewSteps() {
-    this.form.querySelectorAll('[data-action="save-html"]').forEach(el => el.disabled = true);
+    return super._renderInner(...args);
   }
 }
 
@@ -155,6 +103,14 @@ class JournalTextPageSheet extends JournalPageSheet {
 
   /* -------------------------------------------- */
 
+  /**
+   * The table of contents for this JournalTextPageSheet.
+   * @type {Object<JournalEntryPageHeading>}
+   */
+  toc = {};
+
+  /* -------------------------------------------- */
+
   /** @inheritdoc */
   async getData(options={}) {
     const data = super.getData(options);
@@ -185,21 +141,11 @@ class JournalTextPageSheet extends JournalPageSheet {
 
   /** @inheritdoc */
   async _render(force, options) {
-    if ( !this.#canRender(options.resync) ) return this.maximize().then(() => this.bringToTop());
+    // Suppress renders if we are in edit mode to avoid losing work. The collaborative editing workflow will take care
+    // of updating editor state.
+    const alreadyOpen = this._state === Application.RENDER_STATES.RENDERED;
+    if ( !options.resync && this.isEditable && alreadyOpen ) return this.bringToTop();
     return super._render(force, options);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Suppress re-rendering the sheet in cases where an active editor has unsaved work.
-   * In such cases we rely upon collaborative editing to save changes and re-render.
-   * @param {boolean} [resync]    Was the application instructed to re-sync?
-   * @returns {boolean}           Should a render operation be allowed?
-   */
-  #canRender(resync) {
-    if ( resync || (this._state !== Application.RENDER_STATES.RENDERED) || !this.isEditable ) return true;
-    return !this.isEditorDirty();
   }
 
   /* -------------------------------------------- */
@@ -210,9 +156,40 @@ class JournalTextPageSheet extends JournalPageSheet {
    */
   isEditorDirty() {
     for ( const editor of Object.values(this.editors) ) {
-      if ( editor.active && editor.instance?.isDirty() ) return true;
+      if ( editor.instance?.isDirty() ) return true;
     }
     return false;
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  async activateEditor(name, options={}, initialContent="") {
+    options.relativeLinks = true;
+    return super.activateEditor(name, options, initialContent);
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  async _renderInner(...args) {
+    const html = await super._renderInner(...args);
+    this.toc = JournalEntryPage.implementation.buildTOC(html.get());
+    return html;
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  _getSecretContent(secret) {
+    return this.object.text.content;
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  _updateSecret(secret, content) {
+    return this.object.update({"text.content": content});
   }
 
   /* -------------------------------------------- */
@@ -241,6 +218,27 @@ class JournalTextPageSheet extends JournalPageSheet {
       // We've opened an HTML document in a markdown editor, so we need to convert the HTML to markdown for editing.
       renderData.data.text.markdown = this.constructor._converter.makeMarkdown(text.content.trim());
     }
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Update the parent sheet if it is open when the server autosaves the contents of this editor.
+   * @param {string} html  The updated editor contents.
+   */
+  onAutosave(html) {
+    this.object.parent?.sheet?.render(false);
+  }
+
+  /* -------------------------------------------- */
+  /*  HTML Editing                                */
+  /* -------------------------------------------- */
+
+  /**
+   * Update the UI appropriately when receiving new steps from another client.
+   */
+  onNewSteps() {
+    this.form.querySelectorAll('[data-action="save-html"]').forEach(el => el.disabled = true);
   }
 }
 

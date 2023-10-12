@@ -5,7 +5,7 @@
 class HiddenCanvasGroup extends BaseCanvasMixin(PIXI.Container) {
   constructor() {
     super();
-    this.eventMode = "none";
+    this.interactive = this.interactiveChildren = false;
     this.#createMasks();
   }
 
@@ -68,10 +68,6 @@ class HiddenCanvasGroup extends BaseCanvasMixin(PIXI.Container) {
     // The canvas scissor mask is the first thing to render
     const canvas = new PIXI.LegacyGraphics();
     this.addMask("canvas", canvas);
-
-    // The scene scissor mask
-    const scene = new PIXI.LegacyGraphics();
-    this.addMask("scene", scene);
 
     // Then we need to render vision mask
     const vision = new CanvasVisionMask();

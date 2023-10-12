@@ -66,27 +66,6 @@ class ChatLog extends SidebarTab {
     setInterval(this.updateTimestamps.bind(this), 1000 * 15);
   }
 
-  /**
-   * A flag for whether the chat log is currently scrolled to the bottom
-   * @type {boolean}
-   */
-  #isAtBottom = true;
-
-  /**
-   * A cache of the Jump to Bottom element
-   */
-  #jumpToBottomElement;
-
-  /* -------------------------------------------- */
-
-  /**
-   * Returns if the chat log is currently scrolled to the bottom
-   * @returns {boolean}
-   */
-  get isAtBottom() {
-    return this.#isAtBottom;
-  }
-
   /* -------------------------------------------- */
 
   /**
@@ -98,8 +77,7 @@ class ChatLog extends SidebarTab {
       id: "chat",
       template: "templates/sidebar/chat-log.html",
       title: game.i18n.localize("CHAT.Title"),
-      stream: false,
-      scrollY: ["#chat-log"]
+      stream: false
     });
   }
 
@@ -168,7 +146,8 @@ class ChatLog extends SidebarTab {
   async _render(force, options) {
     if ( this.rendered ) return; // Never re-render the Chat Log itself, only its contents
     await super._render(force, options);
-    return this.scrollBottom({waitImages: true});
+    // Wait for images to load before scrolling to the bottom, but do not delay render completion.
+    this.#waitForImages().then(() => this.scrollBottom());
   }
 
   /* -------------------------------------------- */
@@ -333,7 +312,8 @@ class ChatLog extends SidebarTab {
     // Otherwise, append the message to the bottom of the log
     else {
       log.append(html);
-      if ( this.isAtBottom || (message.user._id === game.user._id) ) this.scrollBottom({waitImages: true});
+      await this.#waitForImages();
+      this.scrollBottom();
     }
 
     // Post notification
@@ -348,18 +328,15 @@ class ChatLog extends SidebarTab {
 
   /**
    * Scroll the chat log to the bottom
-   * @param {object} [options]
-   * @param {boolean} [options.popout=false]                 If a popout exists, scroll it to the bottom too.
-   * @param {boolean} [options.waitImages=false]             Wait for any images embedded in the chat log to load first
-   *                                                         before scrolling?
-   * @param {ScrollIntoViewOptions} [options.scrollOptions]  Options to configure scrolling behaviour.
+   * @param {object} options
+   * @param {boolean} options.popout If a popout exists, scroll it too
+   * @private
    */
-  async scrollBottom({popout=false, waitImages=false, scrollOptions={}}={}) {
-    if ( !this.rendered ) return;
-    if ( waitImages ) await this._waitForImages();
-    const log = this.element[0].querySelector("#chat-log");
-    log.lastElementChild?.scrollIntoView(scrollOptions);
-    if ( popout ) this._popout?.scrollBottom({waitImages, scrollOptions});
+  scrollBottom({popout}={}) {
+    const el = this.element;
+    const log = el.length ? el[0].querySelector("#chat-log") : null;
+    if ( log ) log.scrollTop = log.scrollHeight;
+    if ( popout ) this._popout?.scrollBottom();
   }
 
   /* -------------------------------------------- */
@@ -415,6 +392,27 @@ class ChatLog extends SidebarTab {
   }
 
   /* -------------------------------------------- */
+
+  /**
+   * Wait for any newly-added images to load.
+   * @returns {Promise<void>}  A Promise that resolves when all images in the chat log have loaded.
+   */
+  #waitForImages() {
+    return new Promise(resolve => {
+      let loaded = 0;
+      const images = Array.from(this.element.find("img")).filter(img => !img.complete);
+      if ( !images.length ) resolve();
+      for ( const img of images ) {
+        img.onload = img.onerror = () => {
+          loaded++;
+          img.onload = img.onerror = null;
+          if ( loaded >= images.length ) resolve();
+        };
+      }
+    });
+  }
+
+  /* -------------------------------------------- */
   /*  Event Listeners and Handlers
   /* -------------------------------------------- */
 
@@ -442,9 +440,6 @@ class ChatLog extends SidebarTab {
 
     // Export log
     html.find("a.export-log").click(this._onExportLog.bind(this));
-
-    // Jump to Bottom
-    html.find(".jump-to-bottom > a").click(() => this.scrollBottom());
 
     // Content Link Dragging
     html[0].addEventListener("drop", ChatLog._onDropTextAreaData);
@@ -491,6 +486,17 @@ class ChatLog extends SidebarTab {
       speaker: cls.getSpeaker()
     };
 
+    // Allow for handling of the entered message to be intercepted by a hook
+    /**
+     * A hook event that fires when a user sends a message through the ChatLog.
+     * @function chatMessage
+     * @memberof hookEvents
+     * @param {ChatLog} chatLog         The ChatLog instance
+     * @param {string} message          The trimmed message content
+     * @param {object} chatData         Some basic chat data
+     * @param {User} chatData.user      The User sending the message
+     * @param {object} chatData.speaker The identified speaker data, see {@link ChatMessage.getSpeaker}
+     */
     if ( Hooks.call("chatMessage", this, message, chatData) === false ) return;
 
     // Parse the message to determine the matching handler
@@ -650,32 +656,14 @@ class ChatLog extends SidebarTab {
    * @private
    */
   _processMacroCommand(command, match) {
-
-    // Parse the macro command with the form /macro {macroName} [param1=val1] [param2=val2] ...
-    let [macroName, ...params] = match[2].split(" ");
-    let expandName = true;
-    const scope = {};
-    for ( const p of params ) {
-      const kv = p.split("=");
-      if ( kv.length === 2 ) {
-        scope[kv[0]] = kv[1];
-        expandName = false;
-      }
-      else if ( expandName ) macroName += ` ${p}`; // Macro names may contain spaces
-    }
-    macroName = macroName.trimEnd(); // Eliminate trailing spaces
-
-    // Get the target macro by number or by name
     let macro;
+    const macroName = match[2];
     if ( Number.isNumeric(macroName) ) {
       const macroID = game.user.hotbar[macroName];
       macro = game.macros.get(macroID);
     }
     if ( !macro ) macro = game.macros.getName(macroName);
-    if ( !macro ) throw new Error(`Requested Macro "${macroName}" was not found as a named macro or hotbar position`);
-
-    // Execute the Macro with provided scope
-    return macro.execute(scope);
+    macro?.execute();
   }
 
   /* -------------------------------------------- */
@@ -898,7 +886,7 @@ class ChatLog extends SidebarTab {
    */
   _onFlushLog(event) {
     event.preventDefault();
-    game.messages.flush(this.#jumpToBottomElement);
+    game.messages.flush();
   }
 
   /* -------------------------------------------- */
@@ -911,11 +899,10 @@ class ChatLog extends SidebarTab {
   _onScrollLog(event) {
     if ( !this.rendered ) return;
     const log = event.target;
-    const pct = log.scrollTop / (log.scrollHeight - log.clientHeight);
-    if ( !this.#jumpToBottomElement ) this.#jumpToBottomElement = this.element.find(".jump-to-bottom")[0];
-    this.#isAtBottom = pct > 0.99;
-    this.#jumpToBottomElement.classList.toggle("hidden", this.#isAtBottom);
-    if ( pct < 0.01 ) return this._renderBatch(this.element, CONFIG.ChatMessage.batchSize);
+    const pct = log.scrollTop / log.scrollHeight;
+    if ( pct < 0.01 ) {
+      return this._renderBatch(this.element, CONFIG.ChatMessage.batchSize);
+    }
   }
 
   /* -------------------------------------------- */

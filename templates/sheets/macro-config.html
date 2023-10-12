@@ -18,7 +18,11 @@
     <div class="form-group">
         <label>{{ localize "Type" }}</label>
         <select name="type">
-            {{selectOptions macroTypes selected=data.type}}
+            {{#select data.type}}
+            {{#each macroTypes}}
+            <option value="{{this}}">{{this}}</option>
+            {{/each}}
+            {{/select}}
         </select>
     </div>
 

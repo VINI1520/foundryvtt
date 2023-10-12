@@ -35,7 +35,7 @@ class BaseRollTable extends Document {
     name: "RollTable",
     collection: "tables",
     indexed: true,
-    compendiumIndexFields: ["_id", "name", "description", "img", "sort", "folder"],
+    compendiumIndexFields: ["_id", "name", "img", "sort"],
     embedded: {TableResult: "results"},
     label: "DOCUMENT.RollTable",
     labelPlural: "DOCUMENT.RollTables"
@@ -45,9 +45,9 @@ class BaseRollTable extends Document {
   static defineSchema() {
     return {
       _id: new fields.DocumentIdField(),
-      name: new fields.StringField({required: true, blank: false, textSearch: true}),
+      name: new fields.StringField({required: true, blank: false}),
       img: new fields.FilePathField({categories: ["IMAGE"], initial: () => this.DEFAULT_ICON}),
-      description: new fields.HTMLField({textSearch: true}),
+      description: new fields.StringField(),
       results: new fields.EmbeddedCollectionField(documents.BaseTableResult),
       formula: new fields.StringField(),
       replacement: new fields.BooleanField({initial: true}),

@@ -144,12 +144,12 @@ class DrawingsLayer extends PlaceablesLayer {
 
   /** @inheritdoc */
   _onClickLeft(event) {
-    const {preview, drawingsState, destination} = event.interactionData;
+    const {preview, createState, originalEvent} = event.data;
 
     // Continue polygon point placement
-    if ( (drawingsState >= 1) && preview.isPolygon ) {
-      let point = destination;
-      const snap = !event.shiftKey;
+    if ( createState >= 1 && preview.isPolygon ) {
+      let point = event.data.destination;
+      const snap = !originalEvent.shiftKey;
       preview._addPoint(point, {snap, round: true});
       preview._chain = true; // Note that we are now in chain mode
       return preview.refresh();
@@ -163,11 +163,11 @@ class DrawingsLayer extends PlaceablesLayer {
 
   /** @inheritdoc */
   _onClickLeft2(event) {
-    const {drawingsState, preview} = event.interactionData;
+    const {createState, preview} = event.data;
 
     // Conclude polygon placement with double-click
-    if ( (drawingsState >= 1) && preview.isPolygon ) {
-      event.interactionData.drawingsState = 2;
+    if ( createState >= 1 && preview.isPolygon ) {
+      event.data.createState = 2;
       return this._onDragLeftDrop(event);
     }
 
@@ -180,12 +180,10 @@ class DrawingsLayer extends PlaceablesLayer {
   /** @inheritdoc */
   async _onDragLeftStart(event) {
     await super._onDragLeftStart(event);
-    const interaction = event.interactionData;
     const cls = getDocumentClass("Drawing");
-    const document = new cls(this._getNewDrawingData(interaction.origin), {parent: canvas.scene});
+    const document = new cls(this._getNewDrawingData(event.data.origin), {parent: canvas.scene});
     const drawing = new this.constructor.placeableClass(document);
-    interaction.preview = this.preview.addChild(drawing);
-    interaction.drawingsState = 1;
+    event.data.preview = this.preview.addChild(drawing);
     return drawing.draw();
   }
 
@@ -193,15 +191,15 @@ class DrawingsLayer extends PlaceablesLayer {
 
   /** @inheritdoc */
   _onDragLeftMove(event) {
-    const {preview, drawingsState} = event.interactionData;
+    const {preview, createState} = event.data;
     if ( !preview || preview._destroyed ) return;
     if ( preview.parent === null ) { // In theory this should never happen, but rarely does
       this.preview.addChild(preview);
     }
-    if ( drawingsState >= 1 ) {
+    if (createState >= 1 ) {
       preview._onMouseDraw(event);
       const isFreehand = game.activeTool === "freehand";
-      if ( !preview.isPolygon || isFreehand ) event.interactionData.drawingsState = 2;
+      if ( !preview.isPolygon || isFreehand ) event.data.createState = 2;
     }
   }
 
@@ -209,14 +207,14 @@ class DrawingsLayer extends PlaceablesLayer {
 
   /**
    * Handling of mouse-up events which conclude a new object creation after dragging
-   * @param {PIXI.FederatedEvent} event       The drag drop event
+   * @param {PIXI.InteractionEvent} event       The drag drop event
    * @private
    */
   async _onDragLeftDrop(event) {
-    const {drawingsState, destination, origin, preview} = event.interactionData;
+    const { createState, destination, origin, originalEvent, preview } = event.data;
 
     // Successful drawing completion
-    if ( drawingsState === 2 ) {
+    if ( createState === 2 ) {
       const distance = Math.hypot(Math.max(destination.x, origin.x) - preview.x,
         Math.max(destination.y, origin.x) - preview.y);
       const minDistance = distance >= (canvas.dimensions.size / 8);
@@ -224,20 +222,14 @@ class DrawingsLayer extends PlaceablesLayer {
 
       // Create a completed drawing
       if ( minDistance || completePolygon ) {
-        event.interactionData.clearPreviewContainer = false;
-        event.interactionData.drawingsState = 0;
+        event.data.createState = 0;
         const data = preview.document.toObject(false);
 
         // Create the object
         preview._chain = false;
         const cls = getDocumentClass("Drawing");
         const createData = this.constructor.placeableClass.normalizeShape(data);
-        let drawing;
-        try {
-          drawing = await cls.create(createData, {parent: canvas.scene});
-        } finally {
-          this.clearPreviewContainer();
-        }
+        const drawing = await cls.create(createData, {parent: canvas.scene});
         const o = drawing.object;
         o._creating = true;
         o._pendingText = "";
@@ -245,18 +237,18 @@ class DrawingsLayer extends PlaceablesLayer {
       }
 
       // Cancel the preview
-      return this._onDragLeftCancel(event);
+      return this._onDragLeftCancel(originalEvent);
     }
 
     // In-progress polygon
-    if ( (drawingsState === 1) && preview.isPolygon ) {
-      event.preventDefault();
+    if ( (createState === 1) && preview.isPolygon ) {
+      event.data.originalEvent.preventDefault();
       if ( preview._chain ) return;
       return this._onClickLeft(event);
     }
 
     // Incomplete drawing
-    return this._onDragLeftCancel(event);
+    return this._onDragLeftCancel(originalEvent);
   }
 
   /* -------------------------------------------- */
@@ -269,7 +261,6 @@ class DrawingsLayer extends PlaceablesLayer {
       preview.refresh();
       if ( preview.document.shape.points.length ) return event.preventDefault();
     }
-    event.interactionData.drawingsState = 0;
     super._onDragLeftCancel(event);
   }
 

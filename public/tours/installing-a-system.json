@@ -12,7 +12,7 @@
     },
     {
       "id": "browse",
-      "selector": "[data-tab=\"systems\"] [data-action=\"installPackage\"]",
+      "selector": "[data-tab=\"systems\"] .install-package",
       "title": "INSTALLINGASYSTEM.BrowseTitle",
       "content": "INSTALLINGASYSTEM.BrowseContent"
     },

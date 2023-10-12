@@ -55,4 +55,39 @@ class ItemSheet extends DocumentSheet {
     data.item = data.document;
     return data;
   }
+
+  /* -------------------------------------------- */
+  /*  Event Listeners and Handlers                */
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  activateListeners(html) {
+    super.activateListeners(html);
+    if ( this.isEditable) html.find("img[data-edit]").click(ev => this._onEditImage(ev));
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Handle changing the item image
+   * @param {PointerEvent} event     The image click event
+   * @private
+   */
+  _onEditImage(event) {
+    const attr = event.currentTarget.dataset.edit;
+    const current = foundry.utils.getProperty(this.item, attr);
+    const fp = new FilePicker({
+      type: "image",
+      current: current,
+      callback: path => {
+        event.currentTarget.src = path;
+        if ( this.options.submitOnChange ) {
+          this._onSubmit(event);
+        }
+      },
+      top: this.position.top + 40,
+      left: this.position.left + 10
+    });
+    return fp.browse();
+  }
 }

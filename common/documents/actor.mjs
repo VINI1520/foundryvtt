@@ -44,7 +44,7 @@ class BaseActor extends Document {
     name: "Actor",
     collection: "actors",
     indexed: true,
-    compendiumIndexFields: ["_id", "name", "img", "type", "sort", "folder"],
+    compendiumIndexFields: ["_id", "name", "img", "type", "sort"],
     embedded: {ActiveEffect: "effects", Item: "items"},
     label: "DOCUMENT.Actor",
     labelPlural: "DOCUMENT.Actors",
@@ -67,11 +67,11 @@ class BaseActor extends Document {
   static defineSchema() {
     return {
       _id: new fields.DocumentIdField(),
-      name: new fields.StringField({required: true, blank: false, textSearch: true}),
+      name: new fields.StringField({required: true, blank: false}),
       type: new fields.StringField({required: true, choices: () => this.TYPES,
         validationError: "must be in the array of Actor types defined by the game system"}),
-      img: new fields.FilePathField({categories: ["IMAGE"], initial: data => this.getDefaultArtwork(data).img}),
-      system: new fields.TypeDataField(this),
+      img: new fields.FilePathField({categories: ["IMAGE"], initial: () => this.DEFAULT_ICON}),
+      system: new fields.SystemDataField(this),
       prototypeToken: new fields.EmbeddedDataField(PrototypeToken),
       items: new fields.EmbeddedCollectionField(documents.BaseItem),
       effects: new fields.EmbeddedCollectionField(documents.BaseActiveEffect),
@@ -91,22 +91,6 @@ class BaseActor extends Document {
    */
   static DEFAULT_ICON = CONST.DEFAULT_TOKEN;
 
-  /* -------------------------------------------- */
-
-  /**
-   * Determine default artwork based on the provided actor data.
-   * @param {ActorData} actorData                      The source actor data.
-   * @returns {{img: string, texture: {src: string}}}  Candidate actor image and prototype token artwork.
-   */
-  static getDefaultArtwork(actorData) {
-    return {
-      img: this.DEFAULT_ICON,
-      texture: {
-        src: this.DEFAULT_ICON
-      }
-    };
-  }
-
   /* ---------------------------------------- */
 
   /**
@@ -114,7 +98,7 @@ class BaseActor extends Document {
    * @type {string[]}
    */
   static get TYPES() {
-    return game.documentTypes.Actor;
+    return game.documentTypes?.Actor || [];
   }
 
   /* ---------------------------------------- */
@@ -178,9 +162,8 @@ class BaseActor extends Document {
   /** @inheritdoc */
   async _preCreate(data, options, user) {
     if ( !this.prototypeToken.name ) this.prototypeToken.updateSource({name: this.name});
-    if ( !this.prototypeToken.texture.src || (this.prototypeToken.texture.src === CONST.DEFAULT_TOKEN)) {
-      const { texture } = this.constructor.getDefaultArtwork(this.toObject());
-      this.prototypeToken.updateSource("img" in data ? { img: this.img } : { texture });
+    if ( this.img && (!this.prototypeToken.texture.src || (this.prototypeToken.texture.src === CONST.DEFAULT_TOKEN))) {
+      this.prototypeToken.updateSource({"texture.src": this.img});
     }
   }
 
@@ -190,8 +173,7 @@ class BaseActor extends Document {
   async _preUpdate(changed, options, user) {
     await super._preUpdate(changed, options, user);
     if ( changed.img && !getProperty(changed, "prototypeToken.texture.src") ) {
-      const { texture } = this.constructor.getDefaultArtwork(foundry.utils.mergeObject(this.toObject(), changed));
-      if ( !this.prototypeToken.texture.src || (this.prototypeToken.texture.src === texture?.src) ) {
+      if ( !this.prototypeToken.texture.src || (this.prototypeToken.texture.src === CONST.DEFAULT_TOKEN) ) {
         setProperty(changed, "prototypeToken.texture.src", changed.img);
       }
     }

@@ -70,7 +70,7 @@ class User extends ClientDocumentMixin(foundry.documents.BaseUser) {
     const hotbar = this.hotbar;
 
     // If a slot was not provided, get the first available slot
-    if ( Number.isNumeric(slot) ) slot = Number(slot);
+    if (Number.isNumeric(slot)) slot = Number(slot);
     else {
       for ( let i=1; i<=50; i++ ) {
         if ( !(i in hotbar ) ) {
@@ -124,6 +124,7 @@ class User extends ClientDocumentMixin(foundry.documents.BaseUser) {
    * @property {string[]} [targets]              The IDs of the tokens the user has targeted in the currently viewed
    *                                             scene.
    * @property {boolean} [active]                Whether the user has an open WS connection to the server or not.
+   * @property {boolean} [focus]                 Is the user pulling focus to the cursor coordinates?
    * @property {PingData} [ping]                 Is the user emitting a ping at the cursor coordinates?
    * @property {AVSettingsData} [av]             The state of the user's AV settings.
    */
@@ -131,12 +132,10 @@ class User extends ClientDocumentMixin(foundry.documents.BaseUser) {
   /**
    * Submit User activity data to the server for broadcast to other players.
    * This type of data is transient, persisting only for the duration of the session and not saved to any database.
-   * Activity data uses a volatile event to prevent unnecessary buffering if the client temporarily loses connection.
+   *
    * @param {ActivityData} activityData  An object of User activity data to submit to the server for broadcast.
-   * @param {object} [options]
-   * @param {boolean|undefined} [options.volatile]  If undefined, volatile is inferred from the activity data.
    */
-  broadcastActivity(activityData={}, {volatile}={}) {
+  broadcastActivity(activityData={}) {
     if ( !this.active ) {
       this.active = true;
       ui.players.render();
@@ -146,14 +145,7 @@ class User extends ClientDocumentMixin(foundry.documents.BaseUser) {
       this.viewedScene = activityData.sceneId;
       ui.nav.render();
     }
-    volatile ??= !(("sceneId" in activityData)
-      || (activityData.ruler === null)
-      || ("targets" in activityData)
-      || ("ping" in activityData)
-      || ("av" in activityData)
-    );
-    if ( volatile ) game.socket.volatile.emit("userActivity", this.id, activityData);
-    else game.socket.emit("userActivity", this.id, activityData);
+    game.socket.emit("userActivity", this.id, activityData);
   }
 
   /* -------------------------------------------- */
@@ -220,7 +212,8 @@ class User extends ClientDocumentMixin(foundry.documents.BaseUser) {
 
     // If the user role changed, we need to re-build the immutable User object
     if ( this._source.role !== this.role ) {
-      const user = this.clone({}, {keepId: true});
+      const user = new User.implementation(this.data);
+      game.users.delete(user.id);
       game.users.set(user.id, user);
       return user._onUpdate(data, options, userId);
     }

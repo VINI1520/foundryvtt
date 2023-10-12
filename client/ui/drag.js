@@ -62,13 +62,13 @@ class Draggable {
     if ( !this.handle ) return;
 
     // Float to top
-    this.handlers["click"] = ["pointerdown", ev => this.app.bringToTop(), {capture: true, passive: true}];
+    this.handlers["click"] = ["mousedown", ev => this.app.bringToTop(), {capture: true, passive: true}];
     this.element.addEventListener(...this.handlers.click);
 
     // Drag handlers
-    this.handlers["dragDown"] = ["pointerdown", e => this._onDragMouseDown(e), false];
-    this.handlers["dragMove"] = ["pointermove", e => this._onDragMouseMove(e), false];
-    this.handlers["dragUp"] = ["pointerup", e => this._onDragMouseUp(e), false];
+    this.handlers["dragDown"] = ["mousedown", e => this._onDragMouseDown(e), false];
+    this.handlers["dragMove"] = ["mousemove", e => this._onDragMouseMove(e), false];
+    this.handlers["dragUp"] = ["mouseup", e => this._onDragMouseUp(e), false];
     this.handle.addEventListener(...this.handlers.dragDown);
     this.handle.classList.add("draggable");
   }
@@ -88,9 +88,9 @@ class Draggable {
     }
 
     // Register handlers
-    this.handlers["resizeDown"] = ["pointerdown", e => this._onResizeMouseDown(e), false];
-    this.handlers["resizeMove"] = ["pointermove", e => this._onResizeMouseMove(e), false];
-    this.handlers["resizeUp"] = ["pointerup", e => this._onResizeMouseUp(e), false];
+    this.handlers["resizeDown"] = ["mousedown", e => this._onResizeMouseDown(e), false];
+    this.handlers["resizeMove"] = ["mousemove", e => this._onResizeMouseMove(e), false];
+    this.handlers["resizeUp"] = ["mouseup", e => this._onResizeMouseUp(e), false];
 
     // Attach the click handler and CSS class
     handle.addEventListener(...this.handlers.resizeDown);

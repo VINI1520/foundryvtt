@@ -76,17 +76,6 @@ class DrawingConfig extends DocumentSheet {
       return game.settings.set("core", DrawingsLayer.DEFAULT_CONFIG_SETTING, defaults);
     }
 
-    // Rescale dimensions if needed
-    const shape = this.object.shape;
-    const w = formData["shape.width"];
-    const h = formData["shape.height"];
-    if ( shape && ((w !== shape.width) || (h !== shape.height)) ) {
-      const dx = w - shape.width;
-      const dy = h - shape.height;
-      formData = foundry.utils.expandObject(formData);
-      foundry.utils.mergeObject(formData, Drawing.rescaleDimensions(this.object, dx, dy));
-    }
-
     // Create or update a Drawing
     if ( this.object.id ) return this.object.update(formData);
     return this.object.constructor.create(formData);

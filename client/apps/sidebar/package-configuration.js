@@ -104,12 +104,10 @@ class PackageConfiguration extends FormApplication {
   /* -------------------------------------------- */
 
   /** @inheritDoc */
-  async _render(force, {activeCategory, ...options}={}) {
+  async _render(force, options) {
     await loadTemplates([this.options.categoryTemplate]);
-    await super._render(force, options);
-    if ( activeCategory ) this._tabs[0].activate(activeCategory);
-    const activeTab = this._tabs[0]?.active;
-    if ( activeTab ) this.element[0].querySelector(`.tabs [data-tab="${activeTab}"]`)?.scrollIntoView();
+    return super._render(force, options);
+
   }
 
   /* -------------------------------------------- */

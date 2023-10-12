@@ -52,19 +52,6 @@ class Users extends WorldCollection {
   }
 
   /* -------------------------------------------- */
-
-  /**
-   * Get one User who is an active Gamemaster, or null if no active GM is available.
-   * This can be useful for workflows which occur on all clients, but where only one user should take action.
-   * @type {User|null}
-   */
-  get activeGM() {
-    const activeGMs = game.users.filter(u => u.active && u.isGM);
-    activeGMs.sort((a, b) => a.id > b.id ? 1 : -1); // Alphanumeric sort IDs without using localeCompare
-    return activeGMs[0] || null;
-  }
-
-  /* -------------------------------------------- */
   /*  Socket Listeners and Handlers               */
   /* -------------------------------------------- */
 

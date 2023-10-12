@@ -36,14 +36,6 @@ class Localization {
   /* -------------------------------------------- */
 
   /**
-   * Cached store of Intl.ListFormat instances.
-   * @type {Object<Intl.ListFormat>}
-   */
-  #formatters = {};
-
-  /* -------------------------------------------- */
-
-  /**
    * Initialize the Localization module
    * Discover available language translations and apply the current language setting
    * @returns {Promise<void>}      A Promise which resolves once languages are initialized
@@ -64,24 +56,13 @@ class Localization {
         const config = CONFIG[documentName];
         config.typeLabels = config.typeLabels || {};
         for ( let t of types ) {
-          if ( config.typeLabels[t] ) continue;
-          const key = `TYPES.${documentName}.${t}`;
-          config.typeLabels[t] = key;
-
-          /** @deprecated since v11 */
-          const legacyKey = `${documentName.toUpperCase()}.Type${t.titleCase()}`;
-          if ( !this.has(key) && this.has(legacyKey) ) {
-            foundry.utils.logCompatibilityWarning(
-              `You are using the '${legacyKey}' localization key which has been deprecated. `
-              + `Please define a '${key}' key instead.`,
-              {since: 11, until: 13}
-            );
-            config.typeLabels[t] = legacyKey;
+          if ( !(t in config.typeLabels) ) {
+            config.typeLabels[t] = `${documentName.toUpperCase()}.Type${t.titleCase()}`;
           }
         }
       }
     }
-
+    
     Hooks.callAll("i18nInit");
   }
 
@@ -327,38 +308,5 @@ class Localization {
       return data[k.slice(1, -1)];
     });
     return str;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Retrieve list formatter configured to the world's language setting.
-   * @see [Intl.ListFormat](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/ListFormat/ListFormat)
-   * @param {object} [options]
-   * @param {ListFormatStyle} [options.style=long]       The list formatter style, either "long", "short", or "narrow".
-   * @param {ListFormatType} [options.type=conjunction]  The list formatter type, either "conjunction", "disjunction",
-   *                                                     or "unit".
-   * @returns {Intl.ListFormat}
-   */
-  getListFormatter({style="long", type="conjunction"}={}) {
-    const key = `${style}${type}`;
-    this.#formatters[key] ??= new Intl.ListFormat(this.lang, {style, type});
-    return this.#formatters[key];
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Sort an array of objects by a given key in a localization-aware manner.
-   * @param {object[]} objects  The objects to sort, this array will be mutated.
-   * @param {string} key        The key to sort the objects by. This can be provided in dot-notation.
-   * @returns {object[]}
-   */
-  sortObjects(objects, key) {
-    const collator = new Intl.Collator(this.lang);
-    objects.sort((a, b) => {
-      return collator.compare(foundry.utils.getProperty(a, key), foundry.utils.getProperty(b, key));
-    });
-    return objects;
   }
 }

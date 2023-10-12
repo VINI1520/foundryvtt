@@ -1,7 +1,6 @@
 import {defaultSchema} from "./prosemirror.mjs";
 import DOMParser from "./dom-parser.mjs";
 import StringSerializer from "./string-serializer.mjs";
-import { Slice } from "prosemirror-model";
 
 /**
  * Use the DOM and ProseMirror's DOMParser to construct a ProseMirror document state from an HTML string. This cannot be
@@ -30,44 +29,4 @@ export function serializeHTMLString(doc, {schema, spaces}={}) {
   // If the only content is an empty <p></p> tag, return an empty string.
   if ( (doc.size < 3) && (doc.content[0].type === schema.nodes.paragraph) ) return "";
   return StringSerializer.fromSchema(schema).serializeFragment(doc.content).toString(spaces);
-}
-
-/**
- * @callback ProseMirrorSliceTransformer
- * @param {Node} node    The candidate node.
- * @returns {Node|void}  A new node to replace the candidate node, or nothing if a replacement should not be made.
- */
-
-/**
- * Apply a transformation to some nodes in a slice, and return the new slice.
- * @param {Slice} slice           The slice to transform.
- * @param {function} transformer  The transformation function.
- * @returns {Slice}               Either the original slice if no changes were made, or the newly-transformed slice.
- */
-export function transformSlice(slice, transformer) {
-  const nodeTree = new Map();
-  slice.content.nodesBetween(0, slice.content.size, (node, start, parent, index) => {
-    nodeTree.set(node, { parent, index });
-  });
-  let newSlice;
-  const replaceNode = (node, { parent, index }) => {
-    // If there is a parent, make the replacement, then recurse up the tree to the root, creating new nodes as we go.
-    if ( parent ) {
-      const newContent = parent.content.replaceChild(index, node);
-      const newParent = parent.copy(newContent);
-      replaceNode(newParent, nodeTree.get(parent));
-      return;
-    }
-
-    // Otherwise, handle replacing the root slice's content.
-    const targetSlice = newSlice ?? slice;
-    const fragment = targetSlice.content;
-    const newFragment = fragment.replaceChild(index, node);
-    newSlice = new Slice(newFragment, targetSlice.openStart, targetSlice.openEnd);
-  }
-  for ( const [node, treeInfo] of nodeTree.entries() ) {
-    const newNode = transformer(node);
-    if ( newNode ) replaceNode(newNode, treeInfo);
-  }
-  return newSlice ?? slice;
 }

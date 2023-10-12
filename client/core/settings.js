@@ -3,7 +3,7 @@
  * Each setting is a string key/value pair belonging to a certain namespace and a certain store scope.
  *
  * When Foundry Virtual Tabletop is initialized, a singleton instance of this class is constructed within the global
- * Game object as game.settings.
+ * Game object as as game.settings.
  *
  * @see {@link Game#settings}
  * @see {@link Settings}
@@ -33,6 +33,12 @@ class ClientSettings {
       ["world", new WorldSettings(worldSettings)]
     ]);
   }
+
+  /**
+   * The types of settings which should be constructed as a function call rather than as a class constructor.
+   * @private
+   */
+  static PRIMITIVE_TYPES = [String, Number, Boolean, Array, Symbol, BigInt];
 
   /* -------------------------------------------- */
 
@@ -104,12 +110,7 @@ class ClientSettings {
     if ( data.type && !(data.type instanceof Function) ) {
       throw new Error(`Setting ${key} type must be a constructable object or callable function`);
     }
-    key = `${namespace}.${key}`;
-    this.settings.set(key, data);
-    if ( data.scope === "world" ) {
-      // Reinitialize to cast the value of the Setting into its defined type
-      this.storage.get("world").getSetting(key)?.reset();
-    }
+    this.settings.set(`${namespace}.${key}`, data);
   }
 
   /* -------------------------------------------- */
@@ -178,6 +179,23 @@ class ClientSettings {
           setting = new Setting({key, value: config.default});
         }
     }
+
+    // Null values are allowed
+    if ( setting.value === null ) return setting.value;
+
+    // Cast the value to a requested type
+    if ( config.type && !(setting.value instanceof config.type) ) {
+      if ( this.constructor.PRIMITIVE_TYPES.includes(config.type) ) {
+        if ( (config.type === String) && (typeof setting.value !== "string") ) return JSON.stringify(setting.value);
+        setting.value = config.type(setting.value);
+      }
+      else if ( foundry.utils.isSubclass(config.type, foundry.abstract.DataModel) ) {
+        setting.value = config.type.fromSource(setting.value);
+      } else {
+        const isConstructed = config.type?.prototype?.constructor === config.type;
+        setting.value = isConstructed ? new config.type(setting.value) : config.type(setting.value);
+      }
+    }
     return setting.value;
   }
 
@@ -186,11 +204,10 @@ class ClientSettings {
   /**
    * Set the value of a game setting for a certain namespace and setting key
    *
-   * @param {string} namespace    The namespace under which the setting is registered
-   * @param {string} key          The setting key to retrieve
-   * @param {*} value             The data to assign to the setting key
-   * @param {object} [options]    Additional options passed to the server when updating world-scope settings
-   * @returns {*}                 The assigned setting value
+   * @param {string} namespace   The namespace under which the setting is registered
+   * @param {string} key         The setting key to retrieve
+   * @param {*} value            The data to assign to the setting key
+   * @param {object} [options]   Additional options passed to the server when updating world-scope settings
    *
    * @example Update the current value of a setting
    * ```js
@@ -205,54 +222,25 @@ class ClientSettings {
     // Obtain the setting data and serialize the value
     const setting = this.settings.get(key);
     if ( value === undefined ) value = setting.default;
+    const json = JSON.stringify(value);
     if ( foundry.utils.isSubclass(setting.type, foundry.abstract.DataModel) ) {
       value = setting.type.fromSource(value, {strict: true});
     }
 
-    // Save the setting change
-    if ( setting.scope === "world" ) await this.#setWorld(key, value, options);
-    else this.#setClient(key, value, setting.onChange);
-    return value;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Create or update a Setting document in the World database.
-   * @param {string} key          The setting key
-   * @param {*} value             The desired setting value
-   * @param {object} [options]    Additional options which are passed to the document creation or update workflows
-   * @returns {Promise<Setting>}  The created or updated Setting document
-   */
-  async #setWorld(key, value, options) {
-    if ( !game.ready ) throw new Error("You may not set a World-level Setting before the Game is ready.");
-    const current = this.storage.get("world").getSetting(key);
-    const json = JSON.stringify(value);
-    if ( current ) return current.update({value: json}, options);
-    else return Setting.create({key, value: json}, options);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Create or update a Setting document in the browser client storage.
-   * @param {string} key          The setting key
-   * @param {*} value             The desired setting value
-   * @param {Function} onChange   A registered setting onChange callback
-   * @returns {Setting}           A Setting document which represents the created setting
-   */
-  #setClient(key, value, onChange) {
-    const storage = this.storage.get("client");
-    const json = JSON.stringify(value);
-    let setting;
-    if ( key in storage ) {
-      setting = new Setting({key, value: storage.getItem(key)});
-      const diff = setting.updateSource({value: json});
-      if ( foundry.utils.isEmpty(diff) ) return setting;
+    // Submit World setting changes
+    switch (setting.scope) {
+      case "world":
+        if ( !game.ready ) throw new Error("You may not assign the value of a world-level Setting before the Game is ready.");
+        const doc = this.storage.get("world").getSetting(key);
+        if ( doc ) await doc.update({value: json}, options);
+        else await Setting.create({key, value: json}, options);
+        break;
+      case "client":
+        const storage = this.storage.get(setting.scope);
+        storage.setItem(key, json);
+        if ( setting.onChange instanceof Function ) setting.onChange(value);
+        break;
     }
-    else setting = new Setting({key, value: json});
-    storage.setItem(key, json);
-    if ( onChange instanceof Function ) onChange(value);
-    return setting;
+    return value;
   }
 }

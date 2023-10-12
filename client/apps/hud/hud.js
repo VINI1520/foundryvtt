@@ -37,7 +37,7 @@ class BasePlaceableHUD extends Application {
   /* -------------------------------------------- */
 
   /*  Methods
-  /* -------------------------------------------- */
+	/* -------------------------------------------- */
 
   /**
    * Bind the HUD to a new PlaceableObject and display it
@@ -87,7 +87,7 @@ class BasePlaceableHUD extends Application {
   /* -------------------------------------------- */
 
   /** @override */
-  getData(options = {}) {
+  getData(options={}) {
     const data = this.object.document.toObject();
     return foundry.utils.mergeObject(data, {
       id: this.id,
@@ -113,6 +113,7 @@ class BasePlaceableHUD extends Application {
 
   /* -------------------------------------------- */
   /*  Event Listeners and Handlers                */
+
   /* -------------------------------------------- */
 
   /** @override */
@@ -129,7 +130,7 @@ class BasePlaceableHUD extends Application {
    */
   _onClickControl(event) {
     const button = event.currentTarget;
-    switch ( button.dataset.action ) {
+    switch (button.dataset.action) {
       case "visibility":
         return this._onToggleVisibility(event);
       case "locked":
@@ -158,6 +159,7 @@ class BasePlaceableHUD extends Application {
     });
 
     // Update all objects
+    event.currentTarget.classList.toggle("active", !isHidden);
     return canvas.scene.updateEmbeddedDocuments(this.object.document.documentName, updates);
   }
 

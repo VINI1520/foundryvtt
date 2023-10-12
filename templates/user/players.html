@@ -1,5 +1,5 @@
 <aside id="players" class="app {{#if hide}}hidden{{/if}}">
-    <h3 aria-label="{{localize 'PLAYERS.Title'}}" role="button">
+    <h3>
         <i class="fas fa-users"></i>
         {{ localize "PLAYERS.Title" }}
         {{#if showOffline}}
@@ -9,13 +9,16 @@
         {{/if}}
     </h3>
 
-    <ol aria-label="{{localize 'PLAYERS.List'}}" tabIndex="0" id="player-list">
+    <ol id="player-list">
         {{#each users as |user|}}
         <li class="player {{#if user.isGM}}gm{{/if}} flexrow" data-user-id="{{user._id}}">
 			<span class="player-active {{#if user.active}}active{{else}}inactive{{/if}}"
                   style="background: {{user.color}}; border: 1px solid {{user.border.css}}"></span>
-            <span class="player-name {{#if user.isSelf}}self{{/if}}" data-tooltip="{{user.displayName}}">
-				{{user.displayName}}
+            <span class="player-name {{#if user.isSelf}}self{{/if}}">
+				{{user.name}}
+				{{#if user.isGM}} [GM]
+				{{else if user.charname}} [{{user.charname}}]
+				{{/if}}
 			</span>
         </li>
         {{/each}}

@@ -5,15 +5,6 @@
 class KeyboardManager {
   constructor() {
     this._reset();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Begin listening to keyboard events.
-   * @internal
-   */
-  _activateListeners() {
     window.addEventListener("keydown", event => this._handleKeyboardEvent(event, false));
     window.addEventListener("keyup", event => this._handleKeyboardEvent(event, true));
     window.addEventListener("visibilitychange", this._reset.bind(this));
@@ -116,12 +107,14 @@ class KeyboardManager {
   /* -------------------------------------------- */
 
   /**
-   * Test whether an HTMLElement currently has focus.
-   * If so we normally don't want to process keybinding actions.
-   * @type {boolean}
+   * Test whether a Form Element currently has focus
+   * @returns {boolean}
    */
   get hasFocus() {
-    return document.querySelector(":focus") instanceof HTMLElement;
+    // Pulled from https://www.w3schools.com/html/html_form_elements.asp
+    const formElements = ["input", "select", "textarea", "option", "button", "[contenteditable]"];
+    const selector = formElements.map(el => `${el}:focus`).join(", ");
+    return document.querySelectorAll(selector).length > 0;
   }
 
   /* -------------------------------------------- */

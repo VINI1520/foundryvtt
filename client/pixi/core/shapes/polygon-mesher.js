@@ -412,7 +412,9 @@ class PolygonMesher {
     // Create an empty geometry otherwise
     else if ( interleaved ) {
       // Interleaved version
-      return new PIXI.Geometry().addAttribute("aVertexPosition", [0, 0, 0], 3).addIndex([0, 0]);
+      return new PIXI.Geometry()
+        .addAttribute("aVertexPosition", [0, 0], 3)
+        .addIndex(indices);
     }
     else {
       this.#geometry = new PIXI.Geometry().addAttribute("aVertexPosition", [0, 0], 2)
@@ -434,7 +436,9 @@ class PolygonMesher {
    */
   #createGeometry(vertices, depth=undefined, indices=this.indices) {
     if ( this.options.interleaved ) {
-      return new PIXI.Geometry().addAttribute("aVertexPosition", vertices, 3).addIndex(indices);
+      return new PIXI.Geometry()
+        .addAttribute("aVertexPosition", vertices, 3)
+        .addIndex(indices);
     }
     if ( !depth ) throw new Error("You must provide a separate depth buffer when the data is not interleaved.");
     return new PIXI.Geometry()

@@ -21,7 +21,6 @@ class InteractionLayer extends CanvasLayer {
    */
   static get layerOptions() {
     return Object.assign(super.layerOptions, {
-      baseClass: InteractionLayer,
       sortActiveTop: false,
       zIndex: 0
     });
@@ -44,18 +43,15 @@ class InteractionLayer extends CanvasLayer {
     this.#active = true;
 
     // Deactivate other layers
-    for ( const name of Object.keys(Canvas.layers) ) {
+    for (let name of Object.keys(Canvas.layers) ) {
       const layer = canvas[name];
       if ( (layer !== this) && (layer instanceof InteractionLayer) ) layer.deactivate();
     }
     if ( wasActive ) return this;
 
-    // Reset the interaction manager
-    canvas.mouseInteractionManager?.reset({state: false});
-
     // Assign interactivity for the active layer
     this.zIndex = this.getZIndex();
-    this.eventMode = "static";
+    this.interactive = false;
     this.interactiveChildren = true;
 
     // Re-render Scene controls
@@ -82,7 +78,7 @@ class InteractionLayer extends CanvasLayer {
   deactivate() {
     canvas.highlightObjects(false);
     this.#active = false;
-    this.eventMode = "passive";
+    this.interactive = false;
     this.interactiveChildren = false;
     this.zIndex = this.getZIndex();
     this._deactivate();
@@ -128,7 +124,7 @@ class InteractionLayer extends CanvasLayer {
   /**
    * Handle left mouse-click events which originate from the Canvas stage.
    * @see {@link Canvas._onClickLeft}
-   * @param {PIXI.FederatedEvent} event      The PIXI InteractionEvent which wraps a PointerEvent
+   * @param {PIXI.InteractionEvent} event      The PIXI InteractionEvent which wraps a PointerEvent
    * @protected
    */
   _onClickLeft(event) {}
@@ -138,7 +134,7 @@ class InteractionLayer extends CanvasLayer {
   /**
    * Handle double left-click events which originate from the Canvas stage.
    * @see {@link Canvas._onClickLeft2}
-   * @param {PIXI.FederatedEvent} event      The PIXI InteractionEvent which wraps a PointerEvent
+   * @param {PIXI.InteractionEvent} event      The PIXI InteractionEvent which wraps a PointerEvent
    * @protected
    */
   _onClickLeft2(event) {}
@@ -148,7 +144,7 @@ class InteractionLayer extends CanvasLayer {
   /**
    * Start a left-click drag workflow originating from the Canvas stage.
    * @see {@link Canvas._onDragLeftStart}
-   * @param {PIXI.FederatedEvent} event      The PIXI InteractionEvent which wraps a PointerEvent
+   * @param {PIXI.InteractionEvent} event      The PIXI InteractionEvent which wraps a PointerEvent
    * @protected
    */
   async _onDragLeftStart(event) {}
@@ -158,7 +154,7 @@ class InteractionLayer extends CanvasLayer {
   /**
    * Continue a left-click drag workflow originating from the Canvas stage.
    * @see {@link Canvas._onDragLeftMove}
-   * @param {PIXI.FederatedEvent} event      The PIXI InteractionEvent which wraps a PointerEvent
+   * @param {PIXI.InteractionEvent} event      The PIXI InteractionEvent which wraps a PointerEvent
    * @protected
    */
   _onDragLeftMove(event) {}
@@ -168,7 +164,7 @@ class InteractionLayer extends CanvasLayer {
   /**
    * Conclude a left-click drag workflow originating from the Canvas stage.
    * @see {@link Canvas._onDragLeftDrop}
-   * @param {PIXI.FederatedEvent} event      The PIXI InteractionEvent which wraps a PointerEvent
+   * @param {PIXI.InteractionEvent} event      The PIXI InteractionEvent which wraps a PointerEvent
    * @protected
    */
   async _onDragLeftDrop(event) {}
@@ -188,7 +184,7 @@ class InteractionLayer extends CanvasLayer {
   /**
    * Handle right mouse-click events which originate from the Canvas stage.
    * @see {@link Canvas._onClickRight}
-   * @param {PIXI.FederatedEvent} event      The PIXI InteractionEvent which wraps a PointerEvent
+   * @param {PIXI.InteractionEvent} event      The PIXI InteractionEvent which wraps a PointerEvent
    * @protected
    */
   _onClickRight(event) {}

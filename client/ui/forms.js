@@ -12,14 +12,11 @@
  * @extends {FormData}
  *
  * @param {HTMLFormElement} form          The form being processed
- * @param {object} options                Options which configure form processing
- * @param {Object<object>} [options.editors]      A record of TinyMCE editor metadata objects, indexed by their update key
- * @param {Object<string>} [options.dtypes]       A mapping of data types for form fields
- * @param {boolean} [options.disabled=false]      Include disabled fields?
- * @param {boolean} [options.readonly=false]      Include readonly fields?
+ * @param {Object<object>} [editors]      A record of TinyMCE editor metadata objects, indexed by their update key
+ * @param {Object<string>} [dtypes]       A mapping of data types for form fields
  */
 class FormDataExtended extends FormData {
-  constructor(form, {dtypes={}, editors={}, disabled=false, readonly=false}={}) {
+  constructor(form, {editors={}, dtypes={}}={}) {
     super();
 
     /**
@@ -41,7 +38,7 @@ class FormDataExtended extends FormData {
     Object.defineProperty(this, "object", {value: {}, writable: false, enumerable: false});
 
     // Process the provided form
-    this.process(form, {disabled, readonly});
+    this.process(form);
   }
 
   /* -------------------------------------------- */
@@ -49,15 +46,11 @@ class FormDataExtended extends FormData {
   /**
    * Process the HTML form element to populate the FormData instance.
    * @param {HTMLFormElement} form    The HTML form being processed
-   * @param {object} options          Options forwarded from the constructor
    */
-  process(form, options) {
-    this.#processFormFields(form, options);
-    this.#processEditableHTML(form, options);
+  process(form) {
+    this.#processFormFields(form);
+    this.#processEditableHTML(form);
     this.#processEditors();
-
-    // Emit the formdata event for compatibility with the parent FormData class
-    form.dispatchEvent(new FormDataEvent("formdata", {formData: this}));
   }
 
   /* -------------------------------------------- */
@@ -67,29 +60,12 @@ class FormDataExtended extends FormData {
    * Also assign the cast value in its preferred data type to the parsed object representation of the form data.
    * @param {string} name     The field name
    * @param {any} value       The raw extracted value from the field
-   * @inheritDoc
+   * @private
    */
-  set(name, value) {
+  #set(name, value) {
     this.object[name] = value;
     if ( value instanceof Array ) value = JSON.stringify(value);
-    super.set(name, value);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Append values to the form data, adding them to an array.
-   * @param {string} name     The field name to append to the form
-   * @param {any} value       The value to append to the form data
-   * @inheritDoc
-   */
-  append(name, value) {
-    if ( name in this.object ) {
-      if ( !Array.isArray(this.object[name]) ) this.object[name] = [this.object[name]];
-    }
-    else this.object[name] = [];
-    this.object[name].push(value);
-    super.append(name, value);
+    this.set(name, value);
   }
 
   /* -------------------------------------------- */
@@ -97,13 +73,10 @@ class FormDataExtended extends FormData {
   /**
    * Process all standard HTML form field elements from the form.
    * @param {HTMLFormElement} form    The form being processed
-   * @param {object} options          Options forwarded from the constructor
-   * @param {boolean} [options.disabled]    Process disabled fields?
-   * @param {boolean} [options.readonly]    Process readonly fields?
    * @private
    */
-  #processFormFields(form, {disabled, readonly}={}) {
-    if ( !disabled && form.hasAttribute("disabled") ) return;
+  #processFormFields(form) {
+    if ( form.hasAttribute("disabled") ) return;
     const mceEditorIds = Object.values(this.editors).map(e => e.mce?.id);
     for ( const element of form.elements ) {
       const name = element.name;
@@ -115,13 +88,12 @@ class FormDataExtended extends FormData {
       if ( (element.tagName === "BUTTON") || mceEditorIds.includes(name) ) continue;
 
       // Skip disabled or read-only fields
-      if ( !disabled && (element.disabled || element.closest("fieldset")?.disabled) ) continue;
-      if ( !readonly && element.readOnly ) continue;
+      if ( element.disabled || element.readOnly || element.closest("fieldset")?.disabled ) continue;
 
       // Extract and process the value of the field
       const field = form.elements[name];
       const value = this.#getFieldValue(name, field);
-      this.set(name, value);
+      this.#set(name, value);
     }
   }
 
@@ -130,21 +102,17 @@ class FormDataExtended extends FormData {
   /**
    * Process editable HTML elements (ones with a [data-edit] attribute).
    * @param {HTMLFormElement} form    The form being processed
-   * @param {object} options          Options forwarded from the constructor
-   * @param {boolean} [options.disabled]    Process disabled fields?
-   * @param {boolean} [options.readonly]    Process readonly fields?
    * @private
    */
-  #processEditableHTML(form, {disabled, readonly}={}) {
+  #processEditableHTML(form) {
     const editableElements = form.querySelectorAll("[data-edit]");
     for ( const element of editableElements ) {
       const name = element.dataset.edit;
-      if ( this.has(name) || (name in this.editors) ) continue;
-      if ( (!disabled && element.disabled) || (!readonly && element.readOnly) ) continue;
+      if ( this.has(name) || element.disabled || element.readOnly || (name in this.editors) ) continue;
       let value;
       if (element.tagName === "IMG") value = element.getAttribute("src");
       else value = element.innerHTML.trim();
-      this.set(name, value);
+      this.#set(name, value);
     }
   }
 
@@ -160,9 +128,9 @@ class FormDataExtended extends FormData {
       if ( editor.options.engine === "tinymce" ) {
         const content = editor.instance.getContent();
         this.delete(editor.mce.id); // Delete hidden MCE inputs
-        this.set(name, content);
+        this.#set(name, content);
       } else if ( editor.options.engine === "prosemirror" ) {
-        this.set(name, ProseMirror.dom.serializeString(editor.instance.view.state.doc.content));
+        this.#set(name, ProseMirror.dom.serializeString(editor.instance.view.state.doc.content));
       }
     }
   }
@@ -190,6 +158,9 @@ class FormDataExtended extends FormData {
 
     // Record requested data type
     const dataType = field.dataset.dtype || this.dtypes[name];
+
+    // Disabled fields
+    if ( field.disabled ) return null;
 
     // Checkbox
     if ( field.type === "checkbox" ) {

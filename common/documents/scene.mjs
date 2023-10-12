@@ -92,7 +92,7 @@ class BaseScene extends Document {
     name: "Scene",
     collection: "scenes",
     indexed: true,
-    compendiumIndexFields: ["_id", "name", "thumb", "sort", "folder"],
+    compendiumIndexFields: ["_id", "name", "thumb", "sort"],
     embedded: {
       AmbientLight: "lights",
       AmbientSound: "sounds",
@@ -112,13 +112,13 @@ class BaseScene extends Document {
   static defineSchema() {
     return {
       _id: new fields.DocumentIdField(),
-      name: new fields.StringField({required: true, blank: false, textSearch: true}),
+      name: new fields.StringField({required: true, blank: false}),
 
       // Navigation
       active: new fields.BooleanField(),
       navigation: new fields.BooleanField({initial: true}),
       navOrder: new fields.NumberField({required: true, nullable: false, integer: true, initial: 0}),
-      navName: new fields.HTMLField({textSearch: true}),
+      navName: new fields.HTMLField(),
 
       // Canvas Dimensions
       background: new TextureData(),

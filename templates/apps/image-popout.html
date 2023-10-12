@@ -1,10 +1,6 @@
 <form class="{{cssClass}} flexcol" autocomplete="off">
     <figure class="flexcol">
-        {{#if isVideo}}
-        <video src="{{ image }}" {{#if showTitle}}aria-label="{{ title }}"{{/if}} autoplay loop muted playsinline></video>
-        {{else}}
-        <img src="{{image}}" {{#if showTitle}}alt="{{title}}"{{/if}}>
-        {{/if}}
+        <img src="{{image}}" {{#if showTitle}}alt="{{title}}"{{/if}}/>
         {{#if caption}}<figcaption>{{caption}}</figcaption>{{/if}}
     </figure>
 

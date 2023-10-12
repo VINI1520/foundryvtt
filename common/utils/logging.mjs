@@ -14,13 +14,9 @@ import {COMPATIBILITY_MODES} from "../constants.mjs";
 export function logCompatibilityWarning(message, {mode, since, until, details, stack=true}={}) {
 
   // Determine the logging mode
+  const config = CONFIG.compatibility;
   const modes = COMPATIBILITY_MODES;
-  const compatibility = globalThis.CONFIG?.compatibility || {
-    mode: modes.WARNING,
-    includePatterns: [],
-    excludePatterns: []
-  };
-  mode ??= compatibility.mode;
+  mode = mode ?? CONFIG.compatibility.mode ?? modes.FAILURE;
   if ( mode === modes.SILENT ) return;
 
   // Compose the message
@@ -30,11 +26,11 @@ export function logCompatibilityWarning(message, {mode, since, until, details, s
 
   // Filter the message by its stack trace
   const error = new Error(message);
-  if ( compatibility.includePatterns.length ) {
-    if ( !compatibility.includePatterns.some(rgx => rgx.test(error.stack)) ) return;
+  if ( config.includePatterns.length ) {
+    if ( !config.includePatterns.some(rgx => rgx.test(error.stack)) ) return;
   }
-  if ( compatibility.excludePatterns.length ) {
-    if ( compatibility.excludePatterns.some(rgx => rgx.test(error.stack)) ) return;
+  if ( config.excludePatterns.length ) {
+    if ( config.excludePatterns.some(rgx => rgx.test(error.stack)) ) return;
   }
 
   // Log the message

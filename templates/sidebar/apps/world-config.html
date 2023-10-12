@@ -1,0 +1,72 @@
+<form method="POST" autocomplete="off" enctype="multipart/form-data" novalidate>
+    <div class="form-group">
+        <label>{{ localize "WORLD.Title" }}</label>
+        <div class="form-fields">
+            <input type="text" name="title" value="{{world.title}}" placeholder="{{ localize "WORLD.Title" }}" required/>
+        </div>
+    </div>
+
+    {{#unless inWorld}}
+    <div class="form-group">
+        <label>{{ localize "WORLD.DataPath" }}</label>
+        <div class="form-fields">
+            <input type="text" name="path" value="Data/worlds/" disabled/>
+            <input type="text" name="id" value="{{world.id}}" placeholder="world-name" {{#if isCreate}}required{{else}}disabled{{/if}}/>
+        </div>
+    </div>
+    {{/unless}}
+
+    {{#unless inWorld}}
+    <div class="form-group">
+        <label>{{ localize "WORLD.GameSystem" }}</label>
+        <div class="form-fields">
+            <select name="system" {{#if isCreate}}required{{else}}disabled{{/if}}>
+                <option value=""></option>
+                {{#select world.system}}
+                {{#each systems}}
+                <option value="{{this.id}}">{{this.title}}</option>
+                {{/each}}
+                {{/select}}
+            </select>
+        </div>
+    </div>
+    {{/unless}}
+
+    <div class="form-group banner-image">
+        <label>{{ localize "WORLD.BackgroundImage" }}</label>
+        <div class="form-fields">
+            {{filePicker target="background" type="image"}}
+            <input type="text" name="background" placeholder="path/image.png" value="{{world.background}}" data-dtype="String"/>
+        </div>
+    </div>
+
+
+    <div class="form-group">
+        <label>{{ localize "WORLD.NextSession" }}</label>
+        <div class="form-fields">
+            <input type="date" name="nextSession" value="{{ nextDate }}">
+            <input type="time" name="nextSession" value="{{ nextTime }}">
+        </div>
+    </div>
+
+    {{#if showEditFields}}
+    <div class="form-group">
+        <label>{{ localize "WORLD.ResetKeys" }}</label>
+        <input type="checkbox" name="resetKeys"/>
+    </div>
+
+    <div class="form-group">
+        <label title="{{ localize 'WORLD.SafeModeHint' }}">{{ localize "WORLD.LaunchSafeMode" }} <a href="{{ worldKbUrl }}"><i class="fas fa-question-circle"></i></a></label>
+        <input type="checkbox" name="safeMode"/>
+    </div>
+    {{/if}}
+
+    <div class="form-group-stacked">
+        <label class="world-desc">{{ localize "WORLD.Description" }}</label>
+        {{editor world.description target="description" button=false engine="prosemirror" collaborate=false}}
+    </div>
+
+    <button type="submit" title="{{ submitText }}">
+        <i class="fas fa-globe"></i> {{submitText}}
+    </button>
+</form>

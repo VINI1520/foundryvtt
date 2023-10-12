@@ -37,7 +37,7 @@ class BaseJournalEntry extends Document {
     name: "JournalEntry",
     collection: "journal",
     indexed: true,
-    compendiumIndexFields: ["_id", "name", "sort", "folder"],
+    compendiumIndexFields: ["_id", "name", "sort"],
     embedded: {JournalEntryPage: "pages"},
     label: "DOCUMENT.JournalEntry",
     labelPlural: "DOCUMENT.JournalEntries",
@@ -50,7 +50,7 @@ class BaseJournalEntry extends Document {
   static defineSchema() {
     return {
       _id: new fields.DocumentIdField(),
-      name: new fields.StringField({required: true, blank: false, textSearch: true}),
+      name: new fields.StringField({required: true, blank: false}),
       pages: new fields.EmbeddedCollectionField(documents.BaseJournalEntryPage),
       folder: new fields.ForeignDocumentField(documents.BaseFolder),
       sort: new fields.IntegerSortField(),

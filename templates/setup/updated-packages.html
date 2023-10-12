@@ -1,20 +1,24 @@
-<div class="updated-packages">
-    <div class="flexrow header">
-        <div class="package">{{ localize "SETUP.Package" }}</div>
-        <div class="action">{{ localize "Result" }}</div>
-        <div class="description">{{ localize "Description" }}</div>
-    </div>
+<table class="updated-packages-table">
+    <thead>
+        <tr>
+            <th class="package">{{ localize "SETUP.Package" }}</th>
+            <th class="action">{{ localize "Result" }}</th>
+            <th class="description">{{ localize "Description" }}</th>
+        </tr>
+    </thead>
+    <tbody>
     {{#each changed}}
-    <div class="flexrow result">
-        <div class="package">
-            {{#if package.url}}
-            <a href="{{ package.url }}" target="_blank">{{ package.title }}</a>
-            {{else}}
-            {{ package.title }}
-            {{/if}}
-        </div>
-        <div class="action {{ actionClass }}"><i class="fas"></i> {{ action }}</div>
-        <div class="description">{{ description }}</div>
-    </div>
+        <tr>
+            <td class="package">
+                {{#if package.url}}
+                    <a href="{{package.url}}" target="_blank">{{package.title}}</a>
+                {{else}}
+                    {{package.title}}
+                {{/if}}
+            </td>
+            <td class="action {{this.action}}"><i class="fas {{this.actionClass}}"></i> {{this.action}}</td>
+            <td class="description">{{this.description}}</td>
+        </tr>
     {{/each}}
-</div>
+    </tbody>
+</table>

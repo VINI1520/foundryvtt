@@ -75,8 +75,8 @@ class Card extends ClientDocumentMixin(foundry.documents.BaseCard) {
   prepareDerivedData() {
     super.prepareDerivedData();
     this.back.img ||= this.source.img || Card.DEFAULT_ICON;
-    this.name = (this.showFace ? (this.currentFace.name || this._source.name) : this.back.name)
-      || game.i18n.format("CARD.Unknown", {source: this.source.name});
+    this.name = (this.showFace ? this.currentFace.name : this.back.name) // Explicit face or back name
+      || (this._source.name || game.i18n.format("CARD.Unknown", {source: this.source.name})); // Fallback card name
   }
 
   /* -------------------------------------------- */
@@ -171,6 +171,6 @@ class Card extends ClientDocumentMixin(foundry.documents.BaseCard) {
         <h4 class="card-name">${this.name}</h4>
       </div>`
     }, messageData);
-    return ChatMessage.implementation.create(messageData, options);
+    return ChatMessage.create(messageData, options);
   }
 }

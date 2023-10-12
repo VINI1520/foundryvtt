@@ -14,20 +14,12 @@ class DrawingDocument extends CanvasDocumentMixin(foundry.documents.BaseDrawing)
    * @type {number}
    */
   get elevation() {
-    return this.#elevation ?? this.z ?? 0;
+    return this.#elevation ??= (this.z ?? 0);
   }
 
   set elevation(value) {
-    if ( !Number.isFinite(value) && (value !== undefined) ) {
-      throw new Error("Elevation must be a finite Number or undefined");
-    }
     this.#elevation = value;
-    if ( this.rendered ) {
-      canvas.primary.sortDirty = true;
-      canvas.perception.update({refreshTiles: true});
-      // TODO: Temporary workaround. Delete when elevation will be a real drawing document property
-      this._object.renderFlags.set({refreshShape: true});
-    }
+    if ( this.rendered ) canvas.primary.sortChildren();
   }
 
   #elevation;

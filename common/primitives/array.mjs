@@ -79,14 +79,6 @@ export function fromRange(n, min=0) {
   return Array.from({length: n}, (v, i) => i + min);
 }
 
-// Define primitives on the Array prototype
-Object.defineProperties(Array.prototype, {
-  deepFlatten: {value: deepFlatten},
-  equals: {value: equals},
-  filterJoin: {value: filterJoin},
-  findSplice: {value: findSplice},
-  partition: {value: partition}
-});
-Object.defineProperties(Array,{
-  fromRange: {value: fromRange}
-});
+// Assign primitives to the Array prototype
+Object.assign(Array.prototype, {deepFlatten, equals, partition, filterJoin, findSplice});
+Object.assign(Array, {fromRange});

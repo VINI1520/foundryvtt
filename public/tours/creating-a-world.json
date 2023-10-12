@@ -12,7 +12,7 @@
     },
     {
       "id": "createWorld",
-      "selector": "[data-action=\"worldCreate\"]",
+      "selector": "#create-world",
       "title": "CREATINGAWORLD.CreateWorldTitle",
       "content": "CREATINGAWORLD.CreateWorldContent"
     },
@@ -48,7 +48,7 @@
     },
     {
       "id": "launching",
-      "selector": "[data-action=\"worldLaunch\"]",
+      "selector": "[data-action=\"launchWorld\"]",
       "title": "CREATINGAWORLD.LaunchingTitle",
       "content": "CREATINGAWORLD.LaunchingContent"
     }

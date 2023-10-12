@@ -44,10 +44,10 @@ class DoorControl extends PIXI.Container {
     this.border.visible = false;
 
     // Add control interactivity
-    this.eventMode = "static";
+    this.interactive = true;
     this.interactiveChildren = false;
     this.hitArea = new PIXI.Rectangle(-2, -2, 44, 44);
-    this.cursor = "pointer";
+    this.buttonMode = true;
 
     // Set position
     this.reposition();
@@ -55,8 +55,8 @@ class DoorControl extends PIXI.Container {
 
     // Activate listeners
     this.removeAllListeners();
-    this.on("pointerover", this._onMouseOver).on("pointerout", this._onMouseOut)
-      .on("pointerdown", this._onMouseDown).on("rightdown", this._onRightDown);
+    this.on("mouseover", this._onMouseOver).on("mouseout", this._onMouseOut)
+      .on("mousedown", this._onMouseDown).on("rightdown", this._onRightDown);
     return this;
   }
 
@@ -103,7 +103,6 @@ class DoorControl extends PIXI.Container {
    * @type {boolean}
    */
   get isVisible() {
-    if ( !canvas.effects.visibility.tokenVision ) return true;
 
     // Hide secret doors from players
     const w = this.wall;
@@ -131,7 +130,7 @@ class DoorControl extends PIXI.Container {
 
   /**
    * Handle mouse over events on a door control icon.
-   * @param {PIXI.FederatedEvent} event      The originating interaction event
+   * @param {PIXI.InteractionEvent} event      The originating interaction event
    * @protected
    */
   _onMouseOver(event) {
@@ -149,7 +148,7 @@ class DoorControl extends PIXI.Container {
 
   /**
    * Handle mouse out events on a door control icon.
-   * @param {PIXI.FederatedEvent} event      The originating interaction event
+   * @param {PIXI.InteractionEvent} event      The originating interaction event
    * @protected
    */
   _onMouseOut(event) {
@@ -166,13 +165,13 @@ class DoorControl extends PIXI.Container {
   /**
    * Handle left mouse down events on a door control icon.
    * This should only toggle between the OPEN and CLOSED states.
-   * @param {PIXI.FederatedEvent} event      The originating interaction event
+   * @param {PIXI.InteractionEvent} event      The originating interaction event
    * @protected
    */
   _onMouseDown(event) {
-    if ( event.button !== 0 ) return; // Only support standard left-click
+    if ( event.data.originalEvent.button !== 0 ) return; // Only support standard left-click
     event.stopPropagation();
-    const { ds } = this.wall.document;
+    const state = this.wall.document.ds;
     const states = CONST.WALL_DOOR_STATES;
 
     // Determine whether the player can control the door at this time
@@ -182,16 +181,14 @@ class DoorControl extends PIXI.Container {
       return false;
     }
 
-    const sound = !(game.user.isGM && game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.ALT));
-
-    // Play an audio cue for testing locked doors, only for the current client
-    if ( ds === states.LOCKED ) {
-      if ( sound ) this.wall._playDoorSound("test");
+    // Play an audio cue for locked doors
+    if ( state === states.LOCKED ) {
+      AudioHelper.play({src: CONFIG.sounds.lock});
       return false;
     }
 
     // Toggle between OPEN and CLOSED states
-    return this.wall.document.update({ds: ds === states.CLOSED ? states.OPEN : states.CLOSED}, {sound});
+    return this.wall.document.update({ds: state === states.CLOSED ? states.OPEN : states.CLOSED});
   }
 
   /* -------------------------------------------- */
@@ -199,17 +196,16 @@ class DoorControl extends PIXI.Container {
   /**
    * Handle right mouse down events on a door control icon.
    * This should toggle whether the door is LOCKED or CLOSED.
-   * @param {PIXI.FederatedEvent} event      The originating interaction event
+   * @param {PIXI.InteractionEvent} event      The originating interaction event
    * @protected
    */
   _onRightDown(event) {
     event.stopPropagation();
     if ( !game.user.isGM ) return;
-    let state = this.wall.document.ds;
-    const states = CONST.WALL_DOOR_STATES;
+    let state = this.wall.document.ds,
+        states = CONST.WALL_DOOR_STATES;
     if ( state === states.OPEN ) return;
     state = state === states.LOCKED ? states.CLOSED : states.LOCKED;
-    const sound = !(game.user.isGM && game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.ALT));
-    return this.wall.document.update({ds: state}, {sound});
+    return this.wall.document.update({ds: state});
   }
 }

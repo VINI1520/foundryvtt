@@ -1,0 +1,321 @@
+<form id="setup-configuration" class="flexcol dark" autocomplete="off">
+
+    <header>
+        <h1>Foundry Virtual Tabletop &bull; {{localize "SETUP.Title"}}</h1>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="sheet-tabs tabs" data-group="components" aria-role="{{localize 'SETUP.NavLabel'}}">
+        <a class="item{{#if noSystems}} disabled{{/if}}" {{#unless noSystems}}data-tab="worlds"{{/unless}}>
+            <i class="fas fa-globe-asia"></i> {{localize "SETUP.Worlds"}}
+        </a>
+        <a class="item" data-tab="systems"><i class="fas fa-dice"></i> {{localize "SETUP.Systems"}}</a>
+        <a class="item" data-tab="modules"><i class="fas fa-plug"></i> {{localize "SETUP.Modules"}}</a>
+        <a class="item" data-tab="configuration"><i class="fas fa-cogs"></i> {{localize "SETUP.Configuration"}}</a>
+        <a class="item" data-tab="update">
+            <i class="fas fa-cloud-download-alt"></i> {{localize "SETUP.Update"}}
+            {{#if coreUpdate}}
+            <i class="notification-pip fas fa-exclamation-circle" title="{{ coreUpdate }}"></i>
+            {{/if}}
+        </a>
+    </nav>
+
+    <!-- Main Content Section -->
+    <section id="config-tabs" class="content flexcol">
+
+        <!-- Worlds Tab -->
+        <div class="tab" data-tab="worlds" data-group="components">
+            <div class="filter-row">
+                <div class="filter">
+                    <label><i class="fas fa-search"></i></label>
+                    <input id="world-filter" name="worldsFilter" type="search" placeholder="{{ localize 'SETUP.WorldFilter' }}" value="" autocomplete="off" />
+                </div>
+            </div>
+            <div class="no-results hidden">{{localize "SETUP.PackagesNoResults"}}</div>
+            <ul id="world-list" class="directory-list package-list" data-package-type="world">
+                {{#each worlds}}
+                <li class="package flexrow" data-package-id="{{this.id}}">
+                    <div class="package-overview flexrow">
+                        <h3 class="package-title noborder">{{this.title}}</h3>
+                        {{> templates/setup/parts/package-tags.html package=this}}
+                    </div>
+
+                    {{#if this.shortDesc}}
+                    <div class="package-description">
+                        {{{this.shortDesc}}}
+                    </div>
+                    {{/if}}
+
+                    <ul class="package-metadata">
+                        <li><strong>{{localize "System"}}:</strong> {{this.system.title}}</li>
+                        <li><strong>{{localize "Path"}}:</strong> {{this.path}}</li>
+                    </ul>
+
+                    <div class="package-controls">
+                        <button class="uninstall" type="button">
+                            <i class="fas fa-trash"></i>
+                            <label>{{localize "SETUP.WorldDelete"}}</label>
+                        </button>
+                        <button class="edit-world" type="button" data-world="{{ this.id }}">
+                            <i class="fas fa-edit"></i> {{localize "SETUP.WorldEdit"}}
+                        </button>
+                        {{#if this.available}}
+                        <button type="button" name="action" data-action="launchWorld" data-world="{{ this.id }}">
+                            <i class="fas fa-play"></i> {{localize "SETUP.WorldLaunch"}}
+                        </button>
+                        {{else}}
+                        <button type="button" name="action" disabled data-world="{{ this.id }}" data-tooltip="{{this.labels.unavailable}}">
+                            <i class="fas fa-circle-exclamation"></i> {{localize "SETUP.WorldUnavailable"}}
+                        </button>
+                        {{/if}}
+                    </div>
+                </li>
+                {{else}}
+                <li class="message">
+                    <em>{{localize "SETUP.GettingStarted"}}</em>
+                    <p>{{{localize "SETUP.NoWorldsMessage"}}} <a data-tour="creatingAWorld" title="{{ localize "TOURS.ShowMeHow" }}" type="button" class="launch-tour"><i class="fas fa-person-hiking"></i> {{ localize "TOURS.ShowMeHow" }}</a></p>
+                </li>
+                {{/each}}
+            </ul>
+
+            <footer class="setup-footer flexrow">
+                <div class="progress-bar">
+                    <span class="bar"></span>
+                    <label class="pct"></label>
+                </div>
+                <button class="install-package" type="button">
+                    <i class="fas fa-download"></i>
+                    <label>{{localize "SETUP.InstallWorld"}}</label>
+                </button>
+                <button id="create-world" type="button">
+                    <i class="fas fa-globe-asia"></i>
+                    <label>{{localize "SETUP.WorldCreate"}}</label>
+                </button>
+            </footer>
+        </div>
+
+        <!-- Systems Tab -->
+        <div class="tab" data-tab="systems" data-group="components">
+            <div class="filter-row">
+                <div class="filter">
+                    <label><i class="fas fa-search"></i></label>
+                    <input id="system-filter" name="systemsFilter" type="search" placeholder="{{ localize 'SETUP.SystemFilter' }}" value="" autocomplete="off" />
+                </div>
+            </div>
+            <div class="no-results hidden">{{localize "SETUP.PackagesNoResults"}}</div>
+            <ul id="system-list" class="directory-list package-list {{#if noSystems}}empty{{/if}}" data-package-type="system">
+                {{#each systems}}
+                <li class="package flexrow" data-package-id="{{this.id}}">
+                    <div class="package-overview flexrow">
+                        <h3 class="package-title noborder">{{this.title}}</h3>
+                        {{> templates/setup/parts/package-tags.html package=this}}
+                    </div>
+
+                    <div class="package-description">
+                        {{{this.description}}}
+                    </div>
+
+                    <ul class="package-metadata">
+                        <li><strong>{{labels.authors}}:</strong> {{{authors}}}</li>
+                        <li><strong>{{localize "Path"}}:</strong> {{this.path}}</li>
+                        {{#if this.url}}
+                        <li><strong>{{localize "URL"}}:</strong> <a href="{{this.url}}" target="_blank" rel="noreferrer noopener">{{this.url}}</a></li>
+                        {{/if}}
+                    </ul>
+
+                    <div class="package-controls">
+                        <button class="uninstall" {{#if this.locked}} hidden {{/if}} type="button">
+                            <i class="fas fa-trash"></i>
+                            <label>{{localize "SETUP.Uninstall"}}</label>
+                        </button>
+                        {{#if this.manifest}}
+                            <button class="update" {{#if this.locked}} hidden {{/if}} {{#if this.updated}} disabled {{/if}} type="button" data-state="check">
+                                {{#if this.updated}}
+                                    <i class="fas fa-check"></i>
+                                    <label>{{localize "SETUP.PackageStatusUpdated"}}</label>
+                                {{else}}
+                                    <i class="fas fa-sync-alt"></i>
+                                    <label>{{localize "SETUP.UpdateCheck"}}</label>
+                                {{/if}}
+                            </button>
+                        {{/if}}
+
+                        <button class="lock-toggle {{#if this.locked}}unlock{{else}}lock{{/if}}" title="{{localize "SETUP.LockHint"}}" type="button">
+                            {{#if this.locked}}
+                            <i class="fas fa-lock"></i>
+                            {{else}}
+                            <i class="fas fa-unlock"></i>
+                            {{/if}}
+                        </button>
+                    </div>
+                </li>
+                {{else}}
+                <li class="message">
+                    <em>{{localize "SETUP.GettingStarted"}}</em>
+                    <p>{{{localize "SETUP.NoSystemsMessage"}}} <a data-tour="installingASystem" title="{{ localize "TOURS.ShowMeHow" }}" type="button" class="launch-tour"><i class="fas fa-person-hiking"></i> {{ localize "TOURS.ShowMeHow" }}</a></p>
+                    <p>{{{localize "SETUP.SeeTutorial"}}}</p>
+                </li>
+                {{/each}}
+            </ul>
+
+            <footer class="setup-footer flexrow">
+                <div class="progress-bar">
+                    <span class="bar"></span>
+                    <label class="pct"></label>
+                </div>
+                <button class="install-package" type="button">
+                    <i class="fas fa-download"></i>
+                    <label>{{localize "SETUP.InstallSystem"}}</label>
+                </button>
+                <button class="update-packages" type="button">
+                    <i class="fas fa-cloud-download-alt"></i>
+                    <label>{{localize "SETUP.UpdateAll"}}</label>
+                </button>
+            </footer>
+        </div>
+
+        <!-- Modules Tab -->
+        <div class="tab" data-tab="modules" data-group="components">
+            <div class="filter-row">
+                <div class="filter">
+                    <label><i class="fas fa-search"></i></label>
+                    <input id="module-filter" name="modulesFilter" type="search" placeholder="{{ localize 'SETUP.ModuleFilter' }}" value="" autocomplete="off" />
+                </div>
+            </div>
+            <div class="no-results hidden">{{localize "SETUP.PackagesNoResults"}}</div>
+            <ul id="module-list" class="directory-list package-list" data-package-type="module">
+                {{#each modules}}
+                <li class="package flexrow" data-package-id="{{this.id}}">
+                    <div class="package-overview flexrow">
+                        <h3 class="package-title noborder">{{this.title}}</h3>
+                        {{> templates/setup/parts/package-tags.html package=this}}
+                    </div>
+
+                    <div class="package-description">
+                        {{{this.description}}}
+                    </div>
+
+                    <ul class="package-metadata">
+                        <li><strong>{{labels.authors}}:</strong> {{{authors}}}</li>
+                        <li><strong>{{localize "Path"}}:</strong> {{this.path}}</li>
+                        {{#if this.url}}
+                        <li><strong>{{localize "URL"}}:</strong> <a href="{{this.url}}" target="_blank" rel="noreferrer noopener">{{this.url}}</a></li>
+                        {{/if}}
+                        {{#if this.relationships.requires}}
+                        <li>
+                            <strong>{{ localize "MODMANAGE.Dependencies" }}:</strong>
+                            {{#each this.relationships.requires}}
+                            <span class="tag">{{ this }}</span>
+                            {{/each}}
+                        </li>
+                        {{/if}}
+                    </ul>
+
+                    <div class="package-controls">
+                        <button class="uninstall" {{#if this.locked}} hidden {{/if}} type="button">
+                             <i class="fas fa-trash"></i>
+                             <label>{{localize "SETUP.Uninstall"}}</label>
+                        </button>
+                        {{#if this.manifest}}
+                            <button class="update" {{#if this.locked}} hidden {{/if}} {{#if this.updated}} disabled {{/if}} type="button" data-state="check">
+                                {{#if this.updated}}
+                                    <i class="fas fa-check"></i>
+                                    <label>{{localize "SETUP.PackageStatusUpdated"}}</label>
+                                {{else}}
+                                    <i class="fas fa-sync-alt"></i>
+                                    <label>{{localize "SETUP.UpdateCheck"}}</label>
+                                {{/if}}
+                            </button>
+                        {{/if}}
+
+                        <button class="lock-toggle {{#if this.locked}}unlock{{else}}lock{{/if}}" title="{{localize "SETUP.LockHint"}}" type="button">
+                            {{#if this.locked}}
+                                <i class="fas fa-lock"></i>
+                            {{else}}
+                                <i class="fas fa-unlock"></i>
+                            {{/if}}
+                        </button>
+                    </div>
+                </li>
+                {{/each}}
+            </ul>
+
+            <footer class="setup-footer flexrow">
+                <div class="progress-bar">
+                    <span class="bar"></span>
+                    <label class="pct"></label>
+                </div>
+                <button class="install-package" type="button">
+                    <i class="fas fa-download"></i>
+                    <label>{{localize "SETUP.InstallModule"}}</label>
+                </button>
+                <button class="update-packages" type="button">
+                    <i class="fas fa-cloud-download-alt"></i>
+                    <label>{{localize "SETUP.UpdateAll"}}</label>
+                </button>
+            </footer>
+        </div>
+
+        <!-- Configuration Tab -->
+        <template id="configuration" class="tab" data-tab="configuration"></template>
+
+        <!-- Update Tab -->
+        <div id="update" class="tab flexcol" data-tab="update" data-group="components">
+            {{#if coreUpdate}}
+            <p class="notification info">{{ coreUpdate }}</p>
+            {{/if}}
+            {{#unless canReachInternet}}
+                <p class="notification error">{{localize "SETUP.UpdateNoInternetError" }}</p>
+            {{/unless}}
+            {{#unless couldReachWebsite}}
+                <p class="notification error">{{localize "SETUP.UpdateWebsiteUnreachableError" }}</p>
+            {{/unless}}
+            {{#if slowResponse}}
+            <p class="notification warning">{{localize "SETUP.UpdateWebsiteSlowWarning" }}</p>
+            {{/if}}
+
+            <p class="notification warning">{{localize "SETUP.UpdateHint" }}</p>
+            <div class="form-group">
+                <label>{{ localize "SETUP.CurrentVersion" }}</label>
+                <div class="form-fields">
+                    <input type="text" value="{{ release.display }} - Build {{release.build}}" disabled/>
+                </div>
+                <p class="hint">{{ coreVersionHint }}</p>
+            </div>
+
+            <div class="form-group">
+                <label>{{ localize "SETUP.UpdateChannel" }}</label>
+                <div class="form-fields">
+                    <select name="updateChannel">
+                        {{#select options.updateChannel }}
+                        {{#each updateChannels as |label c| }}
+                        <option value="{{ c }}">{{ label }}</option>
+                        {{/each}}
+                        {{/select}}
+                    </select>
+                </div>
+                <p class="hint">{{localize "SETUP.UpdateChannelHint"}}</p>
+                {{#each updateChannelHints as |hint c| }}
+                    <p class="notification channel-hint {{c}}">{{hint}}</p>
+                {{/each}}
+            </div>
+
+            <div class="form-group">
+                <label id="force-update" class="checkbox-label">{{ localize "SETUP.ForceUpdate" }}</label>
+                <input type="checkbox" name="forceUpdate"/>
+                <p class="hint">{{localize "SETUP.ForceUpdateHint"}}</p>
+            </div>
+
+            <footer class="setup-footer flexrow">
+                <div class="progress-bar">
+                    <span class="bar"></span>
+                    <label class="pct"></label>
+                </div>
+                <button id="update-core" type="button" name="action" value="updateCheck" {{#unless updateButtonEnabled}}disabled{{/unless}}>
+                    <i class="fas fa-cloud-download-alt"></i>
+                    <label>{{localize "SETUP.UpdateCheckFor"}}</label>
+                </button>
+            </footer>
+        </div>
+    </section>
+</form>

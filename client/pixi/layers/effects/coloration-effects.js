@@ -26,6 +26,7 @@ class CanvasColorationEffects extends CanvasLayer {
   async _draw(options) {
     this.filter = VisualEffectsMaskingFilter.create({
       filterMode: VisualEffectsMaskingFilter.FILTER_MODES.COLORATION,
+      uRoofSampler: canvas.masks.depth.renderTexture,
       uVisionSampler: canvas.masks.vision.renderTexture
     });
     this.filter.blendMode = PIXI.BLEND_MODES.ADD;

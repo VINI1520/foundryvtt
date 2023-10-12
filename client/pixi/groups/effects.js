@@ -16,7 +16,7 @@ class EffectsCanvasGroup extends PIXI.Container {
 
   /**
    * The current global light source.
-   * @type {GlobalLightSource}
+   * @type {LightSource}
    */
   globalLightSource;
 
@@ -104,8 +104,8 @@ class EffectsCanvasGroup extends PIXI.Container {
    * @returns {Promise<void>}
    */
   async draw() {
-    this.globalLightSource = new GlobalLightSource();
-    this.updateGlobalLightSource();
+    // Create the global light source
+    this.globalLightSource = new GlobalLightSource(undefined);
 
     // Draw each component layer
     await this.background.draw();
@@ -123,31 +123,16 @@ class EffectsCanvasGroup extends PIXI.Container {
   /* -------------------------------------------- */
 
   /**
-   * Actions to take when the darkness level is changed
-   * @param {number} darkness   The new darkness level
-   * @param {number} prior      The prior darkness level
-   * @internal
-   */
-  _onDarknessChange(darkness, prior) {
-    this.updateGlobalLightSource();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * Initialize LightSource objects for all AmbientLightDocument instances which exist within the active Scene.
    */
   initializeLightSources() {
     this.lightSources.clear();
 
-    // Global light source
-    this.updateGlobalLightSource({defer: true});
+    // Create the Global Light source (which may be disabled)
+    this.lightSources.set("globalLight", this._updateGlobalLightSource());
 
     // Ambient Light sources
     for ( let light of canvas.lighting.placeables ) {
-      light.updateSource({defer: true});
-    }
-    for ( let light of canvas.lighting.preview.children ) {
       light.updateSource({defer: true});
     }
 
@@ -155,41 +140,26 @@ class EffectsCanvasGroup extends PIXI.Container {
     for ( let token of canvas.tokens.placeables ) {
       token.updateLightSource({defer: true});
     }
-    for ( let token of canvas.tokens.preview.children ) {
-      token.updateLightSource({defer: true});
-    }
-
-    Hooks.callAll("initializeLightSources", this);
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Update the global light source which provides global illumination to the Scene.
-   * @param {object} [options={}]         Options which modify how the source is updated
-   * @param {boolean} [options.defer]     Defer updating perception to manually update it later
+   * Update the global light source which provide global illumination to the Scene.
+   * @returns {GlobalLightSource}
+   * @protected
    */
-  updateGlobalLightSource({defer=false}={}) {
-    if ( !this.globalLightSource ) return;
-
+  _updateGlobalLightSource() {
     const {sceneX, sceneY, maxR} = canvas.dimensions;
-    const {globalLight, globalLightThreshold} = canvas.scene;
-    const disabled = !(globalLight && ((globalLightThreshold === null)
-      || (canvas.darknessLevel <= globalLightThreshold)));
-
     this.globalLightSource.initialize(foundry.utils.mergeObject({
       x: sceneX,
       y: sceneY,
-      elevation: Infinity,
       dim: maxR,
       walls: false,
       vision: false,
-      luminosity: 0,
-      disabled
+      luminosity: 0
     }, CONFIG.Canvas.globalLightConfig));
-    this.lightSources.set("globalLight", this.globalLightSource);
-
-    if ( !defer ) canvas.perception.update({refreshLighting: true, refreshVision: true});
+    return this.globalLightSource;
   }
 
   /* -------------------------------------------- */
@@ -198,16 +168,18 @@ class EffectsCanvasGroup extends PIXI.Container {
    * Refresh the state and uniforms of all LightSource objects.
    */
   refreshLightSources() {
-    for ( const lightSource of this.lightSources ) lightSource.refresh();
+    // Force the refresh of all light sources
+    for ( const lightSource of this.lightSources ) lightSource.refreshSource();
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Refresh the state and uniforms of all VisionSource objects.
+   * Refresh the state and uniforms of all LightSource objects.
    */
   refreshVisionSources() {
-    for ( const visionSource of this.visionSources ) visionSource.refresh();
+    // Force the refresh of all vision sources
+    for ( const visionSource of this.visionSources ) visionSource.refreshSource();
   }
 
   /* -------------------------------------------- */
@@ -219,29 +191,41 @@ class EffectsCanvasGroup extends PIXI.Container {
     // Apply illumination and visibility background color change
     this.illumination.backgroundColor = canvas.colors.background;
     const v = this.visibility.filter;
-    if ( v ) {
-      v.uniforms.visionTexture = canvas.masks.vision.renderTexture;
-      v.uniforms.primaryTexture = canvas.primary.renderTexture;
-      canvas.colors.fogExplored.applyRGB(v.uniforms.exploredColor);
-      canvas.colors.fogUnexplored.applyRGB(v.uniforms.unexploredColor);
-      canvas.colors.background.applyRGB(v.uniforms.backgroundColor);
-    }
+    if ( v ) Object.assign(v.uniforms, {
+      exploredColor: canvas.colors.fogExplored.rgb,
+      unexploredColor: canvas.colors.fogUnexplored.rgb,
+      backgroundColor: canvas.colors.background.rgb,
+      visionTexture: canvas.masks.vision.renderTexture,
+      primaryTexture: canvas.primary.renderTexture
+    });
+
+    // Track global illumination changes
+    const visionUpdate = {initializeVision: this.illumination.updateGlobalLight()};
 
     // Clear effects
     canvas.effects.clearEffects();
 
     // Add lighting effects
     for ( const lightSource of this.lightSources.values() ) {
+
+      // Check the active state of the light source
+      const wasActive = lightSource.active;
+      lightSource.active = lightSource.updateVisibility();
+      if ( lightSource.active !== wasActive ) visionUpdate.refreshVision = true;
       if ( !lightSource.active ) continue;
+
       // Draw the light update
       const meshes = lightSource.drawMeshes();
       if ( meshes.background ) this.background.lighting.addChild(meshes.background);
-      if ( meshes.illumination ) this.illumination.lights.addChild(meshes.illumination);
-      if ( meshes.coloration ) this.coloration.addChild(meshes.coloration);
+      if ( meshes.light ) this.illumination.lights.addChild(meshes.light);
+      if ( meshes.color ) this.coloration.addChild(meshes.color);
     }
 
     // Add effect meshes for active vision sources
     this.#addVisionEffects();
+
+    // Refresh vision if necessary
+    canvas.perception.update(visionUpdate, true);
 
     // Call hooks
     Hooks.callAll("lightingRefresh", this);
@@ -255,15 +239,15 @@ class EffectsCanvasGroup extends PIXI.Container {
    */
   #addVisionEffects() {
     for ( const visionSource of this.visionSources ) {
-      if ( !visionSource.active || (visionSource.radius <= 0) ) continue;
+      if ( visionSource.radius <= 0 ) continue;
       const meshes = visionSource.drawMeshes();
       if ( meshes.background ) {
         // Is this vision source background need to be rendered into the preferred vision container, over other VS?
         const parent = visionSource.preferred ? this.background.visionPreferred : this.background.vision;
         parent.addChild(meshes.background);
       }
-      if ( meshes.illumination ) this.illumination.lights.addChild(meshes.illumination);
-      if ( meshes.coloration ) this.coloration.addChild(meshes.coloration);
+      if ( meshes.vision ) this.illumination.lights.addChild(meshes.vision);
+      if ( meshes.color ) this.coloration.addChild(meshes.color);
     }
 
     this.background.vision.filter.enabled = !!this.background.vision.children.length;
@@ -370,7 +354,7 @@ class EffectsCanvasGroup extends PIXI.Container {
     // Animate Vision Sources
     if ( this.animateVisionSources ) {
       for ( const source of this.visionSources.values() ) {
-        source.animate(dt);
+        if ( source.visionMode.animated ) source.animate(dt);
       }
     }
   }

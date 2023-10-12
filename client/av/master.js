@@ -402,15 +402,29 @@ class AVMaster {
     // Determine the players list position based on the user's settings.
     const dockPositions = AVSettings.DOCK_POSITIONS;
     const isAfter = [dockPositions.RIGHT, dockPositions.BOTTOM].includes(this.settings.client.dockPosition);
+    const playersVisible = !this.settings.client.hidePlayerList || this.settings.client.hideDock || ui.webrtc.hidden;
+    const playersInDock = !this.settings.client.hideDock && !ui.webrtc.hidden && this.settings.verticalDock;
+    const playersList = ui.players.element[0];
+    const uiTop = document.getElementById("ui-top");
+    const uiLeft = document.getElementById("ui-left");
     const iface = document.getElementById("interface");
     const cameraViews = ui.webrtc.element[0];
-    ui.players.render(true);
+
+    if ( playersInDock && !cameraViews?.contains(playersList) ) {
+      cameraViews.appendChild(playersList);
+      uiTop.classList.remove("offset");
+      ui.players.render(true);
+    } else if ( !playersInDock && !uiLeft.contains(playersList) ) {
+      uiLeft.appendChild(playersList);
+      uiTop.classList.add("offset");
+      ui.players.render(true);
+    }
 
     if ( this.settings.client.hideDock || ui.webrtc.hidden ) {
       cameraViews?.style.removeProperty("width");
       cameraViews?.style.removeProperty("height");
     }
-
+    document.body.classList.toggle("players-hidden", playersVisible);
     document.body.classList.toggle("av-horizontal-dock", !this.settings.verticalDock);
 
     // Change the dock position based on the user's settings.

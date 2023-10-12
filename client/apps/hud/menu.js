@@ -40,13 +40,10 @@ class MainMenu extends Application {
         onClick: () => window.location.href = "./players"
       },
       world: {
-        label: "GAME.ReturnSetup",
+        label: "MENU.Setup",
         icon: '<i class="fas fa-globe"></i>',
         enabled: game.user.hasRole("GAMEMASTER") && !game.data.demoMode,
-        onClick: () => {
-          this.close();
-          game.shutDown();
-        }
+        onClick: () => game.shutDown()
       }
     };
   }

@@ -7,13 +7,10 @@ globalThis.SortingHelpers = SortingHelpers;
 // Default Document sheet registrations
 DocumentSheetConfig._registerDefaultSheets();
 
-console.groupCollapsed(`${vtt} | Before DOMContentLoaded`);
-
 /**
  * Once the Window has loaded, created and initialize the Game object
  */
 window.addEventListener("DOMContentLoaded", async function() {
-  console.groupEnd();
 
   // Log ASCII welcome message
   console.log(CONST.ASCII);
@@ -27,11 +24,6 @@ window.addEventListener("DOMContentLoaded", async function() {
   const sessionId = cookies.session ?? null;
   if ( !sessionId ) return window.location.href = foundry.utils.getRoute("join");
   console.log(`${vtt} | Reestablishing existing session ${sessionId}`);
-
-  // Initialize the asset loader
-  const routePrefix = globalThis.ROUTE_PREFIX?.replace(/(^[/]+)|([/]+$)/g, "");
-  const basePath = routePrefix ? `${window.location.origin}/${routePrefix}` : window.location.origin;
-  await PIXI.Assets.init({basePath, preferences: {defaultAutoPlay: false}});
 
   // Create the master Game controller
   if ( CONST.SETUP_VIEWS.includes(view) ) game = globalThis.game = await Setup.create(view, sessionId);

@@ -55,24 +55,13 @@ class Hotbar extends Application {
 
   /* -------------------------------------------- */
 
-  /**
-   * Whether the hotbar is locked.
-   * @returns {boolean}
-   */
-  get locked() {
-    return game.settings.get("core", "hotbarLock");
-  }
-
-  /* -------------------------------------------- */
-
   /** @override */
   getData(options={}) {
     this.macros = this._getMacrosByPage(this.page);
     return {
       page: this.page,
       macros: this.macros,
-      barClass: this._collapsed ? "collapsed" : "",
-      locked: this.locked
+      barClass: this._collapsed ? "collapsed" : ""
     };
   }
 
@@ -269,27 +258,14 @@ class Hotbar extends Application {
    * @private
    */
   _onClickPageControl(event) {
-    const action = event.currentTarget.dataset.action;
-    switch ( action ) {
-      case "page-up":
-        this.cyclePage(1);
-        break;
-
-      case "page-down":
-        this.cyclePage(-1);
-        break;
-
-      case "lock":
-        this._toggleHotbarLock();
-        break;
-    }
+    this.cyclePage(event.currentTarget.dataset.action === "page-up" ? 1 : -1);
   }
 
   /* -------------------------------------------- */
 
   /** @override */
   _canDragStart(selector) {
-    return !this.locked;
+    return true;
   }
 
   /* -------------------------------------------- */
@@ -318,11 +294,19 @@ class Hotbar extends Application {
     const li = event.target.closest(".macro");
     const slot = Number(li.dataset.slot);
     const data = TextEditor.getDragEventData(event);
-    if ( Hooks.call("hotbarDrop", this, data, slot) === false ) return;
 
-    // Forbid overwriting macros if the hotbar is locked.
-    const existingMacro = game.macros.get(game.user.hotbar[slot]);
-    if ( existingMacro && this.locked ) return ui.notifications.warn("MACRO.CannotOverwrite", { localize: true });
+    /**
+     * A hook event that fires whenever data is dropped into a Hotbar slot.
+     * The hook provides a reference to the Hotbar application, the dropped data, and the target slot.
+     * Default handling of the drop event can be prevented by returning false within the hooked function.
+     *
+     * @function hotbarDrop
+     * @memberof hookEvents
+     * @param {Hotbar} hotbar       The Hotbar application instance
+     * @param {object} data         The dropped data object
+     * @param {number} slot         The target hotbar slot
+     */
+    if ( Hooks.call("hotbarDrop", this, data, slot) === false ) return;
 
     // Get the dropped document
     const cls = getDocumentClass(data.type);
@@ -331,8 +315,9 @@ class Hotbar extends Application {
 
     // Get the Macro to add to the bar
     let macro;
-    if ( data.type === "Macro" ) macro = game.macros.has(doc.id) ? doc : await cls.create(doc.toObject());
-    else if ( data.type === "RollTable" ) macro = await this._createRollTableRollMacro(doc);
+    if ( data.type === "Macro" ) {
+      macro = game.macros.has(doc.id) ? doc : await cls.create(doc.toObject());
+    }
     else macro = await this._createDocumentSheetToggle(doc);
 
     // Assign the macro to the hotbar
@@ -340,23 +325,6 @@ class Hotbar extends Application {
     return game.user.assignHotbarMacro(macro, slot, {fromSlot: data.slot});
   }
 
-  /* -------------------------------------------- */
-
-  /**
-   * Create a Macro which rolls a RollTable when executed
-   * @param {Document} table    The RollTable document
-   * @returns {Promise<Macro>}  A created Macro document to add to the bar
-   * @private
-   */
-  async _createRollTableRollMacro(table) {
-    const command = `const table = await fromUuid("${table.uuid}");\nawait table.draw({roll: true, displayChat: true});`;
-    return Macro.implementation.create({
-      name: `${game.i18n.localize("TABLE.Roll")} ${table.name}`,
-      type: "script",
-      img: table.img,
-      command
-    });
-  }
 
   /* -------------------------------------------- */
 
@@ -372,7 +340,7 @@ class Hotbar extends Application {
       name: `${game.i18n.localize("Display")} ${name}`,
       type: CONST.MACRO_TYPES.SCRIPT,
       img: "icons/svg/book.svg",
-      command: `await Hotbar.toggleDocumentSheet("${doc.uuid}");`
+      command: `Hotbar.toggleDocumentSheet("${doc.uuid}")`
     });
   }
 
@@ -387,18 +355,6 @@ class Hotbar extends Application {
     event.preventDefault();
     if ( this._collapsed ) return this.expand();
     else return this.collapse();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Toggle the hotbar's lock state.
-   * @returns {Promise<Hotbar>}
-   * @protected
-   */
-  async _toggleHotbarLock() {
-    await game.settings.set("core", "hotbarLock", !this.locked);
-    return this.render();
   }
 
   /* -------------------------------------------- */

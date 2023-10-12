@@ -16,29 +16,25 @@ class Game {
      * Game views include: join, setup, players, license, game, stream
      * @type {string}
      */
-    Object.defineProperty(this, "view", {value: view, writable: false, enumerable: true});
+    this.view = view;
 
     /**
      * The object of world data passed from the server
      * @type {object}
      */
-    Object.defineProperty(this, "data", {value: data, writable: false, enumerable: true});
+    this.data = data;
 
     /**
      * The Release data for this version of Foundry
      * @type {config.ReleaseData}
      */
-    Object.defineProperty(this, "release", {
-      value: new foundry.config.ReleaseData(data.release),
-      writable: false,
-      enumerable: true
-    });
+    this.release = new foundry.config.ReleaseData(this.data.release);
 
     /**
      * The id of the active World user, if any
-     * @type {string|null}
+     * @type {string}
      */
-    Object.defineProperty(this, "userId", {value: data.userId || null, writable: false, enumerable: true});
+    this.userId = data.userId || null;
 
     // Set up package data
     this.setupPackages(data);
@@ -47,61 +43,49 @@ class Game {
      * A mapping of WorldCollection instances, one per primary Document type.
      * @type {Collection<string,WorldCollection>}
      */
-    Object.defineProperty(this, "collections", {
-      value: new foundry.utils.Collection(),
-      writable: false,
-      enumerable: true
-    });
+    this.collections = new foundry.utils.Collection();
 
     /**
      * A mapping of CompendiumCollection instances, one per Compendium pack.
-     * @type {CompendiumPacks<string,CompendiumCollection>}
+     * @type {Collection<string,CompendiumCollection>}
      */
-    Object.defineProperty(this, "packs", {
-      value: new CompendiumPacks(),
-      writable: false,
-      enumerable: true
-    });
+    this.packs = new foundry.utils.Collection();
 
     /**
      * A singleton web Worker manager.
      * @type {WorkerManager}
      */
-    Object.defineProperty(this, "workers", {value: new WorkerManager(), writable: false, enumerable: true});
+    this.workers = new WorkerManager();
 
     /**
      * Localization support
      * @type {Localization}
      */
-    Object.defineProperty(this, "i18n", {
-      value: new Localization(data?.options?.language),
-      writable: false,
-      enumerable: true
-    });
+    this.i18n = new Localization(data?.options?.language);
 
     /**
      * The Keyboard Manager
      * @type {KeyboardManager}
      */
-    Object.defineProperty(this, "keyboard", {value: new KeyboardManager(), writable: false, enumerable: true});
+    this.keyboard = null;
 
     /**
      * The Mouse Manager
      * @type {MouseManager}
      */
-    Object.defineProperty(this, "mouse", {value: new MouseManager(), writable: false, enumerable: true});
+    this.mouse = null;
 
     /**
      * The Gamepad Manager
      * @type {GamepadManager}
      */
-    Object.defineProperty(this, "gamepad", {value: new GamepadManager(), writable: false, enumerable: true});
+    this.gamepad = null;
 
     /**
      * The New User Experience manager.
      * @type {NewUserExperience}
      */
-    Object.defineProperty(this, "nue", {value: new NewUserExperience(), writable: false, enumerable: true});
+    this.nue = new NewUserExperience();
 
     /**
      * The user role permissions setting
@@ -113,85 +97,73 @@ class Game {
      * The client session id which is currently active
      * @type {string}
      */
-    Object.defineProperty(this, "sessionId", {value: sessionId, writable: false, enumerable: true});
+    this.sessionId = sessionId;
 
     /**
      * Client settings which are used to configure application behavior
      * @type {ClientSettings}
      */
-    Object.defineProperty(this, "settings", {
-      value: new ClientSettings(data.settings || []),
-      writable: false,
-      enumerable: true
-    });
+    this.settings = new ClientSettings(data.settings || []);
 
     /**
      * Client keybindings which are used to configure application behavior
      * @type {ClientKeybindings}
      */
-    Object.defineProperty(this, "keybindings", {value: new ClientKeybindings(), writable: false, enumerable: true});
+    this.keybindings = new ClientKeybindings();
 
     /**
      * A reference to the open Socket.io connection
      * @type {WebSocket|null}
      */
-    Object.defineProperty(this, "socket", {value: socket, writable: false, enumerable: true});
+    this.socket = socket;
 
     /**
      * A singleton GameTime instance which manages the progression of time within the game world.
      * @type {GameTime}
      */
-    Object.defineProperty(this, "time", {value: new GameTime(socket), writable: false, enumerable: true});
+    this.time = new GameTime(socket);
 
-    const canvas = new Canvas();
     /**
      * A singleton reference to the Canvas object which may be used.
      * @type {Canvas}
      */
-    Object.defineProperty(this, "canvas", {value: canvas, writable: false, enumerable: true});
-    Object.defineProperty(globalThis, "canvas", {value: canvas, writable: true, enumerable: false});
+    this.canvas = globalThis.canvas = new Canvas();
 
     /**
      * A singleton instance of the Audio Helper class
      * @type {AudioHelper}
      */
-    Object.defineProperty(this, "audio", {value: new AudioHelper(), writable: false, enumerable: true});
+    this.audio = new AudioHelper();
 
     /**
      * A singleton instance of the Video Helper class
      * @type {VideoHelper}
      */
-    Object.defineProperty(this, "video", {value: new VideoHelper(), writable: false, enumerable: true});
+    this.video = new VideoHelper();
 
     /**
-     * A singleton instance of the TooltipManager class.
+     * A singleton instance of the TooltipManager class
      * @type {TooltipManager}
      */
-    Object.defineProperty(this, "tooltip", {value: new TooltipManager(), configurable: true, enumerable: true});
+    this.tooltip = new TooltipManager();
 
     /**
      * A singleton instance of the Clipboard Helper class.
      * @type {ClipboardHelper}
      */
-    Object.defineProperty(this, "clipboard", {value: new ClipboardHelper(), writable: false, enumerable: true});
+    this.clipboard = new ClipboardHelper();
 
     /**
      * A singleton instance of the Tour collection class
      * @type {Tours}
      */
-    Object.defineProperty(this, "tours", {value: new Tours(), writable: false, enumerable: true});
+    this.tours = new Tours();
 
     /**
      * The global document index.
      * @type {DocumentIndex}
      */
-    Object.defineProperty(this, "documentIndex", {value: new DocumentIndex(), writable: false, enumerable: true});
-
-    /**
-     * The singleton instance of the ClientIssues manager.
-     * @type {ClientIssues}
-     */
-    Object.defineProperty(this, "issues", {value: new ClientIssues(), writable: false, enumerable: true});
+    this.documentIndex = new DocumentIndex();
 
     /**
      * Whether the Game is running in debug mode
@@ -396,7 +368,60 @@ class Game {
     await this._initializeView();
 
     // Display usability warnings or errors
-    this.issues._detectUsabilityIssues();
+    this._displayUsabilityErrors();
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Display certain usability error messages which are likely to result in the player having a bad experience.
+   * @private
+   */
+  _displayUsabilityErrors() {
+
+    // Validate required resolution
+    const MIN_WIDTH = 1024;
+    const MIN_HEIGHT = 700;
+    if ( window.innerHeight < MIN_HEIGHT || window.innerWidth < MIN_WIDTH ) {
+      if ( ui.notifications && !game.data.options.debug ) {
+        ui.notifications.error(game.i18n.format("ERROR.LowResolution", {
+          width: window.innerWidth,
+          reqWidth: MIN_WIDTH,
+          height: window.innerHeight,
+          reqHeight: MIN_HEIGHT
+        }), {permanent: true});
+      }
+    }
+
+    // Display browser compatibility error
+    const browserError = (browser, version, minimum) => {
+      if ( parseInt(version) < minimum ) {
+        const err = game.i18n.format("ERROR.BrowserVersion", {browser, version, minimum});
+        if ( ui.notifications ) ui.notifications.error(err, {permanent: true});
+        console.error(err);
+      }
+    };
+
+    // Electron Version
+    const electron = navigator.userAgent.match(/Electron\/(\d+)\./);
+    if ( electron && parseInt(electron[1]) < 24 ) {
+      const err = game.i18n.localize("ERROR.ElectronVersion");
+      if ( ui.notifications ) ui.notifications.error(err, {permanent: true});
+      console.error(err);
+      return;
+    }
+
+    // Chromium Version
+    const chromium = navigator.userAgent.match(/Chrom(?:e|ium)\/([0-9]+)\./);
+    if ( chromium ) return browserError("Chromium", chromium[1], 92);
+
+    // Firefox Version
+    const firefox = navigator.userAgent.match(/Firefox\/([0-9]+)\./);
+    if ( firefox ) return browserError("Firefox", firefox[1], 90);
+
+    // Safari Version
+    const safari = navigator.userAgent.match(/Version\/([0-9]+)\.(?:.*)Safari\//);
+    if ( safari ) return browserError("Safari", safari[1], 15.4);
   }
 
   /* -------------------------------------------- */
@@ -406,22 +431,9 @@ class Game {
    * @returns {Promise<void>}
    */
   async shutDown() {
-    if ( !(game.user?.isGM || game.data.isAdmin) ) {
-      throw new Error("Only a Gamemaster User or server Administrator may shut down the currently active world");
+    if ( !game.ready || !game.user.isGM ) {
+      throw new Error("Only a GM user may shut down the currently active world");
     }
-
-    // Display a warning if other players are connected
-    const othersActive = game.users.filter(u => u.active && !u.isSelf).length;
-    if ( othersActive ) {
-      const warning = othersActive > 1 ? "GAME.ReturnSetupActiveUsers" : "GAME.ReturnSetupActiveUser";
-      const confirm = await Dialog.confirm({
-        title: game.i18n.localize("GAME.ReturnSetup"),
-        content: `<p>${game.i18n.format(warning, {number: othersActive})}</p>`
-      });
-      if ( !confirm ) return;
-    }
-
-    // Dispatch the request
     const setupUrl = foundry.utils.getRoute("setup");
     const response = await fetchWithTimeout(setupUrl, {
       method: "POST",
@@ -429,9 +441,7 @@ class Game {
       body: JSON.stringify({shutdown: true}),
       redirect: "manual"
     });
-
-    // Redirect after allowing time for a pop-up notification
-    setTimeout(() => window.location.href = response.url, 1000);
+    setTimeout(() => window.location.href = setupUrl, 1000);
   }
 
   /* -------------------------------------------- */
@@ -443,31 +453,24 @@ class Game {
    * @returns {Promise<void>}
    */
   async setupGame() {
+    Hooks.callAll("setup");
 
     // Store permission settings
     this.permissions = await this.settings.get("core", "permissions");
 
-    // Initialize world data
+    // Data initialization
     this.initializePacks();     // Do this first since documents may reference compendium content
     this.initializeDocuments();  // Next initialize world-level documents
+    this.initializeRTC();       // Intentionally async
 
-    // Monkeypatch a search method on EmbeddedCollection
-    foundry.abstract.EmbeddedCollection.prototype.search = DocumentCollection.prototype.search;
-
-    // Call world setup hook
-    Hooks.callAll("setup");
-
-    // Initialize AV conferencing
-    // noinspection ES6MissingAwait
-    this.initializeRTC();
-
-    // Initialize user interface
+    // Interface initialization
     this.initializeMouse();
     this.initializeGamepads();
     this.initializeKeyboard();
 
     // Call this here to set up a promise that dependent UI elements can await.
     this.canvas.initializing = this.initializeCanvas();
+
     this.initializeUI();
     DocumentSheetConfig.initializeSheets();
 
@@ -486,8 +489,8 @@ class Game {
     // Initialize New User Experience
     this.nue.initialize();
 
-    // Index available documents
-    await this.documentIndex.index();
+    // Begin indexing available documents.
+    this.documentIndex.index();
 
     Hooks.callAll("ready");
   }
@@ -561,12 +564,14 @@ class Game {
    * @returns {Collection<string,CompendiumCollection>}
    */
   initializePacks() {
+    const prior = this.packs;
+    const packs = new foundry.utils.Collection();
     for ( let metadata of this.data.packs ) {
-      let pack = this.packs.get(metadata.id);
+      let pack = prior?.get(metadata.id);
 
       // Update the compendium collection
       if ( !pack ) pack = new CompendiumCollection(metadata);
-      this.packs.set(pack.collection, pack);
+      packs.set(pack.collection, pack);
 
       // Re-render any applications associated with pack content
       for ( let document of pack.contents ) {
@@ -576,7 +581,7 @@ class Game {
       // Re-render any open Compendium applications
       pack.apps.forEach(app => app.render(false));
     }
-    return this.packs;
+    return this.packs = packs;
   }
 
   /* -------------------------------------------- */
@@ -599,14 +604,6 @@ class Game {
     // Initialize all singleton applications
     for ( let [k, cls] of Object.entries(CONFIG.ui) ) {
       ui[k] = new cls();
-    }
-
-    // Initialize pack applications
-    for ( let pack of this.packs.values() ) {
-      if ( Application.isPrototypeOf(pack.applicationClass) ) {
-        const app = new pack.applicationClass({collection: pack});
-        pack.apps.push(app);
-      }
     }
 
     // Render some applications (asynchronously)
@@ -654,8 +651,7 @@ class Game {
    * Initialize Keyboard controls
    */
   initializeKeyboard() {
-    Object.defineProperty(globalThis, "keyboard", {value: this.keyboard, writable: false, enumerable: true});
-    this.keyboard._activateListeners();
+    window.keyboard = this.keyboard = new KeyboardManager();
     try {
       game.keybindings._registerCoreKeybindings();
       game.keybindings.initialize();
@@ -671,7 +667,7 @@ class Game {
    * Initialize Mouse controls
    */
   initializeMouse() {
-    this.mouse._activateListeners();
+    this.mouse = new MouseManager();
   }
 
   /* -------------------------------------------- */
@@ -680,7 +676,7 @@ class Game {
    * Initialize Gamepad controls
    */
   initializeGamepads() {
-    this.gamepad._activateListeners();
+    this.gamepad = new GamepadManager();
   }
 
   /* -------------------------------------------- */
@@ -778,15 +774,6 @@ class Game {
       default: {}
     });
 
-    // Combat Tracker Configuration
-    game.settings.registerMenu("core", Combat.CONFIG_SETTING, {
-      name: "SETTINGS.CombatConfigN",
-      label: "SETTINGS.CombatConfigL",
-      hint: "SETTINGS.CombatConfigH",
-      icon: "fa-solid fa-swords",
-      type: CombatTrackerConfig
-    });
-
     // No-Canvas Mode
     game.settings.register("core", "noCanvas", {
       name: "SETTINGS.NoCanvasN",
@@ -877,15 +864,6 @@ class Game {
       default: {},
       type: Object,
       onChange: setting => DocumentSheetConfig.updateDefaultSheets(setting)
-    });
-
-    game.settings.registerMenu("core", "sheetClasses", {
-      name: "SETTINGS.DefaultSheetsN",
-      label: "SETTINGS.DefaultSheetsL",
-      hint: "SETTINGS.DefaultSheetsH",
-      icon: "fa-solid fa-scroll",
-      type: DefaultSheetsConfig,
-      restricted: true
     });
 
     // Are Chat Bubbles Enabled?
@@ -1007,8 +985,7 @@ class Game {
       scope: "client",
       config: true,
       type: Boolean,
-      default: false,
-      requiresReload: true
+      default: false
     });
 
     // Live Token Drag Preview
@@ -1095,79 +1072,17 @@ class Game {
       range: {min: 30, max: 300, step: 10}
     });
 
-    // Link recommendations.
-    game.settings.register("core", "pmHighlightDocumentMatches", {
-      name: "SETTINGS.EnableHighlightDocumentMatches",
-      hint: "SETTINGS.EnableHighlightDocumentMatchesH",
-      scope: "world",
-      config: false,
-      type: Boolean,
-      default: true
-    });
-
     // Combat Theme
     game.settings.register("core", "combatTheme", {
       name: "SETTINGS.CombatThemeN",
       hint: "SETTINGS.CombatThemeL",
       scope: "client",
-      config: false,
-      type: String,
-      choices: Object.entries(CONFIG.Combat.sounds).reduce( (choices, s) => {
-        choices[s[0]] = game.i18n.localize(s[1].label);
-        return choices;
-      }, {none: game.i18n.localize("SETTINGS.None") }),
-      default: "none"
-    });
-
-    // Show Toolclips
-    game.settings.register("core", "showToolclips", {
-      name: "SETTINGS.ShowToolclips",
-      hint: "SETTINGS.ShowToolclipsH",
-      scope: "client",
       config: true,
-      type: Boolean,
-      default: true,
-      requiresReload: true
-    });
-
-    // Favorite paths
-    game.settings.register("core", "favoritePaths", {
-      scope: "client",
-      config: false,
-      type: Object,
-      default: {"data-/": {source: "data", path: "/", label: "root"}}
-    });
-
-    // Top level collection sorting
-    game.settings.register("core", "collectionSortingModes", {
-      scope: "client",
-      config: false,
-      type: Object,
-      default: {}
-    });
-
-    // Collection searching
-    game.settings.register("core", "collectionSearchModes", {
-      scope: "client",
-      config: false,
-      type: Object,
-      default: {}
-    });
-
-    // Hotbar lock
-    game.settings.register("core", "hotbarLock", {
-      scope: "client",
-      config: false,
-      type: Boolean,
-      default: false
-    });
-
-    // Adventure imports
-    game.settings.register("core", "adventureImports", {
-      scope: "world",
-      config: false,
-      type: Object,
-      default: {}
+      type: String,
+      choices: Object.entries(CONFIG.Combat.sounds)
+        .reduce( (choices, s) => {choices[s[0]] = game.i18n.localize(s[1].label); return choices;}
+          , { "none": game.i18n.localize("SETTINGS.None") }),
+      default: "none"
     });
 
     // Document-specific settings
@@ -1192,7 +1107,6 @@ class Game {
       game.tours.register("core", "welcome", await SidebarTour.fromJSON("/tours/welcome.json"));
       game.tours.register("core", "installingASystem", await SetupTour.fromJSON("/tours/installing-a-system.json"));
       game.tours.register("core", "creatingAWorld", await SetupTour.fromJSON("/tours/creating-a-world.json"));
-      game.tours.register("core", "backupsOverview", await SetupTour.fromJSON("/tours/backups-overview.json"));
       game.tours.register("core", "uiOverview", await Tour.fromJSON("/tours/ui-overview.json"));
       game.tours.register("core", "sidebar", await SidebarTour.fromJSON("/tours/sidebar.json"));
       game.tours.register("core", "canvasControls", await CanvasTour.fromJSON("/tours/canvas-controls.json"));
@@ -1370,9 +1284,6 @@ class Game {
     // Application reload.
     this.socket.on("reload", () => foundry.utils.debouncedReload());
 
-    // Hot Reload
-    this.socket.on("hotReload", this.#handleHotReload.bind(this));
-
     // Database Operations
     CONFIG.DatabaseBackend.activateSocketListeners(this.socket);
 
@@ -1381,112 +1292,8 @@ class Game {
     Users._activateSocketListeners(this.socket);
     Scenes._activateSocketListeners(this.socket);
     Journal._activateSocketListeners(this.socket);
-    FogExplorations._activateSocketListeners(this.socket);
     ChatBubbles._activateSocketListeners(this.socket);
     ProseMirrorEditor._activateSocketListeners(this.socket);
-    CompendiumCollection._activateSocketListeners(this.socket);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @typedef {Object} HotReloadData
-   * @property {string} packageType       The type of package which was modified
-   * @property {string} packageId         The id of the package which was modified
-   * @property {string} content           The updated stringified file content
-   * @property {string} path              The relative file path which was modified
-   * @property {string} extension         The file extension which was modified, e.g. "js", "css", "html"
-   */
-
-  /**
-   * Handle a hot reload request from the server
-   * @param {HotReloadData} data          The hot reload data
-   * @private
-   */
-  #handleHotReload(data) {
-    const proceed = Hooks.call("hotReload", data);
-    if ( proceed === false ) return;
-
-    switch ( data.extension ) {
-      case "css": return this.#hotReloadCSS(data);
-      case "html":
-      case "hbs": return this.#hotReloadHTML(data);
-      case "json": return this.#hotReloadJSON(data);
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle hot reloading of CSS files
-   * @param {HotReloadData} data          The hot reload data
-   */
-  #hotReloadCSS(data) {
-    const links = document.querySelectorAll(`link`);
-    const link = Array.from(links).find(l => {
-      let href = l.getAttribute("href");
-      // If the href has a query string, remove it
-      if ( href.includes("?") ) {
-        const [path, query] = href.split("?");
-        href = path;
-      }
-      return href === data.path;
-    });
-    if ( !link ) return;
-    const href = link.getAttribute("href");
-    link.setAttribute("href", `${href}?${Date.now()}`);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle hot reloading of HTML files, such as Handlebars templates
-   * @param {HotReloadData} data          The hot reload data
-   */
-  #hotReloadHTML(data) {
-    let template;
-    try {
-      template = Handlebars.compile(data.content);
-    }
-    catch(err) {
-      return console.error(err);
-    }
-    Handlebars.registerPartial(data.path, template);
-    _templateCache[data.path] = template;
-    for ( const appId in ui.windows ) {
-      ui.windows[appId].render(true);
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle hot reloading of JSON files, such as language files
-   * @param {HotReloadData} data          The hot reload data
-   */
-  #hotReloadJSON(data) {
-    const currentLang = game.i18n.lang;
-    if ( data.packageId === "core" ) {
-      if ( !data.path.endsWith(`lang/${currentLang}.json`) ) return;
-    }
-    else {
-      const pkg = data.packageType === "system" ? game.system : game.modules.get(data.packageId);
-      const lang = pkg.languages.find(l=> (l.path === data.path) && (l.lang === currentLang));
-      if ( !lang ) return;
-    }
-
-    // Update the translations
-    let translations = {};
-    try {
-      translations = JSON.parse(data.content);
-    }
-    catch(err) {
-      return console.error(err);
-    }
-    foundry.utils.mergeObject(game.i18n.translations, translations);
-    for ( const appId in ui.windows ) {
-      ui.windows[appId].render(true);
-    }
   }
 
   /* -------------------------------------------- */
@@ -1500,8 +1307,8 @@ class Game {
 
     // Disable touch zoom
     document.addEventListener("touchmove", ev => {
-      if ( (ev.scale !== undefined) && (ev.scale !== 1) ) ev.preventDefault();
-    }, {passive: false});
+      if (ev.scale !== 1) ev.preventDefault();
+    });
 
     // Disable right-click
     document.addEventListener("contextmenu", ev => ev.preventDefault());

@@ -44,12 +44,13 @@ class ModuleManagement extends FormApplication {
 
   /** @inheritdoc */
   getData(options={}) {
+    const settings = game.settings.get("core", this.constructor.CONFIG_SETTING);
     const editable = this.isEditable;
     const counts = {all: game.modules.size, active: 0, inactive: 0};
 
     // Prepare modules
     const modules = game.modules.reduce((arr, module) => {
-      const isActive = module.active;
+      const isActive = settings[module.id] === true;
       if ( isActive ) counts.active++;
       else if ( !editable ) return arr;
       else counts.inactive++;
@@ -74,19 +75,12 @@ class ModuleManagement extends FormApplication {
 
       // String formatting labels
       const authorsLabel = game.i18n.localize(`Author${module.authors.size > 1 ? "Pl" : ""}`);
-      mod.labels = {authors: authorsLabel};
-      mod.badge = module.getVersionBadge();
-
-      // Document counts.
-      const subTypeCounts = game.issues.getSubTypeCountsFor(mod);
-      if ( subTypeCounts ) mod.documents = this._formatDocumentSummary(subTypeCounts, isActive);
+      mod.labels = {authors: authorsLabel, ...module.getAvailabilityLabels()};
 
       // If the current System is not one of the supported ones, don't return
       if ( mod.relationships?.systems.size > 0 && !mod.systemOnly ) return arr;
 
-      mod.enableable = true;
-      this._evaluateDependencies(mod);
-      this._evaluateSystemCompatibility(mod);
+      this._evaluateCompatibility(mod);
       mod.disabled = mod.required || !mod.enableable;
       return arr.concat([mod]);
     }, []).sort((a, b) => a.title.localeCompare(b.title));
@@ -105,13 +99,14 @@ class ModuleManagement extends FormApplication {
   /* -------------------------------------------- */
 
   /**
-   * Given a module, determines if it meets minimum and maximum compatibility requirements of its dependencies.
+   * Given a module, determines if it meets minimum and maximum compatibility requirements.
    * If not, it is marked as being unable to be activated.
    * If the package does not meet verified requirements, it is marked with a warning instead.
-   * @param {object} module  The module.
-   * @protected
+   * @param {object} module
+   * @private
    */
-  _evaluateDependencies(module) {
+  _evaluateCompatibility(module) {
+    module.enableable = true;
     for ( const required of module.relationships.requires ) {
       if ( required.type !== "module" ) continue;
 
@@ -155,29 +150,6 @@ class ModuleManagement extends FormApplication {
 
   /* -------------------------------------------- */
 
-  /**
-   * Given a module, determine if it meets the minimum and maximum system compatibility requirements.
-   * @param {object} module  The module.
-   * @protected
-   */
-  _evaluateSystemCompatibility(module) {
-    if ( !module.relationships.systems?.length ) return;
-    const supportedSystem = module.relationships.systems.find(s => s.id === game.system.id);
-    const {minimum, maximum} = supportedSystem?.compatibility ?? {};
-    const {version} = game.system;
-    if ( !minimum && !maximum ) return;
-    if ( minimum && foundry.utils.isNewerVersion(minimum, version) ) {
-      module.enableable = false;
-      module.tooltip = game.i18n.format("MODMANAGE.SystemCompatibilityIssueMinimum", {minimum, version});
-    }
-    if ( maximum && foundry.utils.isNewerVersion(version, maximum) ) {
-      module.enableable = false;
-      module.tooltip = game.i18n.format("MODMANAGE.SystemCompatibilityIssueMaximum", {maximum, version});
-    }
-  }
-
-  /* -------------------------------------------- */
-
   /** @inheritdoc */
   activateListeners(html) {
     super.activateListeners(html);
@@ -201,7 +173,7 @@ class ModuleManagement extends FormApplication {
 
   /** @inheritdoc */
   async _renderInner(...args) {
-    await loadTemplates(["templates/setup/parts/package-tags.hbs"]);
+    await loadTemplates(["templates/setup/parts/package-tags.html"]);
     return super._renderInner(...args);
   }
 
@@ -251,207 +223,52 @@ class ModuleManagement extends FormApplication {
   /* -------------------------------------------- */
 
   /**
-   * Handle changes to a module checkbox to prompt for whether to enable dependencies.
-   * @param {Event} event  The change event.
-   * @protected
+   * Handle changes to a module checkbox to prompt for whether or not to enable dependencies
+   * @private
    */
   async _onChangeCheckbox(event) {
     const input = event.target;
     const module = game.modules.get(input.name);
-    const enabling = input.checked;
+    if ( !module.relationships ) return;
+    const allPackages = Array.from(game.modules).concat([game.system, game.world]);
 
-    // If disabling Packages, warn that subdocuments will be unavailable
-    if ( !enabling ) {
-      const confirm = await this._confirmDocumentsUnavailable(module);
-      if ( !confirm ) {
-        input.checked = true;
-        return;
+    const dependencies = module.relationships.requires.filter(x => {
+      if ( x.type === "system" ) return false;
+      const pack = game.modules.get(x.id);
+      if ( !pack ) {
+        ui.notifications.error(game.i18n.format("MODMANAGE.DepNotInstalled", {missing: x.id}));
+        return false;
       }
-    }
+      if ( pack.active === input.checked ) return false;
+      if ( !input.checked ) {
+        // Check if other modules depend on this dependency, and if so, remove it from the to-disable list.
+        return !allPackages.find(a => {
+          if ( (a.type === "module") && !a.active ) return false;
+          if ( a.id === input.name ) return false;
+          return a.relationships?.requires?.find(d => d.id === x.id);
+        });
+      }
+      return true;
+    });
 
-    // Check for impacted dependencies
-    const impactedDependencies = new Map();
-    for ( const pkg of module.relationships.requires ) {
-      if ( impactedDependencies.has(pkg.id) ) continue;
-      this.#checkImpactedDependency(impactedDependencies, pkg, enabling, input, true);
-    }
-    for ( const pkg of module.relationships.recommends ) {
-      if ( impactedDependencies.has(pkg.id) ) continue;
-      this.#checkImpactedDependency(impactedDependencies, pkg, enabling, input, false);
-    }
+    if ( !dependencies.size ) return;
 
-    // Check for upstream packages
-    const upstreamPackages = enabling ? new Set() : this.#checkUpstreamPackages(module);
-    if ( !impactedDependencies.size && !upstreamPackages.size ) return;
-
-    const dependencies = Array.from(impactedDependencies.values());
-    const { requiredDependencies, optionalDependencies } = dependencies.reduce((obj, dep) => {
-      if ( dep.required ) obj.requiredDependencies.push(dep);
-      else obj.optionalDependencies.push(dep);
-      return obj;
-    }, { requiredDependencies: [], optionalDependencies: [] });
     const html = await renderTemplate("templates/setup/impacted-dependencies.html", {
-      enabling,
-      dependencies,
-      requiredDependencies,
-      optionalDependencies,
-      upstreamPackages: Array.from(upstreamPackages.values())
+      enabling: input.checked,
+      dependencies
     });
 
-    function deactivateUpstreamPackages() {
-      for ( let d of upstreamPackages ) {
-        const dep = input.form[d.id];
-        if ( dep ) {
-          dep.checked = false;
-        }
-      }
-    }
-
-    // If there is a choice to be made, verify choices with the user via Dialog.confirm.
-    // Otherwise, just notify them with Dialog.prompt
-    const dialogConfigData = {
-      title: `${module.title} ${game.i18n.localize("MODMANAGE.Dependencies")}`,
-      content: html
-    };
-
-    // If there are no dependencies, just inform the user about the upstream packages
-    if ( !impactedDependencies.size ) {
-      dialogConfigData.callback = deactivateUpstreamPackages;
-      dialogConfigData.rejectClose = false;
-
-      return Dialog.prompt(dialogConfigData);
-    }
-
-    // Otherwise, prompt the user to confirm the changes to impacted dependencies
-    return Dialog.confirm(foundry.utils.mergeObject(dialogConfigData, {
-      yes: (html) => {
-        const inputs = Array.from(html[0].querySelectorAll("input"));
-        for ( let d of dependencies ) {
+    return Dialog.confirm({
+      title: game.i18n.localize("MODMANAGE.Dependencies"),
+      content: html,
+      yes: () => {
+        for ( let d of module.relationships.requires ) {
           const dep = input.form[d.id];
-          if ( dep ) dep.checked = inputs.find(i => i.name === d.id)?.checked ? input.checked : dep.checked;
+          if ( dep ) dep.checked = input.checked;
         }
-        deactivateUpstreamPackages();
       },
-      no: () => {
-        input.checked = false;
-        deactivateUpstreamPackages();
-      },
-    }));
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @typedef {Object} ImpactedDependency
-   * @property {string} id         The dependency ID
-   * @property {string} title      The dependency title
-   * @property {string} reason     The reason the dependency is related to this package
-   * @property {boolean} required  Whether the dependency is required
-   * @property {string} note       A note to display to the user
-   */
-
-  /**
-   * Check whether a dependency is impacted by another package being enabled / disabled.
-   * @param {Map<string,ImpactedDependency>} impactedDependencies  The map of impacted dependencies.
-   * @param {Package} pkg                The dependency to check.
-   * @param {boolean} enabling           Whether the dependency is being enabled or disabled.
-   * @param {HTMLInputElement} input     The checkbox input for the dependency.
-   * @param {boolean} required           Whether the dependency is required.
-   */
-  #checkImpactedDependency(impactedDependencies, pkg, enabling,
-    input, required=true) {
-    if ( pkg.type !== "module" ) return null;
-
-    /** @type {ImpactedDependency} */
-    const impactedDependency = {
-      id: pkg.id,
-      reason: pkg.reason
-    };
-
-    if ( enabling ) {
-      impactedDependency.required = required;
-      impactedDependency.note = required ? game.i18n.localize("SETUP.RequiredPackageNote") :
-        game.i18n.localize("SETUP.RecommendedPackageNote")
-    }
-
-    const pack = game.modules.get(pkg.id);
-    if ( !pack ) {
-      if ( required ) ui.notifications.error(game.i18n.format("MODMANAGE.DepNotInstalled",
-        {missing: pkg.id}));
-      return null;
-    }
-    impactedDependency.title = pack.title;
-    if ( pack.active === input.checked ) return null;
-    if ( !enabling ) {
-      // Check if other modules depend on this dependency, and if so, remove it from the to-disable list.
-      const allPackages = Array.from(game.modules).concat([game.system, game.world]);
-      const requiredByOtherPackages = !!allPackages.find(a => {
-        if ( (a.type === "module") && !a.active ) return false;
-        if ( a.id === input.name ) return false;
-        if ( !a.relationships?.length ) return false;
-        const dependencies = Array.from(a.relationships.requires).concat(Array.from(a.relationships.recommends));
-        return dependencies.find(d => d.id === pkg.id);
-      });
-      if ( requiredByOtherPackages ) return null;
-    }
-
-    // Add the dependency to the list of impacted dependencies
-    impactedDependencies.set(pkg.id, impactedDependency);
-
-    // Recursively check downstream dependencies
-    const fullPackage = game.modules.get(pkg.id);
-    for ( const p of fullPackage.relationships.requires ) {
-      if ( impactedDependencies.has(p.id) ) continue;
-      this.#checkImpactedDependency(impactedDependencies, p, enabling, input, true);
-    }
-    for ( const p of fullPackage.relationships.recommends ) {
-      if ( impactedDependencies.has(p.id) ) continue;
-      this.#checkImpactedDependency(impactedDependencies, p, enabling, input, false);
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Recursively check if any upstream packages would become disabled if the module were disabled.
-   * @param {Package} pkg                    The dependency to check.
-   * @param {Set<Package>} upstreamPackages  The current Set of detected upstream packages.
-   * @returns {Set<Package>}                 A Set of upstream packages.
-   */
-  #checkUpstreamPackages(pkg, upstreamPackages=null) {
-    if ( !upstreamPackages ) upstreamPackages = new Set();
-    const packagesThatRequireThis = game.modules.filter(m => m.active && m.relationships.requires.some(r => r.id === pkg.id));
-    for ( let p of packagesThatRequireThis ) {
-      if ( upstreamPackages.has(p) ) continue;
-      upstreamPackages.add(p);
-      this.#checkUpstreamPackages(p, upstreamPackages);
-    }
-    return upstreamPackages;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Indicate if any Documents would become unavailable if the module were disabled, and confirm if the user wishes to
-   * proceed.
-   * @param {Module} module       The module being disabled.
-   * @returns {Promise<boolean>}  A Promise which resolves to true if disabling should continue.
-   * @protected
-   */
-  async _confirmDocumentsUnavailable(module) {
-    const counts = game.issues.getSubTypeCountsFor(module.id);
-    if ( !counts ) return true;
-    const confirm = await Dialog.confirm({
-      title: game.i18n.localize("MODMANAGE.UnavailableDocuments"),
-      content: `
-        <p>${game.i18n.localize("MODMANAGE.UnavailableDocumentsConfirm")}</p>
-        <hr>
-        <p>${this._formatDocumentSummary(counts)}</p>
-      `,
-      yes: () => true,
-      no: () => false
+      no: () => input.checked = false
     });
-    return !!confirm;
   }
 
   /* -------------------------------------------- */
@@ -536,28 +353,5 @@ class ModuleManagement extends FormApplication {
         rgx.test(SearchFilter.cleanQuery(author));
       li.classList.toggle("hidden", !match);
     }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Format a document count collection for display.
-   * @param {ModuleSubTypeCounts} counts  An object of sub-type counts.
-   * @param {boolean} isActive            Whether the module is active.
-   * @protected
-   */
-  _formatDocumentSummary(counts, isActive) {
-    return Object.entries(counts).map(([documentName, types]) => {
-      let total = 0;
-      const typesList = game.i18n.getListFormatter().format(Object.entries(types).map(([subType, count]) => {
-        total += count;
-        const label = game.i18n.localize(CONFIG[documentName].typeLabels?.[subType] ?? subType);
-        return `<strong>${count}</strong> ${label}`;
-      }));
-      const cls = getDocumentClass(documentName);
-      const label = total === 1 ? cls.metadata.label : cls.metadata.labelPlural;
-      if ( isActive ) return `${typesList} ${game.i18n.localize(label)}`;
-      return `<strong>${total}</strong> ${game.i18n.localize(label)}`;
-    }).join(" &bull; ");
   }
 }

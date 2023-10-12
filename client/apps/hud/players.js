@@ -28,25 +28,12 @@ class PlayerList extends Application {
   }
 
   /* -------------------------------------------- */
-  /*  Application Rendering                       */
-  /* -------------------------------------------- */
-
-  /**
-   * Whether the players list is in a configuration where it is hidden.
-   * @returns {boolean}
-   */
-  get isHidden() {
-    if ( game.webrtc.mode === AVSettings.AV_MODES.DISABLED ) return false;
-    const { client, verticalDock } = game.webrtc.settings;
-    return verticalDock && client.hidePlayerList && !client.hideDock && !ui.webrtc.hidden;
-  }
-
+  /*  Application Rendering
   /* -------------------------------------------- */
 
   /** @override */
   render(force, context={}) {
-    this._positionInDOM();
-    const { renderContext, renderData } = context;
+    let { renderContext, renderData} = context;
     if ( renderContext ) {
       const events = ["createUser", "updateUser", "deleteUser"];
       if ( !events.includes(renderContext) ) return this;
@@ -70,59 +57,23 @@ class PlayerList extends Application {
       u.charname = user.character?.name.split(" ")[0] || "";
       u.color = u.active ? u.color : "#333333";
       u.border = u.active ? user.border : "#000000";
-      u.displayName = this._getDisplayName(u);
       return u;
     }).sort((a, b) => {
       if ( (b.role >= CONST.USER_ROLES.ASSISTANT) && (b.role > a.role) ) return 1;
       return a.name.localeCompare(b.name);
     });
 
+    // Determine whether to hide the players list when using AV conferencing
+    let hide = false;
+    if ( game.webrtc && (game.webrtc.settings.world.mode >= AVSettings.AV_MODES.VIDEO) ) {
+      hide = game.webrtc.settings.client.hidePlayerList;
+    }
+
     // Return the data for rendering
     return {
-      users,
-      hide: this.isHidden,
+      users, hide,
       showOffline: this._showOffline
     };
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Prepare a displayed name string for the User which includes their name, pronouns, character, or GM tag.
-   * @returns {string}
-   * @protected
-   */
-  _getDisplayName(user) {
-    const displayNamePart = [user.name];
-    if ( user.pronouns ) displayNamePart.push(`(${user.pronouns})`);
-    if ( user.isGM ) displayNamePart.push(`[${game.i18n.localize("USER.GM")}]`);
-    else if ( user.charname ) displayNamePart.push(`[${user.charname}]`);
-    return displayNamePart.join(" ");
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Position this Application in the main DOM appropriately.
-   * @protected
-   */
-  _positionInDOM() {
-    document.body.classList.toggle("players-hidden", this.isHidden);
-    if ( (game.webrtc.mode === AVSettings.AV_MODES.DISABLED) || this.isHidden || !this.element.length ) return;
-    const element = this.element[0];
-    const cameraViews = ui.webrtc.element[0];
-    const uiTop = document.getElementById("ui-top");
-    const uiLeft = document.getElementById("ui-left");
-    const { client, verticalDock } = game.webrtc.settings;
-    const inDock = verticalDock && !client.hideDock && !ui.webrtc.hidden;
-
-    if ( inDock && !cameraViews?.contains(element) ) {
-      cameraViews.appendChild(element);
-      uiTop.classList.remove("offset");
-    } else if ( !inDock && !uiLeft.contains(element) ) {
-      uiLeft.appendChild(element);
-      uiTop.classList.add("offset");
-    }
   }
 
   /* -------------------------------------------- */
@@ -137,6 +88,14 @@ class PlayerList extends Application {
 
     // Context menu
     const contextOptions = this._getUserContextOptions();
+    /**
+     * A hook event that fires when the context menu for a PlayersList
+     * entry is constructed.
+     * @function getUserContextOptions
+     * @memberof hookEvents
+     * @param {jQuery} html                     The HTML element to which the context options are attached
+     * @param {ContextMenuEntry[]} entryOptions The context menu entries
+     */
     Hooks.call("getUserContextOptions", html, contextOptions);
     new ContextMenu(html, ".player", contextOptions);
   }
@@ -187,9 +146,12 @@ class PlayerList extends Application {
           const user = game.users.get(li[0].dataset.userId);
           return game.user.isGM && user.active && !user.isSelf;
         },
-        callback: li => {
+        callback: async li => {
           const user = game.users.get(li[0].dataset.userId);
-          return this.#kickUser(user);
+          const role = user.role;
+          await user.update({role: CONST.USER_ROLES.NONE});
+          await user.update({role}, {diff: false});
+          ui.notifications.info(`${user.name} has been kicked from the world.`);
         }
       },
       {
@@ -201,7 +163,8 @@ class PlayerList extends Application {
         },
         callback: li => {
           const user = game.users.get(li[0].dataset.userId);
-          return this.#banUser(user);
+          user.update({role: CONST.USER_ROLES.NONE});
+          ui.notifications.info(`${user.name} has been <strong>banned</strong> from the world.`);
         }
       },
       {
@@ -213,7 +176,8 @@ class PlayerList extends Application {
         },
         callback: li => {
           const user = game.users.get(li[0].dataset.userId);
-          return this.#unbanUser(user);
+          user.update({role: CONST.USER_ROLES.PLAYER});
+          ui.notifications.info(`${user.name} has been restored to a Player role in the World.`);
         }
       },
       {
@@ -235,7 +199,7 @@ class PlayerList extends Application {
   /* -------------------------------------------- */
 
   /**
-   * Toggle display of the Players hud setting for whether to display offline players
+   * Toggle display of the Players hud setting for whether or not to display offline players
    * @param {Event} event   The originating click event
    * @private
    */
@@ -243,45 +207,5 @@ class PlayerList extends Application {
     event.preventDefault();
     this._showOffline = !this._showOffline;
     this.render();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Temporarily remove a User from the World by banning and then un-banning them.
-   * @param {User} user     The User to kick
-   * @returns {Promise<void>}
-   */
-  async #kickUser(user) {
-    const role = user.role;
-    await user.update({role: CONST.USER_ROLES.NONE});
-    await user.update({role}, {diff: false});
-    ui.notifications.info(`${user.name} has been <strong>kicked</strong> from the World.`);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Ban a User by changing their role to "NONE".
-   * @param {User} user     The User to ban
-   * @returns {Promise<void>}
-   */
-  async #banUser(user) {
-    if ( user.role === CONST.USER_ROLES.NONE ) return;
-    await user.update({role: CONST.USER_ROLES.NONE});
-    ui.notifications.info(`${user.name} has been <strong>banned</strong> from the World.`);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Unban a User by changing their role to "PLAYER".
-   * @param {User} user     The User to unban
-   * @returns {Promise<void>}
-   */
-  async #unbanUser(user) {
-    if ( user.role !== CONST.USER_ROLES.NONE ) return;
-    await user.update({role: CONST.USER_ROLES.PLAYER});
-    ui.notifications.info(`${user.name} has been <strong>unbanned</strong> from the World.`);
   }
 }

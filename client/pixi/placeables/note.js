@@ -10,16 +10,6 @@ class Note extends PlaceableObject {
   /** @inheritdoc */
   static embeddedName = "Note";
 
-  /** @override */
-  static RENDER_FLAGS = {
-    redraw: {propagate: ["refresh"]},
-    refresh: {propagate: ["refreshState", "refreshPosition", "refreshText"], alias: true},
-    refreshPosition: {propagate: ["refreshVisibility"]},
-    refreshState: {propagate: ["refreshVisibility"]},
-    refreshVisibility: {},
-    refreshText: {}
-  };
-
   /* -------------------------------------------- */
 
   /** @override */
@@ -90,16 +80,15 @@ class Note extends PlaceableObject {
   /* -------------------------------------------- */
 
   /** @override */
-  async _draw(options) {
+  async _draw() {
     this.controlIcon = this.addChild(this._drawControlIcon());
-    this._drawTooltip();
+    this.tooltip = this.addChild(this._drawTooltip());
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Draw the ControlIcon for the Map Note.
-   * This method replaces any prior controlIcon with the new one.
+   * Draw the ControlIcon for the Map Note
    * @returns {ControlIcon}
    * @protected
    */
@@ -114,24 +103,16 @@ class Note extends PlaceableObject {
   /* -------------------------------------------- */
 
   /**
-   * Draw the map note Tooltip as a Text object.
-   * This method replaces any prior text with the new one.
+   * Draw the map note Tooltip as a Text object
    * @returns {PIXI.Text}
    * @protected
    */
   _drawTooltip() {
 
-    // Destroy any prior text
-    if ( this.tooltip ) {
-      this.removeChild(this.tooltip);
-      this.tooltip = undefined;
-    }
-
     // Create the Text object
     const textStyle = this._getTextStyle();
     const text = new PreciseText(this.text, textStyle);
     text.visible = false;
-    text.eventMode = "none";
     const halfPad = (0.5 * this.size) + 12;
 
     // Configure Text position
@@ -157,9 +138,7 @@ class Note extends PlaceableObject {
         text.position.set(halfPad, 0);
         break;
     }
-
-    // Add child and return
-    return this.tooltip = this.addChild(text);
+    return text;
   }
 
   /* -------------------------------------------- */
@@ -189,76 +168,24 @@ class Note extends PlaceableObject {
   }
 
   /* -------------------------------------------- */
-  /*  Incremental Refresh                         */
-  /* -------------------------------------------- */
 
   /** @override */
-  _applyRenderFlags(flags) {
-    if ( flags.refreshVisibility ) this._refreshVisibility();
-    if ( flags.refreshPosition ) this.#refreshPosition();
-    if ( flags.refreshText ) this._drawTooltip();
-    if ( flags.refreshState ) this.#refreshState();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the visibility.
-   * @protected
-   */
-  _refreshVisibility() {
-    const wasVisible = this.visible;
-    this.visible = this.isVisible;
-    if ( this.controlIcon ) this.controlIcon.refresh({
-      visible: this.visible,
-      borderVisible: this.hover || this.layer.highlightObjects
-    });
-    if ( wasVisible !== this.visible ) this.layer.hintMapNotes();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the state of the Note. Called the Note enters a different interaction state.
-   */
-  #refreshState() {
-    this.alpha = this._getTargetAlpha();
-    this.tooltip.visible = this.hover || this.layer.highlightObjects;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the position of the Note. Called with the coordinates change.
-   */
-  #refreshPosition() {
+  _refresh(options) {
     this.position.set(this.document.x, this.document.y);
+    this.controlIcon.border.visible = this.tooltip.visible = this.hover;
+    this.visible = this.isVisible;
   }
 
   /* -------------------------------------------- */
-  /*  Document Event Handlers                     */
+  /*  Event Handlers                              */
   /* -------------------------------------------- */
 
   /** @override */
-  _onUpdate(data, options, userId) {
-    super._onUpdate(data, options, userId);
-
-    // Full Re-Draw
-    const changed = new Set(Object.keys(data));
-    if ( ["texture", "iconSize"].some(k => changed.has(k)) ) {
-      return this.renderFlags.set({redraw: true});
-    }
-
-    // Incremental Refresh
-    this.renderFlags.set({
-      refreshState: ["entryId", "pageId", "global"].some(k => changed.has(k)),
-      refreshPosition: ["x", "y"].some(k => changed.has(k)),
-      refreshText: ["text", "fontSize", "textAnchor", "textColor"].some(k => changed.has(k))
-    });
+  _onUpdate(data) {
+    this.layer.quadtree.update({r: this.bounds, t: this});
+    this.draw();
   }
 
-  /* -------------------------------------------- */
-  /*  Interactivity                               */
   /* -------------------------------------------- */
 
   /** @override */
@@ -291,8 +218,16 @@ class Note extends PlaceableObject {
 
   /** @inheritdoc */
   _onHoverIn(event, options) {
-    this.zIndex = this.parent.children.at(-1).zIndex + 1;
+    this.zIndex = Math.max(...this.layer.placeables.map(n => n.document.z || 0)) + 1;
     return super._onHoverIn(event, options);
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  _onHoverOut(event) {
+    this.zIndex = this.document.z;
+    return super._onHoverOut(event);
   }
 
   /* -------------------------------------------- */
@@ -304,6 +239,16 @@ class Note extends PlaceableObject {
       options.mode = JournalSheet.VIEW_MODES.SINGLE;
       options.pageId = this.page.id;
     }
+    /**
+     * A hook event that fires whenever a map note is double-clicked.
+     * The hook provides the note placeable and the arguments passed to the associated {@link JournalSheet} render call.
+     * Hooked functions may modify the render arguments or cancel the render by returning false.
+     *
+     * @function activateNote
+     * @memberof hookEvents
+     * @param {Note} note  The note that was activated.
+     * @param {object} options  Options for rendering the associated {@link JournalSheet}.
+     */
     const allowed = Hooks.call("activateNote", this, options);
     if ( !allowed || !this.entry ) return;
     if ( this.page?.type === "image" ) {

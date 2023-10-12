@@ -10,7 +10,4 @@ export function parseSafe(url) {
   return null;
 }
 
-// Define properties on the URL environment
-Object.defineProperties(URL, {
-  parseSafe: {value: parseSafe}
-});
+Object.assign(URL, {parseSafe});

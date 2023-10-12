@@ -124,7 +124,7 @@ class Tabs {
 
     // Change active content
     if ( this._content ) {
-      const tabs = this._content.querySelectorAll(".tab[data-tab]");
+      const tabs = this._content.querySelectorAll("[data-tab]");
       for ( let t of tabs ) {
         if ( t.dataset.group && (t.dataset.group !== group) ) continue;
         t.classList.toggle("active", t.dataset.tab === tabName);

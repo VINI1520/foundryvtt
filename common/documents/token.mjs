@@ -32,8 +32,7 @@ import {LightData, TextureData} from "../data/data.mjs";
  * @property {number} [displayName=0]     The display mode of the Token nameplate, from CONST.TOKEN_DISPLAY_MODES
  * @property {string|null} actorId        The _id of an Actor document which this Token represents
  * @property {boolean} [actorLink=false]  Does this Token uniquely represent a singular Actor, or is it one of many?
- * @property {BaseActorDelta} [delta]     The ActorDelta embedded document which stores the differences between this
- *                                        token and the base actor it represents.
+ * @property {object} [actorData]         Token-level data which overrides the base data of the associated Actor
  * @property {TextureData} texture        The token's texture on the canvas.
  * @property {number} [width=1]           The width of the Token in grid units
  * @property {number} [height=1]          The height of the Token in grid units
@@ -80,9 +79,6 @@ class BaseToken extends Document {
     label: "DOCUMENT.Token",
     labelPlural: "DOCUMENT.Tokens",
     isEmbedded: true,
-    embedded: {
-      ActorDelta: "delta"
-    },
     permissions: {
       create: "TOKEN_CREATE",
       update: this.#canUpdate,
@@ -101,9 +97,7 @@ class BaseToken extends Document {
       }),
       actorId: new fields.ForeignDocumentField(documents.BaseActor, {idOnly: true}),
       actorLink: new fields.BooleanField(),
-      delta: new ActorDeltaField(documents.BaseActorDelta),
-      appendNumber: new fields.BooleanField(),
-      prependAdjective: new fields.BooleanField(),
+      actorData: new fields.ObjectField(),
       texture: new TextureData({}, {initial: () => this.DEFAULT_ICON, wildcard: true}),
       width: new fields.NumberField({positive: true, initial: 1, label: "Width"}),
       height: new fields.NumberField({positive: true, initial: 1, label: "Height"}),
@@ -135,7 +129,7 @@ class BaseToken extends Document {
       light: new fields.EmbeddedDataField(LightData),
       sight: new fields.SchemaField({
         enabled: new fields.BooleanField({initial: data => Number(data?.sight?.range) > 0}),
-        range: new fields.NumberField({required: true, nullable: false, min: 0, step: 0.01, initial: 0}),
+        range: new fields.NumberField({required: true, min: 0, step: 0.01}),
         angle: new fields.AngleField({initial: 360, base: 360}),
         visionMode: new fields.StringField({required: true, blank: false, initial: "basic",
           label: "TOKEN.VisionMode", hint: "TOKEN.VisionModeHint"}),
@@ -151,7 +145,7 @@ class BaseToken extends Document {
       detectionModes: new fields.ArrayField(new fields.SchemaField({
         id: new fields.StringField(),
         enabled: new fields.BooleanField({initial: true}),
-        range: new fields.NumberField({required: true, nullable: false, min: 0, step: 0.01, initial: 0})
+        range: new fields.NumberField({required: true, min: 0, step: 0.01, initial: 0})
       }), {
         validate: BaseToken.#validateDetectionModes
       }),
@@ -204,6 +198,18 @@ class BaseToken extends Document {
   }
 
   /* -------------------------------------------- */
+
+  /** @inheritDoc */
+  static cleanData(source={}, options={}) {
+    const cleaned = super.cleanData(source, options);
+    if ( "actorData" in cleaned ) {  // Prevent actor data overrides from circularly referencing the prototype token
+      delete cleaned.actorData["token"];
+      delete cleaned.actorData["prototypeToken"];
+    }
+    return cleaned;
+  }
+
+  /* -------------------------------------------- */
   /*  Deprecations and Compatibility              */
   /* -------------------------------------------- */
 
@@ -211,27 +217,18 @@ class BaseToken extends Document {
   static migrateData(data) {
     const keys = new Set(Object.keys(data));
 
-    if ( keys.has("actorData") ) {
-      /**
-       * Migration of actor data to system data
-       * @deprecated since v10
-       */
+    /**
+     * Migration of actor data to system data
+     * @deprecated since v10
+     */
+    if ( data.actorData ) {
       foundry.documents.BaseActor.migrateData(data.actorData);
-      if ( data.actorData?.items ) {
-        for ( const item of data.actorData.items ) foundry.documents.BaseItem.migrateData(item);
-      }
-      if ( data.actorData?.effects ) {
-        for ( const effect of data.actorData.effects ) foundry.documents.BaseActiveEffect.migrateData(effect);
-      }
-
-      /**
-       * Migration of actorData field to ActorDelta document.
-       * @deprecated since v11
-       */
-      if ( !data.delta ) {
-        data.delta = data.actorData;
-        if ( "_id" in data ) data.delta._id = data._id;
-      }
+    }
+    if ( data.actorData?.items ) {
+      for ( const item of data.actorData.items ) foundry.documents.BaseItem.migrateData(item);
+    }
+    if ( data.actorData?.effects ) {
+      for ( const effect of data.actorData.effects ) foundry.documents.BaseActiveEffect.migrateData(effect);
     }
 
     /**
@@ -308,7 +305,6 @@ class BaseToken extends Document {
       if ( oldBrightSight >= oldDimSight ) brightness = 1;
       setProperty(data, "sight.brightness", brightness);
     }
-
     // Parent class migrations
     return super.migrateData(data);
   }
@@ -341,44 +337,7 @@ class BaseToken extends Document {
         enumerable: false
       });
     }
-    this._addDataFieldShim(data, "actorData", "delta", {value: data.delta, since: 11, until: 13});
     return super.shimData(data, options);
   }
-
-  /* -------------------------------------------- */
-  /*  Serialization                               */
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  toObject(source=true) {
-    const obj = super.toObject(source);
-    obj.delta = this.delta ? this.delta.toObject(source) : null;
-    return obj;
-  }
 }
-
-/**
- * A special subclass of EmbeddedDocumentField which allows construction of the ActorDelta to be lazily evaluated.
- */
-export class ActorDeltaField extends fields.EmbeddedDocumentField {
-  /** @inheritdoc */
-  initialize(value, model, options = {}) {
-    if ( !value ) return value;
-    const descriptor = Object.getOwnPropertyDescriptor(model, this.name);
-    if ( (descriptor === undefined) || (!descriptor.get && !descriptor.value) ) {
-      return () => {
-        Object.defineProperty(model, this.name, {
-          value: new this.model(value, {...options, parent: model, parentCollection: this.name}),
-          configurable: true,
-          writable: true
-        });
-        return model[this.name];
-      };
-    }
-    else if ( descriptor.get instanceof Function ) return descriptor.get;
-    model[this.name]._initialize(options);
-    return model[this.name];
-  }
-}
-
 export default BaseToken;

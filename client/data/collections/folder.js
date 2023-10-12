@@ -26,9 +26,6 @@ class Folders extends WorldCollection {
   render(force, context) {
 	  if ( context && context.documents.length ) {
       const folder = context.documents[0];
-      if ( folder.type === "Compendium" ) {
-        return ui.sidebar.tabs.compendium.render(force);
-      }
       const collection = game.collections.get(folder.type);
       collection.render(force, context);
       if ( folder.type === "JournalEntry" ) {

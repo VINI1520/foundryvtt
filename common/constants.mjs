@@ -214,16 +214,6 @@ export const COMPATIBILITY_MODES = {
 };
 
 /**
- * The CSS themes which are currently supported for the V11 Setup menu.
- * @enum {{id: string, label: string}}
- */
-export const CSS_THEMES = Object.freeze({
-  foundry: "THEME.foundry",
-  fantasy: "THEME.fantasy",
-  scifi: "THEME.scifi"
-});
-
-/**
  * The default artwork used for Token images if none is provided
  * @type {string}
  */
@@ -368,13 +358,13 @@ export const DRAWING_FILL_TYPES = {
  * Define the allowed Document types which Folders may contain
  * @type {string[]}
  */
-export const FOLDER_DOCUMENT_TYPES = ["Actor", "Adventure", "Item", "Scene", "JournalEntry", "Playlist", "RollTable", "Cards", "Macro", "Compendium"];
+export const FOLDER_DOCUMENT_TYPES = ["Actor", "Item", "Scene", "JournalEntry", "Playlist", "RollTable", "Cards", "Macro"];
 
 /**
  * The maximum allowed level of depth for Folder nesting
  * @type {number}
  */
-export const FOLDER_MAX_DEPTH = 4;
+export const FOLDER_MAX_DEPTH = 3;
 
 /**
  * A list of allowed game URL names
@@ -429,7 +419,7 @@ export const GRID_TYPES = {
  * A list of supported setup URL names
  * @type {string[]}
  */
-export const SETUP_VIEWS = ["auth", "license", "setup", "players", "join", "update"];
+export const SETUP_VIEWS = ["license", "setup", "players", "join", "auth"];
 
 /**
  * An Array of valid MacroAction scope values
@@ -500,15 +490,6 @@ export const PLAYLIST_SORT_MODES = {
 };
 
 /**
- * The available modes for searching within a DirectoryCollection
- * @type {{FULL: string, NAME: string}}
- */
-export const DIRECTORY_SEARCH_MODES = {
-  FULL: "full",
-  NAME: "name"
-};
-
-/**
  * The allowed package types
  * @type {string[]}
  */
@@ -522,52 +503,42 @@ export const PACKAGE_AVAILABILITY_CODES = {
   /**
    * Package availability could not be determined
    */
-  UNKNOWN: 0,
+  UNKNOWN: -1,
 
   /**
-   * The Package is verified to be compatible with the current core software build
+   * Package is available for use
    */
-  VERIFIED: 1,
+  AVAILABLE: 0,
 
   /**
-   * Package is available for use, but not verified for the current core software build
+   * Package requires an update to a newer Package version
    */
-  UNVERIFIED_BUILD: 2,
-
-  /**
-   * Package is available for use, but not verified for the current core software generation
-   */
-  UNVERIFIED_GENERATION: 3,
+  REQUIRES_UPDATE: 1,
 
   /**
    * The System that the Package relies on is not available
    */
-  MISSING_SYSTEM: 4,
+  REQUIRES_SYSTEM: 2,
 
   /**
    * A dependency of the Package is not available
    */
-  MISSING_DEPENDENCY: 5,
+  REQUIRES_DEPENDENCY: 3,
 
   /**
    * The Package is compatible with an older version of Foundry than the currently installed version
    */
-  REQUIRES_CORE_DOWNGRADE: 6,
+  REQUIRES_CORE_DOWNGRADE: 4,
 
   /**
    * The Package is compatible with a newer version of Foundry than the currently installed version, and that version is Stable
    */
-  REQUIRES_CORE_UPGRADE_STABLE: 7,
+  REQUIRES_CORE_UPGRADE_STABLE: 5,
 
   /**
    * The Package is compatible with a newer version of Foundry than the currently installed version, and that version is not yet Stable
    */
-  REQUIRES_CORE_UPGRADE_UNSTABLE: 8,
-
-  /**
-   * A required dependency is not compatible with the current version of Foundry
-   */
-  REQUIRES_DEPENDENCY_UPDATE: 9
+  REQUIRES_CORE_UPGRADE_UNSTABLE: 6
 };
 
 /**
@@ -684,7 +655,7 @@ export const TEXT_ANCHOR_POINTS = {
  * @enum {number}
  * @see https://foundryvtt.com/article/tiles/
  */
-export const OCCLUSION_MODES = {
+export const TILE_OCCLUSION_MODES = {
   /**
    * Turns off occlusion, making the tile never fade while tokens are under it.
    */
@@ -711,11 +682,6 @@ export const OCCLUSION_MODES = {
    */
   VISION: 4
 };
-
-/**
- * Alias for old tile occlusion modes definition
- */
-export const TILE_OCCLUSION_MODES = OCCLUSION_MODES;
 
 /**
  * Describe the various thresholds of token control upon which to show certain pieces of information
@@ -760,11 +726,6 @@ export const TOKEN_DISPLAY_MODES = {
  * @see https://foundryvtt.com/article/tokens/
  */
 export const TOKEN_DISPOSITIONS = {
-  /**
-   * Displayed with a purple borders for owners and with no borders for others (and no pointer change).
-   */
-  SECRET: -2,
-
   /**
    * Displayed as an enemy with a red border.
    */
@@ -884,12 +845,6 @@ export const USER_PERMISSIONS = {
     hint: "PERMISSION.BroadcastVideoHint",
     disableGM: true,
     defaultRole: USER_ROLES.TRUSTED
-  },
-  CARDS_CREATE: {
-    label: "PERMISSION.CardsCreate",
-    hint: "PERMISSION.CardsCreateHint",
-    disableGM: false,
-    defaultRole: USER_ROLES.ASSISTANT
   },
   DRAWING_CREATE: {
     label: "PERMISSION.DrawingCreate",
@@ -1062,12 +1017,6 @@ export const WALL_DOOR_STATES = {
 };
 
 /**
- * The possible ways to interact with a door
- * @enum {string[]}
- */
-export const WALL_DOOR_INTERACTIONS = ["open", "close", "lock", "unlock", "test"];
-
-/**
  * The wall properties which restrict the way interaction occurs with a specific wall
  * @type {string[]}
  */
@@ -1092,17 +1041,7 @@ export const WALL_SENSE_TYPES = {
   /**
    * Senses collide with the second intersection, bypassing the first.
    */
-  NORMAL: 20,
-
-  /**
-   * Senses bypass the wall within a certain proximity threshold.
-   */
-  PROXIMITY: 30,
-
-  /**
-   * Senses bypass the wall outside a certain proximity threshold.
-   */
-  DISTANCE: 40
+  NORMAL: 20
 };
 
 /**
@@ -1174,7 +1113,7 @@ export const IMAGE_FILE_EXTENSIONS = {
 export const VIDEO_FILE_EXTENSIONS = {
   m4v: "video/mp4",
   mp4: "video/mp4",
-  ogv: "video/ogg",
+  ogg: "video/ogg",
   webm: "video/webm"
 };
 
@@ -1327,99 +1266,6 @@ export const SHOWDOWN_OPTIONS = {
 };
 
 /**
- * The list of allowed attributes in HTML elements.
- * @type {Record<string, string[]>}
- */
-export const ALLOWED_HTML_ATTRIBUTES = Object.freeze({
-  "*": Object.freeze(["class", "data-*", "id", "title", "style", "draggable", "aria-*", "tabindex", "dir"]),
-  a: Object.freeze(["href", "name", "target", "rel"]),
-  area: Object.freeze(["alt", "coords", "href", "rel", "shape", "target"]),
-  audio: Object.freeze(["controls", "loop", "muted", "src", "autoplay"]),
-  blockquote: Object.freeze(["cite"]),
-  button: Object.freeze(["disabled", "name", "type", "value"]),
-  col: Object.freeze(["span"]),
-  colgroup: Object.freeze(["span"]),
-  details: Object.freeze(["open"]),
-  fieldset: Object.freeze(["disabled"]),
-  form: Object.freeze(["name"]),
-  iframe: Object.freeze(["src", "srcdoc", "name", "height", "width", "loading", "sandbox"]),
-  img: Object.freeze(["height", "src", "width", "usemap", "sizes", "srcset", "alt"]),
-  input: Object.freeze([
-    "checked", "disabled", "name", "value", "placeholder", "type", "alt", "height", "list",
-    "max", "min", "placeholder", "readonly", "size", "src", "step", "width"
-  ]),
-  label: Object.freeze(["for"]),
-  li: Object.freeze(["value"]),
-  map: Object.freeze(["name"]),
-  meter: Object.freeze(["value", "min", "max", "low", "high", "optimum"]),
-  ol: Object.freeze(["reversed", "start", "type"]),
-  optgroup: Object.freeze(["disabled", "label"]),
-  option: Object.freeze(["disabled", "selected", "label", "value"]),
-  progress: Object.freeze(["max", "value"]),
-  select: Object.freeze(["name", "disabled", "multiple", "size"]),
-  source: Object.freeze(["media", "sizes", "src", "srcset", "type"]),
-  table: Object.freeze(["border"]),
-  td: Object.freeze(["colspan", "headers", "rowspan"]),
-  textarea: Object.freeze(["rows", "cols", "disabled", "name", "readonly", "wrap"]),
-  time: Object.freeze(["datetime"]),
-  th: Object.freeze(["abbr", "colspan", "headers", "rowspan", "scope", "sorted"]),
-  track: Object.freeze(["default", "kind", "label", "src", "srclang"]),
-  video: Object.freeze(["controls", "height", "width", "loop", "muted", "poster", "src", "autoplay"])
-});
-
-/**
- * The list of trusted iframe domains.
- * @type {string[]}
- */
-export const TRUSTED_IFRAME_DOMAINS = Object.freeze(["google.com", "youtube.com"]);
-
-/**
- * Available themes for the world join page.
- * @enum {string}
- */
-export const WORLD_JOIN_THEMES = {
-  default: "WORLD.JoinThemeDefault",
-  minimal: "WORLD.JoinThemeMinimal"
-};
-
-/**
- * Setup page package progress protocol.
- * @type {{ACTIONS: Object<string>, STEPS: Object<string>}}
- */
-export const SETUP_PACKAGE_PROGRESS = {
-  ACTIONS: {
-    CREATE_BACKUP: "createBackup",
-    RESTORE_BACKUP: "restoreBackup",
-    DELETE_BACKUP: "deleteBackup",
-    CREATE_SNAPSHOT: "createSnapshot",
-    RESTORE_SNAPSHOT: "restoreSnapshot",
-    DELETE_SNAPSHOT: "deleteSnapshot",
-    INSTALL_PKG: "installPackage",
-    LAUNCH_WORLD: "launchWorld",
-    UPDATE_CORE: "updateCore"
-  },
-  STEPS: {
-    ARCHIVE: "archive",
-    CHECK_DISK_SPACE: "checkDiskSpace",
-    CONNECT_WORLD: "connectWorld",
-    CONNECT_PKG: "connectPackage",
-    MIGRATE_CORE: "migrateCore",
-    MIGRATE_SYSTEM: "migrateSystem",
-    DOWNLOAD: "download",
-    EXTRACT: "extract",
-    INSTALL: "install",
-    CLEANUP: "cleanup",
-    COMPLETE: "complete",
-    DELETE: "delete",
-    ERROR: "error",
-    VEND: "vend",
-    SNAPSHOT_MODULES: "snapshotModules",
-    SNAPSHOT_SYSTEMS: "snapshotSystems",
-    SNAPSHOT_WORLDS: "snapshotWorlds"
-  }
-};
-
-/**
  * @deprecated since v10.
  * @see {data.ShapeData.TYPES}
  * @enum {string}
@@ -1431,9 +1277,3 @@ export const DRAWING_TYPES = {
   POLYGON: "p",
   FREEHAND: "f"
 };
-
-/**
- * The combat announcements.
- * @enum {string[]}
- */
-export const COMBAT_ANNOUNCEMENTS = ["startEncounter", "nextUp", "yourTurn"];

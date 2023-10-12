@@ -69,7 +69,7 @@ class DragDrop {
     }
 
     // Identify and activate drop targets
-    if ( this.can("drop", this.dropSelector) ) {
+    if ( this.can("dragdrop", this.dropSelector) ) {
       const droppables = !this.dropSelector || html.matches(this.dropSelector) ? [html] :
         html.querySelectorAll(this.dropSelector);
       for ( let el of droppables ) {

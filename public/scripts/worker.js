@@ -6,7 +6,7 @@ const WORKER_TASK_ACTIONS = {
   INIT: "init",
   LOAD: "load",
   EXECUTE: "execute"
-};
+}
 
 /**
  * The name of this Worker thread
@@ -22,7 +22,7 @@ let _debug = false;
 
 /**
  * A registry of loaded functions
- * @type {Map<string, Function>}
+ * @type {Map<string, function>}
  */
 const functions = new Map();
 
@@ -30,48 +30,35 @@ const functions = new Map();
  * Handle messages provided from the main thread via worker#postMessage
  * @param {MessageEvent} event        The message provided from the main thread
  */
-onmessage = async function(event) {
+onmessage = function(event) {
   const task = event.data;
-
-  // Get the task result
-  let result;
   switch ( task.action ) {
     case WORKER_TASK_ACTIONS.INIT:
-      result = await _handleInitializeWorker(task);
-      break;
+      return _handleInitializeWorker(task);
     case WORKER_TASK_ACTIONS.LOAD:
-      result = await _handleLoadFunction(task);
-      break;
+      return _handleLoadFunction(task);
     case WORKER_TASK_ACTIONS.EXECUTE:
-      result = await _handleExecuteFunction(task);
-      break;
+      return _handleExecuteFunction(task);
   }
-
-  // Respond with the result, and transfer objects back to the main thread
-  const transfer = result.transfer || task.transfer;
-  delete result.transfer;
-  postMessage(result, transfer);
-};
+}
 
 /* -------------------------------------------- */
 
 /**
  * Handle the initialization workflow for a new Worker
  * @param {object} [options={}]     Options which configure worker initialization
- * @param {number} [options.taskId]          The task ID being performed
- * @param {string} [options.workerName]      The worker name
- * @param {boolean} [options.debug]          Should the worker run in debug mode?
- * @param {boolean} [options.loadPrimitives] Should we automatically load primitives from module.mjs?
- * @param {string[]} [options.scripts]        An array of scripts to import.
+ * @param {number} [options.taskId]           The task ID being performed
+ * @param {string} [options.workerName]       The worker name
+ * @param {boolean} [options.debug]           Should the worker run in debug mode?
+ * @param {boolean} [options.loadPrimitives]  Should we automatically load primitives from /commons/utils/primitives.mjs?
  * @private
  */
-async function _handleInitializeWorker({taskId, workerName, debug, loadPrimitives, scripts}={}) {
+async function _handleInitializeWorker({taskId, workerName, debug, loadPrimitives}={}) {
   _workerName = workerName;
   _debug = debug;
-  if ( loadPrimitives ) await _loadLibrary("/common/utils/primitives/module.mjs");
-  if ( scripts ) importScripts(...scripts);
+  if ( loadPrimitives ) await _loadLibrary("/common/utils/primitives.mjs");
   console.log(`Worker ${_workerName} | Initialized Worker`);
-  return {taskId};
+  postMessage({taskId});
 }
 
 /* -------------------------------------------- */
@@ -94,13 +81,13 @@ async function _loadLibrary(path) {
 
 /**
  * Handle a request from the main thread to load a function into Worker memory.
- * @param {object} [options={}]
- * @param {number} [options.taskId]         The task ID being performed
- * @param {string} [options.functionName]   The name that the function should assume in the Worker global scope
- * @param {string} [options.functionBody]   The content of the function to be parsed.
+ * @param {number} taskId         The task ID being performed
+ * @param {string} functionName   The name that the function should assume in the Worker global scope
+ * @param {string} functionBody   The content of the function to be parsed.
  * @private
  */
 async function _handleLoadFunction({taskId, functionName, functionBody}={}) {
+
   // Strip existing function name and parse it
   functionBody = functionBody.replace(/^function [A-z0-9\s]+\(/, "function(");
   let fn = eval(`${functionName} = ${functionBody}`);
@@ -110,31 +97,30 @@ async function _handleLoadFunction({taskId, functionName, functionBody}={}) {
   functions.set(functionName, fn);
   globalThis.functionName = fn;
   if ( _debug ) console.debug(`Worker ${_workerName} | Loaded function ${functionName}`);
-  return {taskId};
+  postMessage({taskId});
 }
 
 /* -------------------------------------------- */
 
 /**
  * Handle a request from the main thread to execute a function with provided parameters.
- * @param {object}   [options={}]
- * @param {number}   [options.taskId]         The task ID being performed
- * @param {string}   [options.functionName]   The name that the function should assume in the Worker global scope
- * @param {Array<*>} [options.args]           An array of arguments passed to the function
+ * @param {number} taskId         The task ID being performed
+ * @param {string} functionName   The name that the function should assume in the Worker global scope
+ * @param {Array<*>} args         An array of arguments passed to the function
  * @private
  */
 async function _handleExecuteFunction({taskId, functionName, args}) {
-  // Checking that function exists
-  const fn = this[functionName] || functions.get(functionName);
-  if ( !fn ) throw new Error(`Function ${functionName} does not exist into Worker ${_workerName}`);
-
+  const fn = functions.get(functionName);
+  if ( !fn ) {
+    throw new Error(`Function ${functionName} has not been loaded onto Worker ${_workerName}`);
+  }
   try {
     const result = await fn(...args);
     if ( _debug ) console.debug(`Worker ${_workerName} | Executed function ${functionName}`);
-    return {taskId, result};
+    postMessage({taskId, result});
   } catch(err) {
     if ( _debug ) console.debug(`Worker ${_workerName} | Failed to execute function ${functionName}`);
     console.error(err);
-    return {taskId, error: err};
+    postMessage({taskId, error: err});
   }
 }

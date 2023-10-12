@@ -1,0 +1,17 @@
+<section id="eula" class="flexcol">
+    <div id="eula-content">
+        {{{html}}}
+    </div>
+
+    <form id="eula-sign" autocomplete="off" method="post">
+        <h2>{{localize "EULA.Acknowledge"}}</h2>
+        <div class="form-group">
+            <input id="eula-agree" type="checkbox" name="agree" title="I agree"/>
+            <label for="eula-agree">{{localize "EULA.AgreeHint"}}</label>
+        </div>
+        <div class="form-group">
+            <button type="submit" id="sign" name="accept"><i class="fa fa-check"></i> {{localize "EULA.Agree"}}</button>
+            <button type="submit" id="decline" name="decline"><i class="fa fa-times"></i> {{localize "EULA.Decline"}}</button>
+        </div>
+    </form>
+</section>

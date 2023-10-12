@@ -5,10 +5,9 @@ export default class ProseMirrorDropDown {
    * @param {ProseMirrorDropDownEntry[]} items         The configured menu items.
    * @param {object} [options]
    * @param {string} [options.cssClass]                The menu CSS class name. Required if providing an action.
-   * @param {string} [options.icon]                    Use an icon for the dropdown rather than a text label.
    * @param {function(MouseEvent)} [options.onAction]  A callback to fire when a menu item is clicked.
    */
-  constructor(title, items, {cssClass, icon, onAction}={}) {
+  constructor(title, items, {cssClass, onAction}={}) {
     /**
      * The default title for this drop-down.
      * @type {string}
@@ -20,7 +19,6 @@ export default class ProseMirrorDropDown {
      * @type {ProseMirrorDropDownEntry[]}
      */
     Object.defineProperty(this, "items", {value: items, writable: false});
-    this.#icon = icon;
     this.#cssClass = cssClass;
     this.#onAction = onAction;
   }
@@ -32,14 +30,6 @@ export default class ProseMirrorDropDown {
    * @type {string}
    */
   #cssClass;
-
-  /* -------------------------------------------- */
-
-  /**
-   * The icon to use instead of a text label, if any.
-   * @type {string}
-   */
-  #icon;
 
   /* -------------------------------------------- */
 
@@ -85,8 +75,8 @@ export default class ProseMirrorDropDown {
     const active = game.i18n.localize(activeItem ? activeItem.title : this.title);
     const items = this.constructor._renderMenu(this.items);
     return `
-      <button type="button" class="pm-dropdown ${this.#icon ? "icon" : ""} ${this.#cssClass}">
-        ${this.#icon ? this.#icon : `<span>${active}</span>`}
+      <button type="button" class="pm-dropdown ${this.#cssClass}">
+        <span>${active}</span>
         <i class="fa-solid fa-chevron-down"></i>
         ${items}
       </button>
@@ -120,17 +110,8 @@ export default class ProseMirrorDropDown {
    * @protected
    */
   static _renderMenu(entries) {
-    const groups = entries.reduce((arr, item) => {
-      const group = item.group ?? 0;
-      arr[group] ??= [];
-      arr[group].push(this._renderMenuItem(item));
-      return arr;
-    }, []);
-    const items = groups.reduce((arr, group) => {
-      if ( group?.length ) arr.push(group.join(""));
-      return arr;
-    }, []);
-    return `<ul>${items.join('<li class="divider"></li>')}</ul>`;
+    const items = entries.map(item => this._renderMenuItem(item));
+    return `<ul>${items.join("")}</ul>`;
   }
 
   /* -------------------------------------------- */

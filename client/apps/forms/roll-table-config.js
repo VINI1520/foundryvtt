@@ -14,7 +14,7 @@ class RollTableConfig extends DocumentSheet {
       height: "auto",
       closeOnSubmit: false,
       viewPermission: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER,
-      scrollY: ["table.table-results"],
+      scrollY: ["ol.table-results"],
       dragDrop: [{dragSelector: null, dropSelector: null}]
     });
   }
@@ -29,9 +29,7 @@ class RollTableConfig extends DocumentSheet {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  async getData(options={}) {
-    const context = super.getData(options);
-    context.descriptionHTML = await TextEditor.enrichHTML(this.object.description, {async: true, secrets: this.object.isOwner});
+  getData(options={}) {
     const results = this.document.results.map(result => {
       result = result.toObject(false);
       result.isText = result.type === CONST.TABLE_RESULT_TYPES.TEXT;
@@ -44,7 +42,7 @@ class RollTableConfig extends DocumentSheet {
     results.sort((a, b) => a.range[0] - b.range[0]);
 
     // Merge data and return;
-    return foundry.utils.mergeObject(context, {
+    return foundry.utils.mergeObject(super.getData(options), {
       results: results,
       resultTypes: Object.entries(CONST.TABLE_RESULT_TYPES).reduce((obj, v) => {
         obj[v[1]] = v[0].titleCase();
@@ -82,6 +80,9 @@ class RollTableConfig extends DocumentSheet {
 
     // Delete a Result
     html.find("a.delete-result").click(this._onDeleteResult.bind(this));
+
+    // Support Image updates
+    html.find("img[data-edit]").click(this._onEditImage.bind(this));
 
     // Lock or Unlock a Result
     html.find("a.lock-result").click(this._onLockResult.bind(this));
@@ -126,7 +127,7 @@ class RollTableConfig extends DocumentSheet {
     // Create the new Result
     resultData = foundry.utils.mergeObject({
       type: last ? last.type : CONST.TABLE_RESULT_TYPES.TEXT,
-      documentCollection: last ? last.documentCollection : null,
+      collection: last ? last.collection : null,
       weight: weight,
       range: range,
       drawn: false
@@ -146,11 +147,11 @@ class RollTableConfig extends DocumentSheet {
     const rt = CONST.TABLE_RESULT_TYPES;
     const select = event.target;
     const value = parseInt(select.value);
-    const resultKey = select.name.replace(".type", "");
-    let documentCollection = "";
-    if ( value === rt.DOCUMENT ) documentCollection = "Actor";
-    else if ( value === rt.COMPENDIUM ) documentCollection = game.packs.keys().next().value;
-    const updateData = {[resultKey]: {documentCollection, documentId: null}};
+    const key = select.name.replace(".type", ".collection.js");
+    let collection = "";
+    if ( value === rt.DOCUMENT ) collection = "Actor";
+    else if ( value === rt.COMPENDIUM ) collection = game.packs.keys().next().value;
+    const updateData = {[key]: collection, resultId: ""};
     return this._onSubmit(event, {updateData});
   }
 
@@ -175,6 +176,14 @@ class RollTableConfig extends DocumentSheet {
   /** @inheritdoc */
   async _onDrop(event) {
     const data = TextEditor.getDragEventData(event);
+    /**
+     * A hook event that fires when some useful data is dropped onto a RollTableConfig.
+     * @function dropRollTableSheetData
+     * @memberof hookEvents
+     * @param {RollTable} table       The RollTable
+     * @param {RollTableConfig} sheet The RollTableConfig application
+     * @param {object} data           The data dropped onto the RollTableConfig
+     */
     const allowed = Hooks.call("dropRollTableSheetData", this.document, this, data);
     if ( allowed === false ) return;
 
@@ -188,9 +197,9 @@ class RollTableConfig extends DocumentSheet {
     const isCompendium = !!document.compendium;
     return this._onCreateResult(event, {
       type: isCompendium ? CONST.TABLE_RESULT_TYPES.COMPENDIUM : CONST.TABLE_RESULT_TYPES.DOCUMENT,
-      documentCollection: isCompendium ? document.pack : document.documentName,
+      collection: isCompendium ? document.pack : document.documentName,
       text: document.name,
-      documentId: document.id,
+      resultId: document.id,
       img: document.img || null
     });
   }
@@ -252,8 +261,8 @@ class RollTableConfig extends DocumentSheet {
    */
   _onLockResult(event) {
     event.preventDefault();
-    const tableResult = event.currentTarget.closest(".table-result");
-    const result = this.document.results.get(tableResult.dataset.resultId);
+    const li = event.currentTarget.closest("li.table-result");
+    const result = this.document.results.get(li.dataset.resultId);
     return result.update({drawn: !result.drawn});
   }
 
@@ -364,20 +373,20 @@ class RollTableConfig extends DocumentSheet {
   async _animateRoll(results) {
 
     // Get the list of results and their indices
-    const tableResults = this.element[0].querySelector(".table-results > tbody");
+    const ol = this.element.find(".table-results")[0];
     const drawnIds = new Set(results.map(r => r.id));
-    const drawnItems = Array.from(tableResults.children).filter(item => drawnIds.has(item.dataset.resultId));
+    const drawnItems = Array.from(ol.children).filter(item => drawnIds.has(item.dataset.resultId));
 
     // Set the animation timing
     const nResults = this.object.results.size;
     const maxTime = 2000;
     let animTime = 50;
-    let animOffset = Math.round(tableResults.offsetHeight / (tableResults.children[0].offsetHeight * 2));
+    let animOffset = Math.round(ol.offsetHeight / (ol.children[1].offsetHeight * 2));
     const nLoops = Math.min(Math.ceil(maxTime/(animTime * nResults)), 4);
     if ( nLoops === 1 ) animTime = maxTime / nResults;
 
     // Animate the roulette
-    await this._animateRoulette(tableResults, drawnIds, nLoops, animTime, animOffset);
+    await this._animateRoulette(ol, drawnIds, nLoops, animTime, animOffset);
 
     // Flash the results
     const flashes = drawnItems.map(li => this._flashResult(li));
@@ -398,11 +407,11 @@ class RollTableConfig extends DocumentSheet {
    */
   async _animateRoulette(ol, drawnIds, nLoops, animTime, animOffset) {
     let loop = 0;
-    let idx = 0;
+    let idx = 1;
     let item = null;
     return new Promise(resolve => {
       let animId = setInterval(() => {
-        if (idx === 0) loop++;
+        if (idx === 1) loop++;
         if (item) item.classList.remove("roulette");
 
         // Scroll to the next item
@@ -417,7 +426,7 @@ class RollTableConfig extends DocumentSheet {
 
         // Continue the roulette and cycle the index
         item.classList.add("roulette");
-        idx = idx < ol.children.length - 1 ? idx + 1 : 0;
+        idx = idx < ol.children.length - 1 ? idx+1 : 1;
       }, animTime);
     });
   }

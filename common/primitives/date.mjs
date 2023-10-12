@@ -27,9 +27,5 @@ export function toTimeInputString() {
   return this.toTimeString().split(" ")[0];
 }
 
-// Define primitives on the Date prototype
-Object.defineProperties(Date.prototype, {
-  isValid: {value: isValid},
-  toDateInputString: {value: toDateInputString},
-  toTimeInputString: {value: toTimeInputString}
-});
+// Assign primitives to the Date prototype
+Object.assign(Date.prototype, {isValid, toDateInputString, toTimeInputString});

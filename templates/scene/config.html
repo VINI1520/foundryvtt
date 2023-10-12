@@ -80,7 +80,7 @@
         <div class="form-group initial-position">
             <label>{{localize "SCENES.InitialView"}}</label>
             <div class="form-fields">
-                <button class="capture-position" type="button" data-tooltip="{{ localize "SCENES.InitialViewButton" }}">
+                <button class="capture-position" type="button" title="{{ localize "SCENES.InitialViewButton" }}">
                     <i class="fas fa-crop-alt fa-fw"></i>
                 </button>
                 <label>X</label>
@@ -99,7 +99,7 @@
         <div class="form-group">
             <label>{{localize "SCENES.GridType"}}</label>
             <div class="form-fields">
-                <button type="button" class="grid-config" data-tooltip="{{ localize "SCENES.GridConfigTool" }}">
+                <button type="button" class="grid-config" title="{{ localize "SCENES.GridConfigTool" }}">
                     <i class="fas fa-ruler-combined"></i>
                 </button>
                 <select name="grid.type" data-dtype="Number">
@@ -119,13 +119,10 @@
         <div class="form-group">
             <label>{{localize "SCENES.Dimensions"}} <span class="units">({{localize "SCENES.Pixels"}})</span></label>
             <div class="form-fields">
-                <label>{{localize "Width"}}</label>
-                {{numberInput data.width name="width"}}
-                <button type="button" class="dimension-link" data-tooltip="{{ localize 'SCENES.DimensionLinked' }}">
-                    <i class="fas fa-link-simple"></i>
-                </button>
-                <label>{{localize "Height"}}</label>
-                {{numberInput data.height name="height"}}
+                <label class="grid-label">{{localize "Width"}}</label>
+                <input type="number" name="width" placeholder="{{localize 'SCENES.Pixels'}}" value="{{data.width}}"/>
+                <label class="grid-label">{{localize "Height"}}</label>
+                <input type="number" name="height" placeholder="{{localize 'SCENES.Pixels'}}" value="{{data.height}}"/>
             </div>
             <p class="notes">{{localize "SCENES.DimensionsHint"}}</p>
         </div>

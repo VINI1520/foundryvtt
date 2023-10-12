@@ -178,14 +178,13 @@ class JournalEntryPage extends ClientDocumentMixin(foundry.documents.BaseJournal
   /** @inheritdoc */
   _onClickDocumentLink(event) {
     const target = event.currentTarget;
-    return this.parent.sheet.render(true, {pageId: this.id, anchor: target.dataset.hash});
+    return this.parent.sheet.render(true, {pageId: this.id, anchor: target.dataset.hash, focus: true});
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
   _onUpdate(changed, options, userId) {
-    super._onUpdate(changed, options, userId);
     if ( "text.content" in foundry.utils.flattenObject(changed) ) this._toc = null;
     if ( !canvas.ready ) return;
     if ( ["name", "ownership"].some(k => k in changed) ) {

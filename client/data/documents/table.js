@@ -67,7 +67,7 @@ class RollTable extends ClientDocumentMixin(foundry.documents.BaseRollTable) {
     });
 
     // Create the chat message
-    return ChatMessage.implementation.create(messageData, messageOptions);
+    return ChatMessage.create(messageData, messageOptions);
   }
 
   /* -------------------------------------------- */
@@ -197,7 +197,7 @@ class RollTable extends ClientDocumentMixin(foundry.documents.BaseRollTable) {
     let counter = 1;
     const updates = [];
     for ( let result of this.results ) {
-      const w = result.weight ?? 1;
+      const w = result.weight;
       totalWeight += w;
       updates.push({_id: result.id, range: [counter, counter + w - 1]});
       counter = counter + w;
@@ -248,19 +248,14 @@ class RollTable extends ClientDocumentMixin(foundry.documents.BaseRollTable) {
       throw new Error(`Maximum recursion depth exceeded when attempting to draw from RollTable ${this.id}`);
     }
 
-    // If there is no formula, automatically calculate an even distribution
-    if ( !this.formula ) {
-      await this.normalize();
-    }
-
     // Reference the provided roll formula
     roll = roll instanceof Roll ? roll : Roll.create(this.formula);
     let results = [];
 
     // Ensure that at least one non-drawn result remains
     const available = this.results.filter(r => !r.drawn);
-    if ( !available.length ) {
-      ui.notifications.warn(game.i18n.localize("TABLE.NoAvailableResults"));
+    if ( !this.formula || !available.length ) {
+      ui.notifications.warn("There are no available results which can be drawn from this table.");
       return {roll, results};
     }
 
@@ -334,17 +329,17 @@ class RollTable extends ClientDocumentMixin(foundry.documents.BaseRollTable) {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onCreateDescendantDocuments(parent, collection, documents, data, options, userId) {
-    super._onCreateDescendantDocuments(parent, collection, documents, data, options, userId);
-    if ( options.render !== false ) this.collection.render();
+  _onCreateEmbeddedDocuments(embeddedName, documents, result, options, userId) {
+    super._onCreateEmbeddedDocuments(embeddedName, documents, result, options, userId);
+    this.collection.render();
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onDeleteDescendantDocuments(parent, collection, documents, ids, options, userId) {
-    super._onDeleteDescendantDocuments(parent, collection, documents, ids, options, userId);
-    if ( options.render !== false ) this.collection.render();
+  _onDeleteEmbeddedDocuments(embeddedName, documents, result, options, userId) {
+    super._onDeleteEmbeddedDocuments(embeddedName, documents, result, options, userId);
+    this.collection.render();
   }
 
   /* -------------------------------------------- */
@@ -374,9 +369,9 @@ class RollTable extends ClientDocumentMixin(foundry.documents.BaseRollTable) {
     const results = folder.contents.map((e, i) => {
       return {
         text: e.name,
-        type: folder.pack ? CONST.TABLE_RESULT_TYPES.COMPENDIUM : CONST.TABLE_RESULT_TYPES.DOCUMENT,
-        documentCollection: folder.pack ? folder.pack : folder.type,
-        documentId: e.id,
+        type: CONST.TABLE_RESULT_TYPES.DOCUMENT,
+        collection: folder.type,
+        resultId: e.id,
         img: e.thumbnail || e.img,
         weight: 1,
         range: [i+1, i+1],

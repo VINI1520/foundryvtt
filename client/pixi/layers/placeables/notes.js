@@ -35,6 +35,14 @@ class NotesLayer extends PlaceablesLayer {
   /* -------------------------------------------- */
 
   /** @override */
+  _activate() {
+    super._activate();
+    for ( const p of this.placeables ) p.controlIcon.visible = true;
+  }
+
+  /* -------------------------------------------- */
+
+  /** @override */
   _deactivate() {
     super._deactivate();
     const isToggled = game.settings.get("core", this.constructor.TOGGLE_SETTING);
@@ -83,8 +91,8 @@ class NotesLayer extends PlaceablesLayer {
     if ( !note ) return Promise.resolve();
     if ( note.visible && !this.active ) this.activate();
     return canvas.animatePan({x: note.x, y: note.y, scale, duration}).then(() => {
-      if ( this.hover ) this.hover._onHoverOut(new Event("pointerout"));
-      note._onHoverIn(new Event("pointerover"), {hoverOutOthers: true});
+      if ( this.hover ) this.hover._onMouseOut(new Event("mouseout"));
+      note._onHoverIn(new Event("mouseover"));
     });
   }
 
@@ -97,11 +105,11 @@ class NotesLayer extends PlaceablesLayer {
     if ( game.activeTool !== "journal" ) return super._onClickLeft(event);
 
     // Capture the click coordinates
-    let origin = event.getLocalPosition(canvas.stage);
+    let origin = event.data.getLocalPosition(canvas.stage);
     const [x, y] = canvas.grid.getCenter(origin.x, origin.y);
 
     // Render the note creation dialog
-    const folders = game.journal.folders.filter(f => f.displayed);
+    const folders = game.folders.filter(f => (f.type === "JournalEntry") && f.displayed);
     const title = game.i18n.localize("NOTE.Create");
     const html = await renderTemplate("templates/sidebar/document-create.html", {
       folders,
@@ -170,16 +178,13 @@ class NotesLayer extends PlaceablesLayer {
    */
   async _onDropData(event, data) {
     let entry;
-    let noteData;
-    if ( (data.x === undefined) || (data.y === undefined) ) {
-      const coords = this._canvasCoordinatesFromDrop(event, {center: false});
+    let {x, y} = data;
+    if ( (x === undefined) || (y === undefined) ) {
+      const coords = this._canvasCoordinatesFromDrop(event);
       if ( !coords ) return false;
-      noteData = {x: coords[0], y: coords[1]};
-    } else {
-      noteData = {x: data.x, y: data.y};
+      [x, y] = coords;
     }
-    if ( !event.shiftKey ) [noteData.x, noteData.y] = canvas.grid.getCenter(noteData.x, noteData.y);
-    if ( !canvas.dimensions.rect.contains(noteData.x, noteData.y) ) return false;
+    const noteData = {x, y};
     if ( data.type === "JournalEntry" ) entry = await JournalEntry.implementation.fromDropData(data);
     if ( data.type === "JournalEntryPage" ) {
       const page = await JournalEntryPage.implementation.fromDropData(data);

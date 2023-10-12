@@ -41,7 +41,14 @@ class Combatant extends ClientDocumentMixin(foundry.documents.BaseCombatant) {
    * @type {boolean}
    */
   get isNPC() {
-    return !this.actor || !this.hasPlayerOwner;
+    return !this.actor || !this.players.length;
+  }
+
+  /* -------------------------------------------- */
+
+  /** @override */
+  get isOwner() {
+    return game.user.isGM || this.actor?.isOwner || false;
   }
 
   /* -------------------------------------------- */
@@ -76,11 +83,16 @@ class Combatant extends ClientDocumentMixin(foundry.documents.BaseCombatant) {
   /* -------------------------------------------- */
 
   /**
-   * An array of non-Gamemaster Users who have ownership of this Combatant.
+   * An array of User documents who have ownership of this Document
    * @type {User[]}
    */
   get players() {
-    return game.users.filter(u => !u.isGM && this.testUserPermission(u, "OWNER"));
+    const playerOwners = [];
+    for ( let u of game.users ) {
+      if ( u.isGM ) continue;
+      if ( this.testUserPermission(u, "OWNER") ) playerOwners.push(u);
+    }
+    return playerOwners;
   }
 
   /* -------------------------------------------- */
@@ -90,7 +102,8 @@ class Combatant extends ClientDocumentMixin(foundry.documents.BaseCombatant) {
    * @type {boolean}
    */
   get isDefeated() {
-    return this.defeated || !!this.actor?.statuses.has(CONFIG.specialStatusEffects.DEFEATED);
+    return this.defeated
+      || this.actor?.effects.some(e => e.getFlag("core", "statusId") === CONFIG.specialStatusEffects.DEFEATED);
   }
 
   /* -------------------------------------------- */
@@ -100,6 +113,8 @@ class Combatant extends ClientDocumentMixin(foundry.documents.BaseCombatant) {
   /** @inheritdoc */
   testUserPermission(user, permission, {exact=false}={}) {
     if ( user.isGM ) return true;
+
+    // Combatants should be controlled by anyone who can update the Actor they represent
     return this.actor?.canUserModify(user, "update") || false;
   }
 

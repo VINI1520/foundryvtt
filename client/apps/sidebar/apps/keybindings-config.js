@@ -24,8 +24,7 @@ class KeybindingsConfig extends PackageConfiguration {
     return foundry.utils.mergeObject(super.defaultOptions, {
       title: game.i18n.localize("SETTINGS.Keybindings"),
       id: "keybindings",
-      categoryTemplate: "templates/sidebar/apps/keybindings-config-category.html",
-      scrollY: [".scrollable"]
+      categoryTemplate: "templates/sidebar/apps/keybindings-config-category.html"
     });
   }
 
@@ -172,9 +171,7 @@ class KeybindingsConfig extends PackageConfiguration {
       ["token-target-mouse", "CONTROLS.TokenTarget", [`${game.i18n.localize("CONTROLS.Double")} ${game.i18n.localize("CONTROLS.RightClick")}`]],
       ["canvas-ping", "CONTROLS.CanvasPing", ["CONTROLS.LongPress"]],
       ["canvas-ping-alert", "CONTROLS.CanvasPingAlert", ["Alt", "CONTROLS.LongPress"]],
-      ["canvas-ping-pull", "CONTROLS.CanvasPingPull", ["Shift", "CONTROLS.LongPress"], true],
-      ["tooltip-lock", "CONTROLS.TooltipLock", ["CONTROLS.MiddleClick"]],
-      ["tooltip-dismiss", "CONTROLS.TooltipDismiss", ["CONTROLS.RightClick"]]
+      ["canvas-ping-pull", "CONTROLS.CanvasPingPull", ["Shift", "CONTROLS.LongPress"], true]
     ];
 
     let coreMouseCategoryData = {

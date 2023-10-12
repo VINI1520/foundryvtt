@@ -160,9 +160,7 @@ class Journal extends WorldCollection {
       options.mode = JournalSheet.VIEW_MODES.SINGLE;
       options.pageId = entry.id;
       // Set temporary observer permissions for this page.
-      if ( entry.getUserLevel(game.user) < CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER ) {
-        entry.ownership[game.userId] = CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER;
-      }
+      entry.ownership[game.userId] = CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER;
       entry = entry.parent;
     }
     else if ( entry instanceof JournalEntry ) entry.ownership[game.userId] = CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER;

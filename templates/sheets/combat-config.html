@@ -1,5 +1,4 @@
 <form autocomplete="off">
-    {{#if user.isGM}}
     <div class="form-group">
         <label>{{localize 'COMBAT.Resource'}}</label>
         <select name="resource">
@@ -21,22 +20,6 @@
         <label>{{localize 'COMBAT.SkipDefeated'}}</label>
         <input type="checkbox" name="skipDefeated" {{checked settings.skipDefeated}} data-dtype="Boolean"/>
         <p class="notes">{{localize 'COMBAT.SkipDefeatedHint'}}</p>
-    </div>
-    {{/if}}
-
-    <div class="form-group" data-setting-id="core.combatTheme">
-        <label>{{ localize combatTheme.name }}</label>
-        <div class="form-fields">
-            <select name="combatTheme">
-                {{#select selectedTheme}}
-                {{#each combatTheme.choices as |name k|}}
-                <option value="{{k}}">{{localize name}}</option>
-                {{/each}}
-                {{/select}}
-            </select>
-            <i data-tooltip="{{localize 'Preview'}}" class="fas fa-play audio-preview"></i>
-        </div>
-        <p class="notes">{{ localize combatTheme.hint }}</p>
     </div>
 
     <button type="submit">

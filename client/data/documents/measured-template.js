@@ -14,10 +14,10 @@ class MeasuredTemplateDocument extends CanvasDocumentMixin(foundry.documents.Bas
 
   /**
    * A reference to the User who created the MeasuredTemplate document.
-   * @type {User|null}
+   * @type {User}
    */
   get author() {
-    return this.user;
+    return game.users.get(this.user);
   }
 
   /**

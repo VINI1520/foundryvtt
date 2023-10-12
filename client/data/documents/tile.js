@@ -13,20 +13,15 @@ class TileDocument extends CanvasDocumentMixin(foundry.documents.BaseTile) {
    * @type {number}
    */
   get elevation() {
-    return this.#elevation ?? (this.overhead
-      ? this.parent.foregroundElevation : PrimaryCanvasGroup.BACKGROUND_ELEVATION);
+    return this.#elevation ??= this.overhead ? this.parent.foregroundElevation : 0;
   }
 
   set elevation(value) {
-    if ( !Number.isFinite(value) && (value !== undefined) ) {
-      throw new Error("Elevation must be a finite Number or undefined");
-    }
+    if ( !Number.isFinite(value) ) throw new Error("Elevation must be a finite Number");
     this.#elevation = value;
     if ( this.rendered ) {
-      canvas.primary.sortDirty = true;
-      canvas.perception.update({refreshTiles: true});
-      // TODO: Temporary workaround. Delete when elevation will be a real tile document property
-      this._object.renderFlags.set({refreshElevation: true});
+      canvas.primary.sortChildren();
+      canvas.perception.update({refreshTiles: true}, true);
     }
   }
 
@@ -56,5 +51,15 @@ class TileDocument extends CanvasDocumentMixin(foundry.documents.BaseTile) {
     const minY = (this.height - securityBuffer) * -1;
     this.x = Math.clamped(this.x.toNearest(0.1), minX, maxX);
     this.y = Math.clamped(this.y.toNearest(0.1), minY, maxY);
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritDoc */
+  _onUpdate(changed, options, user) {
+    super._onUpdate(changed, options, user);
+    if ( "overhead" in changed ) {
+      this.#elevation = this.overhead ? this.parent.foregroundElevation : 0;
+    }
   }
 }

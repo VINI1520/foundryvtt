@@ -6,25 +6,18 @@
  * @module fields
  */
 
-import {
-  BASE_DOCUMENT_TYPE,
-  DOCUMENT_OWNERSHIP_LEVELS,
-  FILE_CATEGORIES
-} from "../constants.mjs";
+import {DOCUMENT_OWNERSHIP_LEVELS, FILE_CATEGORIES} from "../constants.mjs";
 import DataModel from "../abstract/data.mjs";
+import EmbeddedCollection from "../abstract/embedded-collection.mjs";
 import {
   isColorString,
   isValidId,
   isJSON,
   hasFileExtension,
-  isBase64Data
+  isBase64Data,
 } from "./validators.mjs";
-import {deepClone, getType, isEmpty, isSubclass, mergeObject} from "../utils/helpers.mjs";
+import {deepClone, getType, isEmpty, isSubclass, mergeObject, } from "../utils/helpers.mjs";
 import {logCompatibilityWarning} from "../utils/logging.mjs";
-import {DataModelValidationFailure} from "./validation-failure.mjs";
-import SingletonEmbeddedCollection from "../abstract/singleton-collection.mjs";
-import EmbeddedCollection from "../abstract/embedded-collection.mjs";
-import EmbeddedCollectionDelta from "../abstract/embedded-collection-delta.mjs";
 
 /* ---------------------------------------- */
 /*  Abstract Data Field                     */
@@ -40,16 +33,6 @@ import EmbeddedCollectionDelta from "../abstract/embedded-collection-delta.mjs";
  * @property {string} [hint]              Localizable help text displayed on forms which render this field.
  * @property {string} [validationError]   A custom validation error string. When displayed will be prepended with the
  *                                        document name, field name, and candidate value.
- */
-
-/**
- * @typedef {object} DataFieldValidationOptions
- * @property {boolean} [partial]   Whether this is a partial schema validation, or a complete one.
- * @property {boolean} [fallback]  Whether to allow replacing invalid values with valid fallbacks.
- * @property {object} [source]     The full source object being evaluated.
- * @property {boolean} [dropInvalidEmbedded]  If true, invalid embedded documents will emit a warning and be placed in
- *                                            the invalidDocuments collection rather than causing the parent to be
- *                                            considered invalid.
  */
 
 /**
@@ -97,20 +80,6 @@ class DataField {
    * @internal
    */
   parent;
-
-  /**
-   * Whether this field defines part of a Document/Embedded Document hierarchy.
-   * @type {boolean}
-   */
-  static hierarchical = false;
-
-  /**
-   * Does this field type contain other fields in a recursive structure?
-   * Examples of recursive fields are SchemaField, ArrayField, or TypeDataField
-   * Examples of non-recursive fields are StringField, NumberField, or ObjectField
-   * @type {boolean}
-   */
-  static recursive = false;
 
   /**
    * Default parameters for this field type
@@ -224,13 +193,11 @@ class DataField {
 
   /**
    * Validate a candidate input for this field, ensuring it meets the field requirements.
-   * A validation failure can be provided as a raised Error (with a string message), by returning false, or by returning
-   * a DataModelValidationFailure instance.
+   * A validation failure can be provided as a raised Error (with a string message) or by returning false.
    * A validator which returns true denotes that the result is certainly valid and further validations are unnecessary.
-   * @param {*} value                                  The initial value
-   * @param {DataFieldValidationOptions} [options={}]  Options which affect validation behavior
-   * @returns {DataModelValidationFailure}             Returns a DataModelValidationFailure if a validation failure
-   *                                                   occurred.
+   * @param {*} value                        The initial value
+   * @param {object} [options={}]            Options which affect validation behavior
+   * @returns {ModelValidationError}         Returns a ModelValidationError if a validation failure occurred
    */
   validate(value, options={}) {
     const validators = [this._validateSpecial, this._validateType];
@@ -239,16 +206,13 @@ class DataField {
       for ( const validator of validators ) {
         const isValid = validator.call(this, value, options);
         if ( isValid === true ) return undefined;
-        if ( isValid === false ) {
-          return new DataModelValidationFailure({
-            invalidValue: value,
-            message: this.validationError
-          });
-        }
-        if ( isValid instanceof DataModelValidationFailure ) return isValid;
+        if ( isValid === false ) return new ModelValidationError(this.validationError);
       }
     } catch(err) {
-      return new DataModelValidationFailure({invalidValue: value, message: err.message, unresolved: true});
+      if ( err instanceof ModelValidationError ) return err;
+      const mve = new ModelValidationError(err.message);
+      mve.stack = err.stack;
+      return mve;
     }
   }
 
@@ -282,27 +246,14 @@ class DataField {
 
   /**
    * A default type-specific validator that can be overridden by child classes
-   * @param {*} value                                    The candidate value
-   * @param {DataFieldValidationOptions} [options={}]    Options which affect validation behavior
-   * @returns {boolean|DataModelValidationFailure|void}  A boolean to indicate with certainty whether the value is
-   *                                                     valid, or specific DataModelValidationFailure information,
-   *                                                     otherwise void.
-   * @throws                                             May throw a specific error if the value is not valid
+   * @param {*} value               The candidate value
+   * @param {object} [options={}]   Options which affect validation behavior
+   * @returns {boolean|void}        A boolean to indicate with certainty whether the value is valid.
+   *                                Otherwise, return void.
+   * @throws                        May throw a specific error if the value is not valid
    * @protected
    */
   _validateType(value, options={}) {}
-
-  /* -------------------------------------------- */
-
-  /**
-   * Certain fields may declare joint data validation criteria.
-   * This method will only be called if the field is designated as recursive.
-   * @param {object} data       Candidate data for joint model validation
-   * @param {object} options    Options which modify joint model validation
-   * @throws  An error if joint model validation fails
-   * @internal
-   */
-  _validateModel(data, options={}) {}
 
   /* -------------------------------------------- */
   /*  Initialization and Serialization            */
@@ -326,15 +277,6 @@ class DataField {
    */
   toObject(value) {
     return value;
-  }
-
-  /**
-   * Recursively traverse a schema and retrieve a field specification by a given path
-   * @param {string[]} path             The field path as an array of strings
-   * @protected
-   */
-  _getField(path) {
-    return path.length ? undefined : this;
   }
 }
 
@@ -366,9 +308,6 @@ class SchemaField extends DataField {
       initial: {}
     });
   }
-
-  /** @override */
-  static recursive = true;
 
   /* -------------------------------------------- */
 
@@ -459,26 +398,6 @@ class SchemaField extends DataField {
     return this.fields[fieldName];
   }
 
-  /**
-   * Traverse the schema, obtaining the DataField definition for a particular field.
-   * @param {string[]|string} fieldName       A field path like ["abilities", "strength"] or "abilities.strength"
-   * @returns {SchemaField|DataField}         The corresponding DataField definition for that field, or undefined
-   */
-  getField(fieldName) {
-    let path;
-    if ( typeof fieldName === "string" ) path = fieldName.split(".");
-    else if ( Array.isArray(fieldName) ) path = fieldName;
-    else throw new Error("A field path must be an array of strings or a dot-delimited string");
-    return this._getField(path);
-  }
-
-  /** @override */
-  _getField(path) {
-    if ( !path.length ) return this;
-    const field = this.get(path.shift());
-    return field?._getField(path);
-  }
-
   /* -------------------------------------------- */
   /*  Data Field Methods                          */
   /* -------------------------------------------- */
@@ -538,48 +457,28 @@ class SchemaField extends DataField {
   _validateType(data, options={}) {
     if ( !(data instanceof Object) ) throw new Error("must be an object");
     options.source = options.source || data;
-    const schemaFailure = new DataModelValidationFailure();
+    const errors = {};
     for ( const [key, field] of this.entries() ) {
       if ( options.partial && !(key in data) ) continue;
 
       // Validate the field's current value
       const value = data[key];
-      const failure = field.validate(value, options);
+      const error = field.validate(value, options);
 
-      // Failure may be permitted if fallback replacement is allowed
-      if ( failure ) {
-        schemaFailure.fields[field.name] = failure;
-
-        // If the field internally applied fallback logic
-        if ( !failure.unresolved ) continue;
-
-        // If fallback is allowed at the schema level
+      // Errors may be permitted if fallback replacement is allowed
+      if ( error ) {
         if ( options.fallback ) {
           const initial = field.getInitialValue(options.source);
-          if ( field.validate(initial, {source: options.source}) === undefined ) {  // Ensure initial is valid
-            data[key] = initial;
-            failure.fallback = initial;
-            failure.unresolved = false;
-          }
-          else failure.unresolved = schemaFailure.unresolved = true;
+          if ( field.validate(initial, {source: options.source}) !== undefined ) errors[field.fieldPath] = error;
+          else data[key] = initial;
         }
 
-        // Otherwise the field-level failure is unresolved
-        else failure.unresolved = schemaFailure.unresolved = true;
+        // Otherwise, record validation failures
+        else errors[field.fieldPath] = error;
       }
     }
-    if ( !isEmpty(schemaFailure.fields) ) return schemaFailure;
-  }
-
-  /* ---------------------------------------- */
-
-  /** @override */
-  _validateModel(changes, options={}) {
-    options.source = options.source || changes;
-    if ( !changes ) return;
-    for ( const [name, field] of this.entries() ) {
-      const change = changes[name];  // May be nullish
-      if ( change && field.constructor.recursive ) field._validateModel(change, options);
+    if ( !isEmpty(errors) ) {
+      throw new ModelValidationError(errors);
     }
   }
 
@@ -587,7 +486,6 @@ class SchemaField extends DataField {
 
   /** @override */
   toObject(value) {
-    if ( (value === undefined) || (value === null) ) return value;
     const data = {};
     for ( const [name, field] of this.entries() ) {
       data[name] = field.toObject(value[name]);
@@ -606,20 +504,6 @@ class SchemaField extends DataField {
       if ( !options.filter || !isEmpty(r) ) results[key] = r;
     }
     return results;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Migrate this field's candidate source data.
-   * @param {object} sourceData   Candidate source data of the root model
-   * @param {any} fieldData       The value of this field within the source data
-   */
-  migrateSource(sourceData, fieldData) {
-    for ( const [key, field] of this.entries() ) {
-      const canMigrate = field.migrateSource instanceof Function;
-      if ( canMigrate && fieldData[key] ) field.migrateSource(sourceData, fieldData[key]);
-    }
   }
 }
 
@@ -778,29 +662,21 @@ class StringField extends DataField {
    */
   constructor(options={}) {
     super(options);
-
     // If choices are provided, the field should not be null or blank by default
     if ( this.choices ) {
       this.nullable = options.nullable ?? false;
       this.blank = options.blank ?? false;
-    }
-
-    // Adjust the default initial value depending on field configuration
-    if ( !("initial" in options) ) {
-      if ( !this.required ) this.initial = undefined;
-      else if ( this.blank ) this.initial = "";
-      else if ( this.nullable ) this.initial = null;
     }
   }
 
   /** @inheritdoc */
   static get _defaults() {
     return mergeObject(super._defaults, {
+      initial: "",
       blank: true,
       trim: true,
       nullable: false,
-      choices: undefined,
-      textSearch: false
+      choices: undefined
     });
   }
 
@@ -885,7 +761,7 @@ class ObjectField extends DataField {
 
   /** @override */
   _validateType(value, options={}) {
-    if ( foundry.utils.getType(value) !== "Object" ) throw new Error("must be an object");
+    if (foundry.utils.getType(value) !== "Object") throw new Error("must be an object");
   }
 }
 
@@ -908,20 +784,6 @@ class ArrayField extends DataField {
     this.element = this.constructor._validateElementType(element);
   }
 
-  /** @inheritdoc */
-  static get _defaults() {
-    return mergeObject(super._defaults, {
-      required: true,
-      nullable: false,
-      initial: () => []
-    });
-  }
-
-  /** @override */
-  static recursive = true;
-
-  /* ---------------------------------------- */
-
   /**
    * Validate the contained element type of the ArrayField
    * @param {*} element       The type of Array element
@@ -936,17 +798,14 @@ class ArrayField extends DataField {
     return element;
   }
 
-  /* ---------------------------------------- */
-
-  /** @override */
-  _validateModel(changes, options) {
-    if ( !this.element.constructor.recursive ) return;
-    for ( const element of changes ) {
-      this.element._validateModel(element, options);
-    }
+  /** @inheritdoc */
+  static get _defaults() {
+    return mergeObject(super._defaults, {
+      required: true,
+      nullable: false,
+      initial: () => []
+    });
   }
-
-  /* ---------------------------------------- */
 
   /** @override */
   _cast(value) {
@@ -973,35 +832,25 @@ class ArrayField extends DataField {
   /** @override */
   _validateType(value, options={}) {
     if ( !(value instanceof Array) ) throw new Error("must be an Array");
-    return this._validateElements(value, options);
+    const errors = this._validateElements(value, options);
+    if ( errors.length ) throw new ModelValidationError(errors);
   }
 
   /**
    * Validate every element of the ArrayField
-   * @param {Array} value                         The array to validate
-   * @param {DataFieldValidationOptions} options  Validation options
-   * @returns {DataModelValidationFailure|void}   A validation failure if any of the elements failed validation,
-   *                                              otherwise void.
+   * @param {Array} value       The array to validate
+   * @param {options} options   Validation options
+   * @returns {Array}           An array of element-specific errors
    * @protected
    */
   _validateElements(value, options) {
-    const arrayFailure = new DataModelValidationFailure();
+    const errors = [];
     for ( let i=0; i<value.length; i++ ) {
-      const failure = this._validateElement(value[i], options);
-      if ( failure ) arrayFailure.elements.push({id: i, failure});
+      const v = value[i];
+      const error = this.element.validate(v, options);
+      if ( error ) errors[i] = error;
     }
-    if ( arrayFailure.elements.length ) return arrayFailure;
-  }
-
-  /**
-   * Validate a single element of the ArrayField.
-   * @param {*} value                       The value of the array element
-   * @param {DataFieldValidationOptions} options  Validation options
-   * @returns {DataModelValidationFailure}  A validation failure if the element failed validation
-   * @protected
-   */
-  _validateElement(value, options) {
-    return this.element.validate(value, options);
+    return errors;
   }
 
   /** @override */
@@ -1025,25 +874,6 @@ class ArrayField extends DataField {
     }
     return results;
   }
-
-  /** @override */
-  _getField(path) {
-    if ( !path.length ) return this;
-    if ( path[0] === "element" ) path.shift();
-    return this.element._getField(path);
-  }
-
-  /**
-   * Migrate this field's candidate source data.
-   * @param {object} sourceData   Candidate source data of the root model
-   * @param {any} fieldData       The value of this field within the source data
-   */
-  migrateSource(sourceData, fieldData) {
-    const canMigrate = this.element.migrateSource instanceof Function;
-    if ( canMigrate && (fieldData instanceof Array) ) {
-      for ( const entry of fieldData ) this.element.migrateSource(sourceData, entry);
-    }
-  }
 }
 
 /* -------------------------------------------- */
@@ -1058,31 +888,21 @@ class SetField extends ArrayField {
 
   /** @override */
   _validateElements(value, options) {
-    const setFailure = new DataModelValidationFailure();
+    const errors = [];
     for ( let i=value.length-1; i>=0; i-- ) {  // iterate backwards so we can splice as we go
-      const failure = this._validateElement(value[i], options);
-      if ( failure ) {
-        setFailure.elements.unshift({id: i, failure});
+      const v = value[i];
+      const error = this.element.validate(v, options);
+      if ( error ) {
 
-        // The failure may have been internally resolved by fallback logic
-        if ( !failure.unresolved && failure.fallback ) continue;
-
-        // If fallback is allowed, remove invalid elements from the set
+        // If the Set element is invalid, we can remove it from the array and log a warning.
         if ( options.fallback ) {
+          globalThis.logger?.warn(`Dropped invalid Set element ${JSON.stringify(v)}`);
           value.splice(i, 1);
-          failure.dropped = true;
         }
-
-        // Otherwise the set failure is unresolved
-        else setFailure.unresolved = true;
+        else errors.push(error);
       }
     }
-
-    // Return a record of any failed set elements
-    if ( setFailure.elements.length ) {
-      if ( options.fallback && !setFailure.unresolved ) setFailure.fallback = value;
-      return setFailure;
-    }
+    return errors;
   }
 
   /** @override */
@@ -1132,22 +952,7 @@ class EmbeddedDataField extends SchemaField {
 
   /** @override */
   toObject(value) {
-    if ( !value ) return value;
     return value.toObject(false);
-  }
-
-  /**
-   * Migrate this field's candidate source data.
-   * @param {object} sourceData   Candidate source data of the root model
-   * @param {any} fieldData       The value of this field within the source data
-   */
-  migrateSource(sourceData, fieldData) {
-    if ( fieldData ) this.model.migrateDataSafe(fieldData);
-  }
-
-  /** @override */
-  _validateModel(changes, options) {
-    this.model.validateJoint(changes);
   }
 }
 
@@ -1159,8 +964,8 @@ class EmbeddedDataField extends SchemaField {
  */
 class EmbeddedCollectionField extends ArrayField {
   /**
-   * @param {typeof Document} element     The type of Document which belongs to this embedded collection
-   * @param {DataFieldOptions} [options]  Options which configure the behavior of the field
+   * @param {typeof Document} element       The type of Document which belongs to this embedded collection
+   * @param {DataFieldOptions} [options]    Options which configure the behavior of the field
    */
   constructor(element, options={}) {
     super(element, options);
@@ -1174,19 +979,8 @@ class EmbeddedCollectionField extends ArrayField {
   }
 
   /**
-   * The Collection implementation to use when initializing the collection.
-   * @type {typeof EmbeddedCollection}
-   */
-  static get implementation() {
-    return EmbeddedCollection;
-  }
-
-  /** @override */
-  static hierarchical = true;
-
-  /**
    * A reference to the DataModel subclass of the embedded document element
-   * @type {typeof Document}
+   * @type {typeof DataModel}
    */
   get model() {
     return this.element.implementation;
@@ -1197,7 +991,7 @@ class EmbeddedCollectionField extends ArrayField {
    * @type {SchemaField}
    */
   get schema() {
-    return this.model.schema;
+    return this.element.schema;
   }
 
   /** @override */
@@ -1205,14 +999,23 @@ class EmbeddedCollectionField extends ArrayField {
     return value.map(v => this.schema.clean(v, {...options, source: v}));
   }
 
-  /** @override */
+  /**
+   * @inheritdoc
+   * @returns {Array<Object<Error>>}  An array of error objects
+   */
   _validateElements(value, options) {
-    const collectionFailure = new DataModelValidationFailure();
-    for ( const v of value ) {
-      const failure = this.schema.validate(v, {...options, source: v});
-      if ( failure && !options.dropInvalidEmbedded) collectionFailure.elements.push({id: v._id, name: v.name, failure});
+    const errors = [];
+    for ( let i=0; i<value.length; i++ ) {
+      const v = value[i];
+      const errs = this.schema.validate(v, {...options, source: v});
+      if ( !isEmpty(errs) ) {
+        if ( options.fallback ) {  // If the Document is invalid remove it from the Collection and log a warning
+          const label = `Dropped invalid EmbeddedDocument ${v._id}:`;
+          globalThis.logger?.warn(this.model.formatValidationErrors(errors, {label}));
+        } else errors[i] = errs;
+      }
     }
-    if ( collectionFailure.elements.length ) return collectionFailure;
+    return errors;
   }
 
   /** @override */
@@ -1236,119 +1039,6 @@ class EmbeddedCollectionField extends ArrayField {
       if ( !options.filter || !isEmpty(r) ) results.push(r);
     }
     return results;
-  }
-
-  /**
-   * Migrate this field's candidate source data.
-   * @param {object} sourceData   Candidate source data of the root model
-   * @param {any} fieldData       The value of this field within the source data
-   */
-  migrateSource(sourceData, fieldData) {
-    if ( fieldData instanceof Array ) {
-      for ( const entry of fieldData ) this.model.migrateDataSafe(entry);
-    }
-  }
-
-  /* -------------------------------------------- */
-  /*  Embedded Document Operations                */
-  /* -------------------------------------------- */
-
-  /**
-   * Return the embedded document(s) as a Collection.
-   * @param {Document} parent  The parent document.
-   * @returns {Collection<Document>}
-   */
-  getCollection(parent) {
-    return parent[this.name];
-  }
-}
-
-/* -------------------------------------------- */
-
-/**
- * A subclass of {@link EmbeddedCollectionField} which manages a collection of delta objects relative to another
- * collection.
- */
-class EmbeddedCollectionDeltaField extends EmbeddedCollectionField {
-  /** @override */
-  static get implementation() {
-    return EmbeddedCollectionDelta;
-  }
-
-  /** @override */
-  _cleanType(value, options) {
-    return value.map(v => {
-      if ( v._tombstone ) return foundry.data.TombstoneData.schema.clean(v, {...options, source: v});
-      return this.schema.clean(v, {...options, source: v});
-    });
-  }
-
-  /** @override */
-  _validateElements(value, options) {
-    const collectionFailure = new DataModelValidationFailure();
-    for ( const v of value ) {
-      const validationOptions = {...options, source: v};
-      const failure = v._tombstone
-        ? foundry.data.TombstoneData.schema.validate(v, validationOptions)
-        : this.schema.validate(v, validationOptions);
-      if ( failure && !options.fallback ) collectionFailure.elements.push({id: v._id, failure});
-    }
-    if ( collectionFailure.elements.length ) return collectionFailure;
-  }
-}
-
-/* -------------------------------------------- */
-
-/**
- * A subclass of {@link EmbeddedDataField} which supports a single embedded Document.
- */
-class EmbeddedDocumentField extends EmbeddedDataField {
-  /**
-   * @param {typeof Document} model     The type of Document which is embedded.
-   * @param {DataFieldOptions} options  Options which configure the behavior of the field.
-   */
-  constructor(model, options={}) {
-    if ( !isSubclass(model, foundry.abstract.Document) ) {
-      throw new Error("An EmbeddedDocumentField must specify a Document subclass as its type.");
-    }
-    super(model.implementation, options);
-  }
-
-  /** @inheritdoc */
-  static get _defaults() {
-    return mergeObject(super._defaults, {
-      nullable: true
-    });
-  }
-
-  /** @override */
-  static hierarchical = true;
-
-  /** @override */
-  initialize(value, model, options={}) {
-    if ( !value ) return value;
-    if ( model[this.name] ) {
-      model[this.name]._initialize(options);
-      return model[this.name];
-    }
-    return new this.model(value, {...options, parent: model, parentCollection: this.name});
-  }
-
-  /* -------------------------------------------- */
-  /*  Embedded Document Operations                */
-  /* -------------------------------------------- */
-
-  /**
-   * Return the embedded document(s) as a Collection.
-   * @param {Document} parent  The parent document.
-   * @returns {Collection<Document>}
-   */
-  getCollection(parent) {
-    const collection = new SingletonEmbeddedCollection(this.name, parent, []);
-    const doc = parent[this.name];
-    if ( !doc ) return collection;
-    collection.set(doc.id, doc);
-    return collection;
   }
 }
 
@@ -1428,14 +1118,102 @@ class ForeignDocumentField extends DocumentIdField {
   /** @inheritdoc */
   initialize(value, model, options={}) {
     if ( this.idOnly ) return value;
-    if ( model?.pack && !foundry.utils.isSubclass(this.model, foundry.documents.BaseFolder) ) return null;
     if ( !game.collections ) return value; // server-side
-    return () => this.model?.get(value, {pack: model?.pack, ...options}) ?? null;
+    return () => this.model?.get(value) ?? null;
   }
 
   /** @inheritdoc */
   toObject(value) {
     return value?._id ?? value
+  }
+}
+
+/* ---------------------------------------- */
+
+/**
+ * A subclass of [ObjectField]{@link ObjectField} which supports a system-level data object.
+ */
+class SystemDataField extends ObjectField {
+  /**
+   * @param {typeof Document} document      The base document class which belongs in this field
+   * @param {DataFieldOptions} options      Options which configure the behavior of the field
+   */
+  constructor(document, options={}) {
+    super(options);
+    /**
+     * The canonical document name of the document type which belongs in this field
+     * @type {typeof Document}
+     */
+    this.document = document;
+  }
+
+  /** @inheritdoc */
+  static get _defaults() {
+    return mergeObject(super._defaults, {required: true});
+  }
+
+  /**
+   * A convenience accessor for the name of the document type associated with this SystemDataField
+   * @type {string}
+   */
+  get documentName() {
+    return this.document.documentName;
+  }
+
+  /**
+   * Get the DataModel definition that should be used for this type of document.
+   * @param {string} type         The Document instance type
+   * @returns {typeof DataModel|null}    The DataModel class, or null
+   */
+  getModelForType(type) {
+    if ( !type ) return null;
+    return globalThis.CONFIG?.[this.documentName]?.systemDataModels?.[type] ?? null;
+  }
+
+  /** @override */
+  getInitialValue(data) {
+    const cls = this.getModelForType(data.type);
+    return cls?.cleanData() || foundry.utils.deepClone(game?.model[this.documentName]?.[data.type] || {});
+  }
+
+  /** @override */
+  _cleanType(value, options) {
+    if ( !(typeof value === "object") ) value = {};
+
+    // Use a defined DataModel
+    const cls = this.getModelForType(options.source?.type);
+    if ( cls ) return cls.cleanData(value, options);
+    if ( options.partial ) return value;
+
+    // Use the defined template.json
+    const template = this.getInitialValue(options.source);
+    const insertKeys = !game?.system?.template.strictDataCleaning;
+    return mergeObject(template, value, {insertKeys, inplace: true});
+  }
+
+  /** @override */
+  initialize(value, model, options={}) {
+    const cls = this.getModelForType(model._source.type);
+    if ( cls ) return new cls(value, {parent: model, ...options});
+    return deepClone(value);
+  }
+
+  /** @inheritdoc */
+  _validateType(data, options={}) {
+    super._validateType(data);
+    options.source = options.source || data;
+    const cls = this.getModelForType(options.source.type);
+    if ( !cls?._enableV10Validation ) return;
+    const schema = cls?.schema;
+    const {errors} = schema?.validate(data, options) ?? {};
+    if ( !isEmpty(errors) ) {
+      throw new ModelValidationError(errors);
+    }
+  }
+
+  /** @override */
+  toObject(value) {
+    return value.toObject instanceof Function ? value.toObject(false) : deepClone(value);
   }
 }
 
@@ -1505,16 +1283,6 @@ class FilePathField extends StringField {
       initial: null
     });
   }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  clean(value, options) {
-    if ( (value === "") && (this.nullable) ) value = null;
-    return super.clean(value, options);
-  }
-
-  /* -------------------------------------------- */
 
   /** @inheritdoc */
   _validateType(value) {
@@ -1718,153 +1486,15 @@ class DocumentStatsField extends SchemaField {
 }
 
 /* ---------------------------------------- */
-
-/**
- * A subclass of [ObjectField]{@link ObjectField} which supports a type-specific data object.
- */
-class TypeDataField extends ObjectField {
-  /**
-   * @param {typeof Document} document      The base document class which belongs in this field
-   * @param {DataFieldOptions} options      Options which configure the behavior of the field
-   */
-  constructor(document, options={}) {
-    super(options);
-    /**
-     * The canonical document name of the document type which belongs in this field
-     * @type {typeof Document}
-     */
-    this.document = document;
-  }
-
-  /** @inheritdoc */
-  static get _defaults() {
-    return mergeObject(super._defaults, {required: true});
-  }
-
-  /** @override */
-  static recursive = true;
-
-  /**
-   * Return the package that provides the sub-type for the given model.
-   * @param {DataModel} model       The model instance created for this sub-type.
-   * @returns {System|Module|null}
-   */
-  static getModelProvider(model) {
-    const type = model.parent?.type;
-    const modules = game.modules ?? game.world?.modules;
-    if ( !game.system || !modules || !type ) return null;
-    const [moduleId] = type.split(".");
-    if ( type.indexOf(".") < 0 ) {
-      const coreTypes = model.parent.constructor.metadata?.coreTypes ?? [];
-      if ( !coreTypes.includes(type) ) return game.system;
-    }
-    return game.modules.get(moduleId) ?? null;
-  }
-
-  /**
-   * A convenience accessor for the name of the document type associated with this TypeDataField
-   * @type {string}
-   */
-  get documentName() {
-    return this.document.documentName;
-  }
-
-  /**
-   * Get the DataModel definition that should be used for this type of document.
-   * @param {string} type              The Document instance type
-   * @returns {typeof DataModel|null}  The DataModel class or null
-   */
-  getModelForType(type) {
-    if ( !type ) return null;
-    return globalThis.CONFIG?.[this.documentName]?.dataModels?.[type] ?? null;
-  }
-
-  /** @override */
-  getInitialValue(data) {
-    const cls = this.getModelForType(data.type);
-    return cls?.cleanData() || foundry.utils.deepClone(game?.model[this.documentName]?.[data.type] || {});
-  }
-
-  /** @override */
-  _cleanType(value, options) {
-    if ( !(typeof value === "object") ) value = {};
-
-    // Use a defined DataModel
-    const type = options.source?.type;
-    const cls = this.getModelForType(type);
-    if ( cls ) return cls.cleanData(value, options);
-    if ( options.partial ) return value;
-
-    // Use the defined template.json
-    const template = this.getInitialValue(options.source);
-    const insertKeys = (type === BASE_DOCUMENT_TYPE) || !game?.system?.template.strictDataCleaning;
-    return mergeObject(template, value, {insertKeys, inplace: true});
-  }
-
-  /** @override */
-  initialize(value, model, options={}) {
-    const cls = this.getModelForType(model._source.type);
-    if ( cls ) {
-      const instance = new cls(value, {parent: model, ...options});
-      if ( !("modelProvider" in instance) ) Object.defineProperty(instance, "modelProvider", {
-        value: this.constructor.getModelProvider(instance),
-        writable: false
-      });
-      return instance;
-    }
-    return deepClone(value);
-  }
-
-  /** @inheritdoc */
-  _validateType(data, options={}) {
-    super._validateType(data);
-    options.source = options.source || data;
-    const cls = this.getModelForType(options.source.type);
-    const schema = cls?.schema;
-    return schema?.validate(data, options);
-  }
-
-  /* ---------------------------------------- */
-
-  /** @override */
-  _validateModel(changes, options) {
-    options.source ||= changes;
-    const cls = this.getModelForType(options.source.type);
-    return cls?.validateJoint(changes);
-  }
-
-  /* ---------------------------------------- */
-
-  /** @override */
-  toObject(value) {
-    return value.toObject instanceof Function ? value.toObject(false) : deepClone(value);
-  }
-
-  /**
-   * Migrate this field's candidate source data.
-   * @param {object} sourceData   Candidate source data of the root model
-   * @param {any} fieldData       The value of this field within the source data
-   */
-  migrateSource(sourceData, fieldData) {
-    const cls = this.getModelForType(sourceData.type);
-    if ( cls ) cls.migrateDataSafe(fieldData);
-  }
-}
-
-/* ---------------------------------------- */
-/*  DEPRECATIONS                            */
+/*  Errors                                  */
 /* ---------------------------------------- */
 
 /**
- * @deprecated since v11
- * @see DataModelValidationError
- * @ignore
+ * A special type of error that wraps multiple errors which occurred during DataModel validation.
+ * @param {Object<Error>|Error[]} errors  An array or object containing several errors.
  */
 class ModelValidationError extends Error {
   constructor(errors) {
-    logCompatibilityWarning(
-      "ModelValidationError is deprecated. Please use DataModelValidationError instead.",
-      {since: 11, until: 13});
     const message = ModelValidationError.formatErrors(errors);
     super(message);
     this.errors = errors;
@@ -1884,15 +1514,19 @@ class ModelValidationError extends Error {
   }
 }
 
+/* ---------------------------------------- */
+/*  DEPRECATIONS                            */
+/* ---------------------------------------- */
+
 /**
  * @deprecated since v10
- * @see TypeDataField
+ * @see SystemDataField
  * @ignore
  */
 export function systemDataField(document) {
-  const msg = "fields.systemDataField is deprecated and replaced by the TypeDataField class";
+  const msg = "fields.systemDataField is deprecated and replaced by the SystemDataField class";
   logCompatibilityWarning(msg, {since: 10, until: 12});
-  return new TypeDataField(document);
+  return new SystemDataField(document);
 }
 
 /**
@@ -1952,8 +1586,6 @@ export {
   DocumentStatsField,
   EmbeddedDataField,
   EmbeddedCollectionField,
-  EmbeddedCollectionDeltaField,
-  EmbeddedDocumentField,
   FilePathField,
   ForeignDocumentField,
   HTMLField,
@@ -1964,6 +1596,6 @@ export {
   SchemaField,
   SetField,
   StringField,
-  TypeDataField,
+  SystemDataField,
   ModelValidationError
 }

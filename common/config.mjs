@@ -1,6 +1,6 @@
 import DataModel from "./abstract/data.mjs";
 import * as fields from "./data/fields.mjs";
-import {CSS_THEMES, SOFTWARE_UPDATE_CHANNELS} from "./constants.mjs";
+import {SOFTWARE_UPDATE_CHANNELS} from "./constants.mjs";
 import {isNewerVersion} from "./utils/helpers.mjs";
 
 /** @namespace config */
@@ -41,15 +41,9 @@ class ApplicationConfiguration extends DataModel {
       awsConfig: new fields.StringField({label: "SETUP.AWSLabel", hint: "SETUP.AWSHint"}),
       compressStatic: new fields.BooleanField({initial: true, label: "SETUP.CompressStaticLabel",
         hint: "SETUP.CompressStaticHint"}),
-      compressSocket: new fields.BooleanField({initial: true, label: "SETUP.CompressSocketLabel",
-        hint: "SETUP.CompressSocketHint"}),
-      cssTheme: new fields.StringField({blank: false, choices: CSS_THEMES, initial: "foundry",
-        label: "SETUP.CSSTheme", hint: "SETUP.CSSThemeHint"}),
       dataPath: new fields.StringField({label: "SETUP.DataPathLabel", hint: "SETUP.DataPathHint"}),
-      deleteNEDB: new fields.BooleanField({label: "SETUP.DeleteNEDBLabel", hint: "SETUP.DeleteNEDBHint"}),
       fullscreen: new fields.BooleanField({initial: false}),
       hostname: new fields.StringField({required: true, blank: false, nullable: true, initial: null}),
-      hotReload: new fields.BooleanField({initial: false, label: "SETUP.HotReloadLabel", hint: "SETUP.HotReloadHint"}),
       language: new fields.StringField({required: true, blank: false, initial: "en.core",
         label: "SETUP.DefaultLanguageLabel", hint: "SETUP.DefaultLanguageHint"}),
       localHostname: new fields.StringField({required: true, blank: false, nullable: true, initial: null}),
@@ -62,8 +56,6 @@ class ApplicationConfiguration extends DataModel {
       routePrefix: new fields.StringField({required: true, blank: false, nullable: true, initial: null}),
       sslCert: new fields.StringField({label: "SETUP.SSLCertLabel", hint: "SETUP.SSLCertHint"}),
       sslKey: new fields.StringField({label: "SETUP.SSLKeyLabel"}),
-      telemetry: new fields.BooleanField({required: false, initial: undefined, label: "SETUP.Telemetry",
-        hint: "SETUP.TelemetryHint"}),
       updateChannel: new fields.StringField({required: true, choices: SOFTWARE_UPDATE_CHANNELS, initial: "stable"}),
       upnp: new fields.BooleanField({initial: true}),
       upnpLeaseDuration: new fields.NumberField(),
@@ -112,8 +104,6 @@ class ApplicationConfiguration extends DataModel {
  * @memberof config
  *
  * @property {number} generation        The major generation of the Release
- * @property {number} [maxGeneration]   The maximum available generation of the software.
- * @property {number} [maxStableGeneration]  The maximum available stable generation of the software.
  * @property {string} channel           The channel the Release belongs to, such as "stable"
  * @property {string} suffix            An optional appended string display for the Release
  * @property {number} build             The internal build number for the Release
@@ -123,16 +113,9 @@ class ApplicationConfiguration extends DataModel {
  * @property {string} [download]        A temporary download URL where this version may be obtained
  */
 class ReleaseData extends DataModel {
-  /** @override */
   static defineSchema() {
     return {
       generation: new fields.NumberField({required: true, nullable: false, integer: true, min: 1}),
-      maxGeneration: new fields.NumberField({
-        required: false, nullable: false, integer: true, min: 1, initial: () => this.generation
-      }),
-      maxStableGeneration: new fields.NumberField({
-        required: false, nullable: false, integer: true, min: 1, initial: () => this.generation
-      }),
       channel: new fields.StringField({choices: SOFTWARE_UPDATE_CHANNELS, blank: false}),
       suffix: new fields.StringField(),
       build: new fields.NumberField({required: true, nullable: false, integer: true}),
@@ -167,6 +150,14 @@ class ReleaseData extends DataModel {
    */
   get version() {
     return `${this.generation}.${this.build}`;
+  }
+
+  /**
+   * The maximum known stable generation number.
+   * @type {number}
+   */
+  get maxStableGeneration() {
+    return globalThis.config.updater.availability.maxStableGeneration || this.generation;
   }
 
   /* ----------------------------------------- */

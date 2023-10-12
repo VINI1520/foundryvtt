@@ -116,7 +116,7 @@ class FormApplication extends Application {
     // Render the application and restore focus
     await super._render(force, options);
     if ( focus && focus.name ) {
-      const input = this.form?.[focus.name];
+      const input = this.form[focus.name];
       if ( input && (input.focus instanceof Function) ) input.focus();
     }
   }
@@ -656,7 +656,6 @@ class DocumentSheet extends FormApplication {
   /** @inheritdoc */
   _activateCoreListeners(html) {
     super._activateCoreListeners(html);
-    if ( this.isEditable ) html.find("img[data-edit]").on("click", this._onEditImage.bind(this));
     if ( !this.document.isOwner ) return;
     this._secrets.forEach(secret => secret.bind(html[0]));
   }
@@ -665,13 +664,7 @@ class DocumentSheet extends FormApplication {
 
   /** @inheritdoc */
   async activateEditor(name, options={}, initialContent="") {
-    const editor = this.editors[name];
     options.document = this.document;
-    if ( editor?.options.engine === "prosemirror" ) {
-      options.plugins = foundry.utils.mergeObject({
-        highlightDocumentMatches: ProseMirror.ProseMirrorHighlightMatchesPlugin.build(ProseMirror.defaultSchema)
-      }, options.plugins);
-    }
     return super.activateEditor(name, options, initialContent);
   }
 
@@ -744,6 +737,7 @@ class DocumentSheet extends FormApplication {
    * @protected
    */
   _canUserView(user) {
+    if ( this.object.compendium ) return user.isGM || !this.object.compendium.private;
     return this.object.testUserPermission(user, this.options.viewPermission);
   }
 
@@ -774,8 +768,7 @@ class DocumentSheet extends FormApplication {
     let buttons = super._getHeaderButtons();
 
     // Compendium Import
-    if ( (this.document.constructor.name !== "Folder") && !this.document.isEmbedded &&
-          this.document.compendium && this.document.constructor.canUserCreate(game.user) ) {
+    if ( !this.document.isEmbedded && this.document.compendium && this.document.constructor.canUserCreate(game.user) ) {
       buttons.unshift({
         label: "Import",
         class: "import",
@@ -788,7 +781,7 @@ class DocumentSheet extends FormApplication {
     }
 
     // Sheet Configuration
-    if ( this.options.sheetConfig && this.isEditable && (this.document.getFlag("core", "sheetLock") !== true) ) {
+    if ( this.options.sheetConfig && this.isEditable ) {
       buttons.unshift({
         label: "Sheet",
         class: "configure-sheet",
@@ -839,32 +832,6 @@ class DocumentSheet extends FormApplication {
       top: this.position.top + 40,
       left: this.position.left + ((this.position.width - DocumentSheet.defaultOptions.width) / 2)
     }).render(true);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle changing a Document's image.
-   * @param {MouseEvent} event  The click event.
-   * @returns {Promise}
-   * @protected
-   */
-  _onEditImage(event) {
-    const attr = event.currentTarget.dataset.edit;
-    const current = foundry.utils.getProperty(this.object, attr);
-    const { img } = this.document.constructor.getDefaultArtwork?.(this.document.toObject()) ?? {};
-    const fp = new FilePicker({
-      current,
-      type: "image",
-      redirectToRoot: img ? [img] : [],
-      callback: path => {
-        event.currentTarget.src = path;
-        if ( this.options.submitOnChange ) return this._onSubmit(event);
-      },
-      top: this.position.top + 40,
-      left: this.position.left + 10
-    });
-    return fp.browse();
   }
 
   /* -------------------------------------------- */

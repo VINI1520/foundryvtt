@@ -6,7 +6,7 @@
  *
  * @param {abstract.Document} document      The Document instance which is represented by this object
  */
-class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
+class PlaceableObject extends PIXI.Container {
   constructor(document) {
     super();
     if ( !(document instanceof foundry.abstract.Document) || !document.isEmbedded ) {
@@ -61,25 +61,11 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
     this.cullable = true;
   }
 
-  /* -------------------------------------------- */
-  /*  Properties                                  */
-  /* -------------------------------------------- */
-
   /**
    * Identify the official Document name for this PlaceableObject class
    * @type {string}
    */
   static embeddedName;
-
-  /**
-   * The flags declared here are required for all PlaceableObject subclasses to also support.
-   * @override
-   */
-  static RENDER_FLAGS = {
-    redraw: {propagate: ["refresh"]},
-    refresh: {propagate: ["refreshState"], alias: true},
-    refreshState: {}
-  };
 
   /**
    * Passthrough certain drag operations on locked objects.
@@ -91,36 +77,20 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
   /**
    * Know if a placeable is in the hover-in state.
    * @type {boolean}
-   * @protected
+   * @internal
    */
   _isHoverIn = false;
 
-  /**
-   * The bounds that the placeable was added to the quadtree with.
-   * @type {PIXI.Rectangle}
-   */
-  #lastQuadtreeBounds;
-
-  /**
-   * An internal reference to a Promise in-progress to draw the Placeable Object.
-   * @type {Promise<PlaceableObject>}
-   */
-  #drawing = Promise.resolve(this);
-
-  /**
-   * Has this Placeable Object been drawn and is there no drawing in progress?
-   * @type {boolean}
-   */
-  #drawn = false;
-
+  /* -------------------------------------------- */
+  /*  Properties                                  */
   /* -------------------------------------------- */
 
   /**
    * The mouse interaction state of this placeable.
-   * @type {MouseInteractionManager.INTERACTION_STATES|undefined}
+   * @type {MouseInteractionManager.INTERACTION_STATES}
    */
   get interactionState() {
-    return this._original?.mouseInteractionManager?.state ?? this.mouseInteractionManager?.state;
+    return this._original?.mouseInteractionManager?.state ?? this.mouseInteractionManager.state;
   }
 
   /* -------------------------------------------- */
@@ -188,17 +158,7 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
    * @type {boolean}
    */
   get isPreview() {
-    return !!this._original || !this.document.id;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Does there exist a temporary preview of this placeable object?
-   * @type {boolean}
-   */
-  get hasPreview() {
-    return !!this._preview;
+    return !!this._original;
   }
 
   /* -------------------------------------------- */
@@ -269,37 +229,122 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
   #hover = false;
 
   /* -------------------------------------------- */
-  /*  Rendering                                   */
-  /* -------------------------------------------- */
-
-  /** @override */
-  applyRenderFlags() {
-    if ( !this.renderFlags.size || this._destroyed ) return;
-    const flags = this.renderFlags.clear();
-
-    // Full re-draw
-    if ( flags.redraw ) {
-      this.draw();
-      return;
-    }
-
-    // Don't refresh until the object is drawn
-    if ( !this.#drawn ) return;
-
-    // Incremental refresh
-    this._applyRenderFlags(flags);
-    Hooks.callAll(`refresh${this.document.documentName}`, this, flags);
-  }
-
+  /*  Permission Controls                         */
   /* -------------------------------------------- */
 
   /**
-   * Apply render flags before a render occurs.
-   * @param {Object<boolean>} flags  The render flags which must be applied
+   * Test whether a user can perform a certain interaction regarding a Placeable Object
+   * @param {User} user       The User performing the action
+   * @param {string} action   The named action being attempted
+   * @returns {boolean}       Does the User have rights to perform the action?
+   */
+  can(user, action) {
+    const fn = this[`_can${action.titleCase()}`];
+    return fn ? fn.call(this, user) : false;
+  }
+
+  /**
+   * Can the User access the HUD for this Placeable Object?
+   * @param {User} user       The User performing the action.
+   * @param {object} event    The event object.
+   * @returns {boolean}       The returned status.
    * @protected
    */
-  _applyRenderFlags(flags) {}
+  _canHUD(user, event) {
+    return this.controlled;
+  }
 
+  /**
+   * Does the User have permission to configure the Placeable Object?
+   * @param {User} user       The User performing the action.
+   * @param {object} event    The event object.
+   * @returns {boolean}       The returned status.
+   * @protected
+   */
+  _canConfigure(user, event) {
+    return this.document.canUserModify(user, "update");
+  }
+
+  /**
+   * Does the User have permission to control the Placeable Object?
+   * @param {User} user       The User performing the action.
+   * @param {object} event    The event object.
+   * @returns {boolean}       The returned status.
+   * @protected
+   */
+  _canControl(user, event) {
+    if ( !this.layer.active ) return false;
+    return this.document.canUserModify(user, "update");
+  }
+
+  /**
+   * Does the User have permission to view details of the Placeable Object?
+   * @param {User} user       The User performing the action.
+   * @param {object} event    The event object.
+   * @returns {boolean}       The returned status.
+   * @protected
+   */
+  _canView(user, event) {
+    return this.document.testUserPermission(user, "LIMITED");
+  }
+
+  /**
+   * Does the User have permission to create the underlying Document?
+   * @param {User} user       The User performing the action.
+   * @param {object} event    The event object.
+   * @returns {boolean}       The returned status.
+   * @protected
+   */
+  _canCreate(user, event) {
+    return user.isGM;
+  }
+
+  /**
+   * Does the User have permission to drag this Placeable Object?
+   * @param {User} user       The User performing the action.
+   * @param {object} event    The event object.
+   * @returns {boolean}       The returned status.
+   * @protected
+   */
+  _canDrag(user, event) {
+    return this._canControl(user, event);
+  }
+
+  /**
+   * Does the User have permission to hover on this Placeable Object?
+   * @param {User} user       The User performing the action.
+   * @param {object} event    The event object.
+   * @returns {boolean}       The returned status.
+   * @protected
+   */
+  _canHover(user, event) {
+    return this._canControl(user, event);
+  }
+
+  /**
+   * Does the User have permission to update the underlying Document?
+   * @param {User} user       The User performing the action.
+   * @param {object} event    The event object.
+   * @returns {boolean}       The returned status.
+   * @protected
+   */
+  _canUpdate(user, event) {
+    return this._canControl(user, event);
+  }
+
+  /**
+   * Does the User have permission to delete the underlying Document?
+   * @param {User} user       The User performing the action.
+   * @param {object} event    The event object.
+   * @returns {boolean}       The returned status.
+   * @protected
+   */
+  _canDelete(user, event) {
+    return this._canControl(user, event);
+  }
+
+  /* -------------------------------------------- */
+  /*  Rendering                                   */
   /* -------------------------------------------- */
 
   /**
@@ -313,13 +358,29 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
 
   /* -------------------------------------------- */
 
+  /**
+   * Clone the placeable object, returning a new object with identical attributes.
+   * The returned object is non-interactive, and has no assigned ID.
+   * If you plan to use it permanently you should call the create method.
+   * @returns {PlaceableObject}  A new object with identical data
+   */
+  clone() {
+    const cloneDoc = this.document.clone({}, {keepId: true});
+    const clone = new this.constructor(cloneDoc);
+    cloneDoc._object = clone;
+    clone._original = this;
+    clone.interactive = false;
+    clone.#controlled = this.#controlled;
+    return clone;
+  }
+
+  /* -------------------------------------------- */
+
   /** @inheritdoc */
   destroy(options) {
-    if ( this._original ) this._original._preview = undefined;
     this.document._object = null;
     this.document._destroyed = true;
     if ( this.controlIcon ) this.controlIcon.destroy();
-    this.renderFlags.clear();
     Hooks.callAll(`destroy${this.document.documentName}`, this);
     this._destroy(options);
     return super.destroy(options);
@@ -336,86 +397,47 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
 
   /**
    * Draw the placeable object into its parent container
-   * @param {object} [options]            Options which may modify the draw and refresh workflow
    * @returns {Promise<PlaceableObject>}  The drawn object
    */
-  async draw(options={}) {
-    return this.#drawing = this.#drawing.finally(async () => {
-      this.#drawn = false;
-      const wasVisible = this.visible;
-      const wasRenderable = this.renderable;
-      this.visible = false;
-      this.renderable = false;
-      this.clear();
-      await this._draw(options);
-      Hooks.callAll(`draw${this.document.documentName}`, this);
-      this.renderFlags.set({refresh: true}); // Refresh all flags
-      if ( this.id ) this.activateListeners();
-      this.visible = wasVisible;
-      this.renderable = wasRenderable;
-      this.#drawn = true;
-    });
+  async draw() {
+    this.clear();
+    await this._draw();
+    Hooks.callAll(`draw${this.document.documentName}`, this);
+    this.refresh();
+    if ( this.id ) this.activateListeners();
+    return this;
   }
 
   /**
    * The inner _draw method which must be defined by each PlaceableObject subclass.
-   * @param {object} options            Options which may modify the draw workflow
    * @abstract
    * @protected
    */
-  async _draw(options) {
+  async _draw() {
     throw new Error(`The ${this.constructor.name} subclass of PlaceableObject must define the _draw method`);
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Refresh all incremental render flags for the PlaceableObject.
-   * This method is no longer used by the core software but provided for backwards compatibility.
+   * Refresh the current display state of the Placeable Object
    * @param {object} [options]      Options which may modify the refresh workflow
    * @returns {PlaceableObject}     The refreshed object
    */
   refresh(options={}) {
-    this.renderFlags.set({refresh: true});
+    if ( this._destroyed ) return this;
+    this._refresh(options);
+    Hooks.callAll(`refresh${this.document.documentName}`, this, options);
     return this;
   }
 
-  /* -------------------------------------------- */
-
   /**
-   * Update the quadtree.
-   * @internal
-   */
-  _updateQuadtree() {
-    const layer = this.layer;
-    if ( !layer.quadtree || this.isPreview ) return;
-    if ( this.destroyed || this.parent !== layer.objects ) {
-      this.#lastQuadtreeBounds = undefined;
-      layer.quadtree.remove(this);
-      return;
-    }
-    const bounds = this.bounds;
-    if ( !this.#lastQuadtreeBounds
-      || bounds.x !== this.#lastQuadtreeBounds.x
-      || bounds.y !== this.#lastQuadtreeBounds.y
-      || bounds.width !== this.#lastQuadtreeBounds.width
-      || bounds.height !== this.#lastQuadtreeBounds.height ) {
-      this.#lastQuadtreeBounds = bounds;
-      layer.quadtree.update({r: bounds, t: this});
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Get the target opacity that should be used for a Placeable Object depending on its preview state.
-   * @returns {number}
+   * The inner _refresh method which must be defined by each PlaceableObject subclass.
+   * @param {object} options        Options which may modify the refresh workflow
+   * @abstract
    * @protected
    */
-  _getTargetAlpha() {
-    const isDragging = this._original?.mouseInteractionManager?.isDragging ?? this.mouseInteractionManager?.isDragging;
-    return isDragging ? (this.isPreview ? 0.8 : (this.hasPreview ? 0.4 : 1)) : 1;
-  }
+  _refresh(options) {}
 
   /* -------------------------------------------- */
 
@@ -426,19 +448,32 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
    * @param {string} userId
    * @protected
    */
-  _onCreate(data, options, userId) {}
+  _onCreate(data, options, userId) {
+    this.draw();
+  }
 
   /* -------------------------------------------- */
 
   /**
    * Define additional steps taken when an existing placeable object of this type is updated with new data
-   * @param {object} data
+   * @param {object} changed
    * @param {object} options
    * @param {string} userId
    * @protected
    */
-  _onUpdate(data, options, userId) {
-    this._updateQuadtree();
+  _onUpdate(changed, options, userId) {
+    const layer = this.layer;
+
+    // Z-index sorting
+    if ( "z" in changed ) {
+      this.zIndex = parseInt(changed.z) || 0;
+    }
+
+    // Quadtree location update
+    if ( layer.quadtree ) layer.quadtree.update({r: this.bounds, t: this});
+
+    // Refresh display
+    if ( !options?.skipRefresh ) this.refresh();
   }
 
   /* -------------------------------------------- */
@@ -453,6 +488,7 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
     this.release({trigger: false});
     const layer = this.layer;
     if ( layer.hover === this ) layer.hover = null;
+    if ( layer.quadtree ) layer.quadtree.remove(this);
     this.destroy({children: true});
   }
 
@@ -478,7 +514,7 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
 
     // Bail out if this object is already controlled, or not controllable
     if ( this.#controlled || !this.id ) return true;
-    if ( !this.can(game.user, "control") ) return false;
+    if (!this.can(game.user, "control")) return false;
 
     // Toggle control status
     this.#controlled = true;
@@ -486,7 +522,17 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
 
     // Trigger follow-up events and fire an on-control Hook
     this._onControl(options);
+    /**
+     * A hook event that fires when any PlaceableObject is selected or
+     * deselected. Substitute the PlaceableObject name in the hook event to
+     * target a specific PlaceableObject type, for example "controlToken".
+     * @function controlPlaceableObject
+     * @memberof hookEvents
+     * @param {PlaceableObject} object The PlaceableObject
+     * @param {boolean} controlled     Whether the PlaceableObject is selected or not
+     */
     Hooks.callAll(`control${this.constructor.embeddedName}`, this, this.#controlled);
+    canvas.triggerPendingOperations();
     return true;
   }
 
@@ -498,7 +544,7 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
    * @protected
    */
   _onControl(options) {
-    this.renderFlags.set({refreshState: true});
+    this.refresh();
   }
 
   /* -------------------------------------------- */
@@ -510,7 +556,7 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
    */
   release(options={}) {
     this.layer.controlledObjects.delete(this.id);
-    if ( !this.#controlled ) return true;
+    if (!this.#controlled) return true;
     this.#controlled = false;
 
     // Trigger follow-up events
@@ -518,6 +564,7 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
 
     // Fire an on-release Hook
     Hooks.callAll(`control${this.constructor.embeddedName}`, this, this.#controlled);
+    if ( options.trigger !== false ) canvas.triggerPendingOperations();
     return true;
   }
 
@@ -533,26 +580,7 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
     this.hover = this._isHoverIn = false;
     if ( this === layer.hover ) layer.hover = null;
     if ( layer.hud && (layer.hud.object === this) ) layer.hud.clear();
-    this.renderFlags.set({refreshState: true});
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Clone the placeable object, returning a new object with identical attributes.
-   * The returned object is non-interactive, and has no assigned ID.
-   * If you plan to use it permanently you should call the create method.
-   * @returns {PlaceableObject}  A new object with identical data
-   */
-  clone() {
-    const cloneDoc = this.document.clone({}, {keepId: true});
-    const clone = new this.constructor(cloneDoc);
-    cloneDoc._object = clone;
-    clone._original = this;
-    clone.eventMode = "none";
-    clone.#controlled = this.#controlled;
-    this._preview = clone;
-    return clone;
+    this.refresh();
   }
 
   /* -------------------------------------------- */
@@ -625,6 +653,7 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
     // Handle permissions to perform various actions
     const permissions = {
       hoverIn: this._canHover,
+      hoverOut: this._canHover,
       clickLeft: this._canControl,
       clickLeft2: this._canView,
       clickRight: this._canHUD,
@@ -661,154 +690,16 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
   /* -------------------------------------------- */
 
   /**
-   * Test whether a user can perform a certain interaction regarding a Placeable Object
-   * @param {User} user       The User performing the action
-   * @param {string} action   The named action being attempted
-   * @returns {boolean}       Does the User have rights to perform the action?
+   * Actions that should be taken for this Placeable Object when a mouseover event occurs
+   * @see MouseInteractionManager#_handleMouseOver
+   * @param {PIXI.InteractionEvent} event   The triggering canvas interaction event
+   * @param {object} options                Options which customize event handling
+   * @param {boolean} [options.hoverOutOthers=true] Trigger hover-out behavior on sibling objects
    */
-  can(user, action) {
-    const fn = this[`_can${action.titleCase()}`];
-    return fn ? fn.call(this, user) : false;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Can the User access the HUD for this Placeable Object?
-   * @param {User} user       The User performing the action.
-   * @param {object} event    The event object.
-   * @returns {boolean}       The returned status.
-   * @protected
-   */
-  _canHUD(user, event) {
-    return this.controlled;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Does the User have permission to configure the Placeable Object?
-   * @param {User} user       The User performing the action.
-   * @param {object} event    The event object.
-   * @returns {boolean}       The returned status.
-   * @protected
-   */
-  _canConfigure(user, event) {
-    return this.document.canUserModify(user, "update");
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Does the User have permission to control the Placeable Object?
-   * @param {User} user       The User performing the action.
-   * @param {object} event    The event object.
-   * @returns {boolean}       The returned status.
-   * @protected
-   */
-  _canControl(user, event) {
-    if ( !this.layer.active || this.isPreview ) return false;
-    return this.document.canUserModify(user, "update");
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Does the User have permission to view details of the Placeable Object?
-   * @param {User} user       The User performing the action.
-   * @param {object} event    The event object.
-   * @returns {boolean}       The returned status.
-   * @protected
-   */
-  _canView(user, event) {
-    return this.document.testUserPermission(user, "LIMITED");
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Does the User have permission to create the underlying Document?
-   * @param {User} user       The User performing the action.
-   * @param {object} event    The event object.
-   * @returns {boolean}       The returned status.
-   * @protected
-   */
-  _canCreate(user, event) {
-    return user.isGM;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Does the User have permission to drag this Placeable Object?
-   * @param {User} user       The User performing the action.
-   * @param {object} event    The event object.
-   * @returns {boolean}       The returned status.
-   * @protected
-   */
-  _canDrag(user, event) {
-    return this._canControl(user, event);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Does the User have permission to hover on this Placeable Object?
-   * @param {User} user       The User performing the action.
-   * @param {object} event    The event object.
-   * @returns {boolean}       The returned status.
-   * @protected
-   */
-  _canHover(user, event) {
-    return this._canControl(user, event);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Does the User have permission to update the underlying Document?
-   * @param {User} user       The User performing the action.
-   * @param {object} event    The event object.
-   * @returns {boolean}       The returned status.
-   * @protected
-   */
-  _canUpdate(user, event) {
-    return this._canControl(user, event);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Does the User have permission to delete the underlying Document?
-   * @param {User} user       The User performing the action.
-   * @param {object} event    The event object.
-   * @returns {boolean}       The returned status.
-   * @protected
-   */
-  _canDelete(user, event) {
-    return this._canControl(user, event);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Actions that should be taken for this Placeable Object when a mouseover event occurs.
-   * Hover events on PlaceableObject instances allow event propagation by default.
-   * @see MouseInteractionManager##handleMouseOver
-   * @param {PIXI.FederatedEvent} event                The triggering canvas interaction event
-   * @param {object} options                           Options which customize event handling
-   * @param {boolean} [options.hoverOutOthers=false]   Trigger hover-out behavior on sibling objects
-   * @returns {boolean}                                True if the event was handled, otherwise false
-   * @protected
-   */
-  _onHoverIn(event, {hoverOutOthers=false}={}) {
+  _onHoverIn(event, {hoverOutOthers=true}={}) {
     const layer = this.layer;
-
-    if ( event.buttons & 0x03 ) return; // Returning if hovering is happening with pressed left or right button
     if ( !this.document.locked ) this._isHoverIn = true;
-    if ( this.hover || this.document.locked ) return;
-
-    // Handle the event
+    if ( this.hover || this.document.locked || layer._highlight ) return false;
     layer.hover = this;
     if ( hoverOutOthers ) {
       for ( const o of layer.placeables ) {
@@ -816,9 +707,16 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
       }
     }
     this.hover = true;
-
-    // Set render flags
-    this.renderFlags.set({refreshState: true});
+    this.refresh();
+    /**
+     * A hook event that fires when any PlaceableObject is hovered over or out.
+     * Substitute the PlaceableObject name in the hook event to target a specific
+     * PlaceableObject type, for example "hoverToken".
+     * @function hoverPlaceableObject
+     * @memberof hookEvents
+     * @param {PlaceableObject} object The PlaceableObject
+     * @param {boolean} hovered        Whether the PlaceableObject is hovered over or not
+     */
     Hooks.callAll(`hover${this.constructor.embeddedName}`, this, this.hover);
   }
 
@@ -826,128 +724,86 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
 
   /**
    * Actions that should be taken for this Placeable Object when a mouseout event occurs
-   * @see MouseInteractionManager##handleMouseOut
-   * @param {PIXI.FederatedEvent} event  The triggering canvas interaction event
-   * @returns {boolean}                  True if the event was handled, otherwise false
-   * @protected
+   * @see MouseInteractionManager#_handleMouseOut
+   * @param {PIXI.InteractionEvent} event  The triggering canvas interaction event
    */
   _onHoverOut(event) {
     const layer = this.layer;
-
     if ( !this.document.locked ) this._isHoverIn = false;
-    if ( !this.hover || this.document.locked ) return;
-
-    // Handle the event
+    if ( !this.hover || this.document.locked || layer._highlight ) return false;
     layer.hover = null;
     this.hover = false;
-
-    // Set render flags
-    this.renderFlags.set({refreshState: true});
+    this.refresh();
     Hooks.callAll(`hover${this.constructor.embeddedName}`, this, this.hover);
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Should the placeable propagate left click downstream?
-   * @param {PIXI.FederatedEvent} event
-   * @returns {boolean}
-   * @protected
-   */
-  _propagateLeftClick(event) {
-    return false;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * Callback actions which occur on a single left-click event to assume control of the object
-   * @see MouseInteractionManager##handleClickLeft
-   * @param {PIXI.FederatedEvent} event  The triggering canvas interaction event
-   * @protected
+   * @see MouseInteractionManager#_handleClickLeft
+   * @param {PIXI.InteractionEvent} event  The triggering canvas interaction event
    */
   _onClickLeft(event) {
     const hud = this.layer.hud;
     if ( hud ) hud.clear();
 
     // Add or remove the Placeable Object from the currently controlled set
+    const oe = event.data.originalEvent;
     if ( this.#controlled ) {
-      if ( event.shiftKey ) this.release();
+      if ( oe.shiftKey ) return this.release();
+    } else {
+      return this.control({releaseOthers: !oe.shiftKey});
     }
-    else this.control({releaseOthers: !event.shiftKey});
-
-    // Propagate left click to the underlying canvas?
-    if ( !this._propagateLeftClick(event) ) event.stopPropagation();
   }
 
   /* -------------------------------------------- */
 
   /**
    * Callback actions which occur on a double left-click event to activate
-   * @see MouseInteractionManager##handleClickLeft2
-   * @param {PIXI.FederatedEvent} event  The triggering canvas interaction event
-   * @protected
+   * @see MouseInteractionManager#_handleClickLeft2
+   * @param {PIXI.InteractionEvent} event  The triggering canvas interaction event
    */
   _onClickLeft2(event) {
     const sheet = this.sheet;
     if ( sheet ) sheet.render(true);
-    if ( !this._propagateLeftClick(event) ) event.stopPropagation();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Should the placeable propagate right click downstream?
-   * @param {PIXI.FederatedEvent} event
-   * @returns {boolean}
-   * @protected
-   */
-  _propagateRightClick(event) {
-    return false;
   }
 
   /* -------------------------------------------- */
 
   /**
    * Callback actions which occur on a single right-click event to configure properties of the object
-   * @see MouseInteractionManager##handleClickRight
-   * @param {PIXI.FederatedEvent} event  The triggering canvas interaction event
-   * @protected
+   * @see MouseInteractionManager#_handleClickRight
+   * @param {PIXI.InteractionEvent} event  The triggering canvas interaction event
    */
   _onClickRight(event) {
     const hud = this.layer.hud;
     if ( hud ) {
-      const releaseOthers = !this.#controlled && !event.shiftKey;
+      const releaseOthers = !this.#controlled && !event.data.originalEvent.shiftKey;
       this.control({releaseOthers});
       if ( hud.object === this) hud.clear();
       else hud.bind(this);
     }
-
-    // Propagate the right-click to the underlying canvas?
-    if ( !this._propagateRightClick(event) ) event.stopPropagation();
   }
 
   /* -------------------------------------------- */
 
   /**
    * Callback actions which occur on a double right-click event to configure properties of the object
-   * @see MouseInteractionManager##handleClickRight2
-   * @param {PIXI.FederatedEvent} event  The triggering canvas interaction event
-   * @protected
+   * @see MouseInteractionManager#_handleClickRight2
+   * @param {PIXI.InteractionEvent} event  The triggering canvas interaction event
    */
   _onClickRight2(event) {
     const sheet = this.sheet;
     if ( sheet ) sheet.render(true);
-    if ( !this._propagateRightClick(event) ) event.stopPropagation();
   }
 
   /* -------------------------------------------- */
 
   /**
    * Callback actions which occur when a mouse-drag action is first begun.
-   * @see MouseInteractionManager##handleDragStart
-   * @param {PIXI.FederatedEvent} event  The triggering canvas interaction event
-   * @protected
+   * @see MouseInteractionManager#_handleDragStart
+   * @param {PIXI.InteractionEvent} event  The triggering canvas interaction event
    */
   _onDragLeftStart(event) {
     if ( this.document.locked ) {
@@ -958,9 +814,11 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
     const clones = [];
     for ( let o of objects ) {
       if ( o.document.locked ) continue;
+      o.document.locked = true;
 
       // Clone the object
       const c = o.clone();
+      o._preview = c;
       clones.push(c);
 
       // Draw the clone
@@ -969,7 +827,7 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
         c._onDragStart();
       });
     }
-    event.interactionData.clones = clones;
+    event.data.clones = clones;
   }
 
   /* -------------------------------------------- */
@@ -981,12 +839,11 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
    */
   _onDragStart() {
     const o = this._original;
-    o.document.locked = true;
-    o.renderFlags.set({refresh: true});
+    this.alpha = 0.8;
+    o.alpha = 0.4;
+    if ( "locked" in o.document ) o.document.locked = true;
     this.visible = true;
   }
-
-  /* -------------------------------------------- */
 
   /**
    * Conclude a drag operation from the perspective of the preview clone.
@@ -997,8 +854,8 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
     this.visible = false;
     const o = this._original;
     if ( o ) {
-      o.document.locked = false;
-      o.renderFlags.set({refresh: true});
+      if ( o.document?.locked ) o.document.locked = false;
+      o.alpha = 1.0;
     }
   }
 
@@ -1006,20 +863,19 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
 
   /**
    * Callback actions which occur on a mouse-move operation.
-   * @see MouseInteractionManager##handleDragMove
-   * @param {PIXI.FederatedEvent} event  The triggering canvas interaction event
-   * @protected
+   * @see MouseInteractionManager#_handleDragMove
+   * @param {PIXI.InteractionEvent} event  The triggering canvas interaction event
    */
   _onDragLeftMove(event) {
     if ( this._dragPassthrough ) return canvas._onDragLeftMove(event);
-    const {clones, destination, origin} = event.interactionData;
-    canvas._onDragCanvasPan(event);
+    const {clones, destination, origin, originalEvent} = event.data;
+    canvas._onDragCanvasPan(originalEvent);
     const dx = destination.x - origin.x;
     const dy = destination.y - origin.y;
     for ( let c of clones || [] ) {
       c.document.x = c._original.document.x + dx;
       c.document.y = c._original.document.y + dy;
-      c.renderFlags.set({refresh: true}); // Refresh everything. Can we do better?
+      c.refresh();
     }
   }
 
@@ -1027,57 +883,49 @@ class PlaceableObject extends RenderFlagsMixin(PIXI.Container) {
 
   /**
    * Callback actions which occur on a mouse-move operation.
-   * @see MouseInteractionManager##handleDragDrop
-   * @param {PIXI.FederatedEvent} event  The triggering canvas interaction event
+   * @see MouseInteractionManager#_handleDragDrop
+   * @param {PIXI.InteractionEvent} event  The triggering canvas interaction event
    * @returns {Promise<*>}
-   * @protected
    */
   async _onDragLeftDrop(event) {
     if ( this._dragPassthrough ) {
       this._dragPassthrough = false;
       return canvas._onDragLeftDrop(event);
     }
-    const {clones, destination} = event.interactionData;
+    const {clones, destination, originalEvent} = event.data;
     if ( !clones || !canvas.dimensions.rect.contains(destination.x, destination.y) ) return false;
-    event.interactionData.clearPreviewContainer = false;
     const updates = clones.map(c => {
       let dest = {x: c.document.x, y: c.document.y};
-      if ( !event.shiftKey ) {
+      if ( !originalEvent.shiftKey ) {
         dest = canvas.grid.getSnappedPosition(c.document.x, c.document.y, this.layer.gridPrecision);
       }
       return {_id: c._original.id, x: dest.x, y: dest.y, rotation: c.document.rotation};
     });
-    try {
-      return await canvas.scene.updateEmbeddedDocuments(this.document.documentName, updates);
-    } finally {
-      this.layer.clearPreviewContainer();
-    }
+    return canvas.scene.updateEmbeddedDocuments(this.document.documentName, updates);
   }
 
   /* -------------------------------------------- */
 
   /**
    * Callback actions which occur on a mouse-move operation.
-   * @see MouseInteractionManager##handleDragCancel
-   * @param {PIXI.FederatedEvent} event  The triggering mouse click event
-   * @protected
+   * @see MouseInteractionManager#_handleDragCancel
+   * @param {MouseEvent} event  The triggering mouse click event
    */
   _onDragLeftCancel(event) {
     if ( this._dragPassthrough ) {
       this._dragPassthrough = false;
       return canvas._onDragLeftCancel(event);
     }
-    if ( event.interactionData.clearPreviewContainer !== false ) {
-      this.layer.clearPreviewContainer();
-    }
+    this.layer.clearPreviewContainer();
+    this.refresh();
   }
 
   /* -------------------------------------------- */
 
   /**
    * Callback action which occurs on a long press.
-   * @see MouseInteractionManager##handleLongPress
-   * @param {PIXI.FederatedEvent}   event   The triggering canvas interaction event
+   * @see MouseInteractionManager#_handleLongPress
+   * @param {PIXI.InteractionEvent} event   The triggering canvas interaction event
    * @param {PIXI.Point}            origin  The local canvas coordinates of the mousepress.
    * @protected
    */

@@ -2,7 +2,6 @@ import Document from "../abstract/document.mjs";
 import {mergeObject} from "../utils/helpers.mjs";
 import * as CONST from "../constants.mjs";
 import * as fields from "../data/fields.mjs";
-import * as documents from "./module.mjs";
 
 /**
  * @typedef {Object} FolderData
@@ -47,9 +46,9 @@ class BaseFolder extends Document {
   static defineSchema() {
     return {
       _id: new fields.DocumentIdField(),
-      name: new fields.StringField({required: true, blank: false, textSearch: true}),
+      name: new fields.StringField({required: true, blank: false}),
       type: new fields.StringField({required: true, choices: CONST.FOLDER_DOCUMENT_TYPES}),
-      description: new fields.StringField({textSearch: true}),
+      description: new fields.StringField(),
       folder: new fields.ForeignDocumentField(BaseFolder),
       sorting: new fields.StringField({required: true, initial: "a", choices: this.SORTING_MODES}),
       sort: new fields.IntegerSortField(),
@@ -60,7 +59,7 @@ class BaseFolder extends Document {
   }
 
   /** @inheritdoc */
-  static validateJoint(data) {
+  _validateModel(data) {
     if ( (data.folder !== null) && (data.folder === data._id) ) {
       throw new Error("A Folder may not contain itself");
     }
@@ -92,20 +91,6 @@ class BaseFolder extends Document {
   static shimData(data, options) {
     this._addDataFieldShim(data, "parent", "folder", {since: 10, until: 12});
     return super.shimData(data, options);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  static get(documentId, options={}) {
-    if ( !documentId ) return null;
-    if ( !options.pack ) return super.get(documentId, options);
-    const pack = game.packs.get(options.pack);
-    if ( !pack ) {
-      console.error(`The ${this.name} model references a non-existent pack ${options.pack}.`);
-      return null;
-    }
-    return pack.folders.get(documentId);
   }
 }
 export default BaseFolder;

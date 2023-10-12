@@ -83,12 +83,19 @@ class ChatBubbles {
     await this._clearBubble(token);
 
     // Create the HTML and call the chatBubble hook
-    const actor = ChatMessage.implementation.getSpeakerActor({scene: token.scene.id, token: token.id});
-    message = await TextEditor.enrichHTML(message, { async: true, rollData: actor?.getRollData() });
     let html = $(await this._renderHTML({
       token, message, cssClasses
     }));
 
+    /**
+     * A hook event that fires when a chat bubble is rendered.
+     * @function chatBubble
+     * @memberof hookEvents
+     * @param {Token} token                 The speaking token
+     * @param {jQuery} html                 The HTML of the chat bubble
+     * @param {string} message              The spoken message text
+     * @param {ChatBubbleOptions} options   Provided options which affect bubble appearance
+     */
     const allowed = Hooks.call("chatBubble", token, html, message, {cssClasses, pan});
     if ( allowed === false ) return null;
 

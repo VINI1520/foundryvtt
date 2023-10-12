@@ -18,10 +18,10 @@ class DrawingHUD extends BasePlaceableHUD {
 
   /** @inheritdoc */
   getData(options={}) {
-    const d = this.object.document;
-    return foundry.utils.mergeObject(super.getData(options), {
-      lockedClass: d.locked ? "active" : "",
-      visibilityClass: d.hidden ? "active" : ""
+    const data = super.getData(options);
+    return foundry.utils.mergeObject(data, {
+      lockedClass: data.locked ? "active" : "",
+      visibilityClass: data.hidden ? "active" : ""
     });
   }
 

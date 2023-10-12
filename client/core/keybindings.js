@@ -81,13 +81,13 @@ class ClientKeybindings {
     // Register bindings for all actions
     for ( let [action, config] of this.actions) {
       let bindings = config.uneditable;
-      bindings = config.uneditable.concat(this.bindings.get(action) ?? config.editable);
+      bindings =  config.uneditable.concat(this.bindings.get(action) ?? config.editable);
       this.bindings.set(action, bindings);
     }
 
     // Create a mapping of keys which trigger actions
     this.activeKeys = new Map();
-    for ( let [key, action] of this.actions ) {
+    for ( let [ key, action ] of this.actions ) {
       let bindings = this.bindings.get(key);
       for ( let binding of bindings ) {
         if ( !binding ) continue;
@@ -138,8 +138,8 @@ class ClientKeybindings {
    *   ],
    *   onDown: () => { ui.notifications.info("Pressed!") },
    *   onUp: () => {},
-   *   restricted: true,             // Restrict this Keybinding to gamemaster only?
-   *   reservedModifiers: ["Alt""],  // On ALT, the notification is permanent instead of temporary
+   *   restricted: true,                         // Restrict this Keybinding to gamemaster only?
+   *   reservedModifiers: ["Alt""],              // If the ALT modifier is pressed, the notification is permanent instead of temporary
    *   precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
    * }
    * ```
@@ -241,7 +241,7 @@ class ClientKeybindings {
   /**
    * A helper method that, when given a value, ensures that the returned value is a standardized Binding array
    * @param {KeybindingActionBinding[]} values  An array of keybinding assignments to be validated
-   * @returns {KeybindingActionBinding[]}       An array of keybinding assignments confirmed as valid
+   * @return {KeybindingActionBinding[]}        An array of keybinding assignments confirmed as valid
    * @private
    */
   static _validateBindings(values) {
@@ -342,13 +342,13 @@ class ClientKeybindings {
       editable: [
         {key: "Backspace"}
       ],
-      onDown: ClientKeybindings._onDelete
+      onDown: ClientKeybindings._onDelete,
     });
     game.keybindings.register("core", "highlight", {
       name: "KEYBINDINGS.Highlight",
       editable: [
         {key: "AltLeft"},
-        {key: "AltRight"}
+        {key: "AltRight"},
       ],
       onUp: ClientKeybindings._onHighlight,
       onDown: ClientKeybindings._onHighlight
@@ -407,8 +407,8 @@ class ClientKeybindings {
       editable: [
         {key: "KeyW"}
       ],
-      onUp: context => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.UP]),
-      onDown: context => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.UP]),
+      onUp: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.UP]),
+      onDown: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.UP]),
       reservedModifiers: [CONTROL, SHIFT],
       repeat: true
     });
@@ -421,8 +421,8 @@ class ClientKeybindings {
       editable: [
         {key: "KeyA"}
       ],
-      onUp: context => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.LEFT]),
-      onDown: context => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.LEFT]),
+      onUp: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.LEFT]),
+      onDown: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.LEFT]),
       reservedModifiers: [CONTROL, SHIFT],
       repeat: true
     });
@@ -435,8 +435,8 @@ class ClientKeybindings {
       editable: [
         {key: "KeyS"}
       ],
-      onUp: context => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.DOWN]),
-      onDown: context => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.DOWN]),
+      onUp: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.DOWN]),
+      onDown: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.DOWN]),
       reservedModifiers: [CONTROL, SHIFT],
       repeat: true
     });
@@ -449,8 +449,8 @@ class ClientKeybindings {
       editable: [
         {key: "KeyD"}
       ],
-      onUp: context => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.RIGHT]),
-      onDown: context => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.RIGHT]),
+      onUp: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.RIGHT]),
+      onDown: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.RIGHT]),
       reservedModifiers: [CONTROL, SHIFT],
       repeat: true
     });
@@ -459,10 +459,8 @@ class ClientKeybindings {
       uneditable: [
         {key: "Numpad7"}
       ],
-      onUp: context => this._onPan(context,
-        [ClientKeybindings.MOVEMENT_DIRECTIONS.UP, ClientKeybindings.MOVEMENT_DIRECTIONS.LEFT]),
-      onDown: context => this._onPan(context,
-        [ClientKeybindings.MOVEMENT_DIRECTIONS.UP, ClientKeybindings.MOVEMENT_DIRECTIONS.LEFT]),
+      onUp: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.UP, ClientKeybindings.MOVEMENT_DIRECTIONS.LEFT]),
+      onDown: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.UP, ClientKeybindings.MOVEMENT_DIRECTIONS.LEFT]),
       reservedModifiers: [CONTROL, SHIFT],
       repeat: true
     });
@@ -471,10 +469,8 @@ class ClientKeybindings {
       uneditable: [
         {key: "Numpad9"}
       ],
-      onUp: context => this._onPan(context,
-        [ClientKeybindings.MOVEMENT_DIRECTIONS.UP, ClientKeybindings.MOVEMENT_DIRECTIONS.RIGHT]),
-      onDown: context => this._onPan(context,
-        [ClientKeybindings.MOVEMENT_DIRECTIONS.UP, ClientKeybindings.MOVEMENT_DIRECTIONS.RIGHT]),
+      onUp: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.UP, ClientKeybindings.MOVEMENT_DIRECTIONS.RIGHT]),
+      onDown: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.UP, ClientKeybindings.MOVEMENT_DIRECTIONS.RIGHT]),
       reservedModifiers: [CONTROL, SHIFT],
       repeat: true
     });
@@ -483,10 +479,8 @@ class ClientKeybindings {
       uneditable: [
         {key: "Numpad1"}
       ],
-      onUp: context => this._onPan(context,
-        [ClientKeybindings.MOVEMENT_DIRECTIONS.DOWN, ClientKeybindings.MOVEMENT_DIRECTIONS.LEFT]),
-      onDown: context => this._onPan(context,
-        [ClientKeybindings.MOVEMENT_DIRECTIONS.DOWN, ClientKeybindings.MOVEMENT_DIRECTIONS.LEFT]),
+      onUp: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.DOWN, ClientKeybindings.MOVEMENT_DIRECTIONS.LEFT]),
+      onDown: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.DOWN, ClientKeybindings.MOVEMENT_DIRECTIONS.LEFT]),
       reservedModifiers: [CONTROL, SHIFT],
       repeat: true
     });
@@ -495,10 +489,8 @@ class ClientKeybindings {
       uneditable: [
         {key: "Numpad3"}
       ],
-      onUp: context => this._onPan(context,
-        [ClientKeybindings.MOVEMENT_DIRECTIONS.DOWN, ClientKeybindings.MOVEMENT_DIRECTIONS.RIGHT]),
-      onDown: context => this._onPan(context,
-        [ClientKeybindings.MOVEMENT_DIRECTIONS.DOWN, ClientKeybindings.MOVEMENT_DIRECTIONS.RIGHT]),
+      onUp: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.DOWN, ClientKeybindings.MOVEMENT_DIRECTIONS.RIGHT]),
+      onDown: (context) => this._onPan(context, [ClientKeybindings.MOVEMENT_DIRECTIONS.DOWN, ClientKeybindings.MOVEMENT_DIRECTIONS.RIGHT]),
       reservedModifiers: [CONTROL, SHIFT],
       repeat: true
     });
@@ -510,7 +502,7 @@ class ClientKeybindings {
       editable: [
         {key: "PageUp"}
       ],
-      onDown: context => { ClientKeybindings._onZoom(context, ClientKeybindings.ZOOM_DIRECTIONS.IN); },
+      onDown: (context) => { ClientKeybindings._onZoom(context, ClientKeybindings.ZOOM_DIRECTIONS.IN); },
       repeat: true
     });
     game.keybindings.register("core", "zoomOut", {
@@ -521,22 +513,22 @@ class ClientKeybindings {
       editable: [
         {key: "PageDown"}
       ],
-      onDown: context => { ClientKeybindings._onZoom(context, ClientKeybindings.ZOOM_DIRECTIONS.OUT); },
+      onDown: (context) => { ClientKeybindings._onZoom(context, ClientKeybindings.ZOOM_DIRECTIONS.OUT); },
       repeat: true
     });
-    for ( const number of Array.fromRange(9, 1).concat([0]) ) {
-      game.keybindings.register("core", `executeMacro${number}`, {
+    for ( const number of [1,2,3,4,5,6,7,8,9,0] ) {
+      game.keybindings.register("core", "executeMacro" + number, {
         name: game.i18n.format("KEYBINDINGS.ExecuteMacro", { number }),
         editable: [{key: `Digit${number}`}],
-        onDown: context => ClientKeybindings._onMacroExecute(context, number),
+        onDown: (context) => ClientKeybindings._onMacroExecute(context, number),
         precedence: CONST.KEYBINDING_PRECEDENCE.DEFERRED
       });
     }
-    for ( const page of Array.fromRange(5, 1) ) {
-      game.keybindings.register("core", `swapMacroPage${page}`, {
+    for ( const page of [1,2,3,4,5] ) {
+      game.keybindings.register("core", "swapMacroPage" + page, {
         name: game.i18n.format("KEYBINDINGS.SwapMacroPage", { page }),
         editable: [{key: `Digit${page}`, modifiers: [ALT]}],
-        onDown: context => ClientKeybindings._onMacroPageSwap(context, page),
+        onDown: (context) => ClientKeybindings._onMacroPageSwap(context, page),
         precedence: CONST.KEYBINDING_PRECEDENCE.DEFERRED
       });
     }
@@ -620,7 +612,7 @@ class ClientKeybindings {
     }
 
     // Case 4 (GM) - release controlled objects (if not in a preview)
-    if (game.user.isGM && (canvas.activeLayer instanceof PlaceablesLayer) && canvas.activeLayer.controlled.length) {
+    if (game.user.isGM && canvas.activeLayer && canvas.activeLayer.controlled.length) {
       if ( !canvas.activeLayer.preview?.children.length ) canvas.activeLayer.releaseAll();
       return true;
     }
@@ -636,7 +628,6 @@ class ClientKeybindings {
 
   /**
    * Open Character sheet for current token or controlled actor
-   * @param {KeyboardEvent} event             The initiating keyboard event
    * @param {KeyboardEventContext} context    The context data of the event
    * @private
    */
@@ -839,8 +830,7 @@ class ClientKeybindings {
 
   /**
    * Handle Macro executions
-   * @param {KeyboardEventContext} context  The context data of the event
-   * @param {number} number                 The numbered macro slot to execute
+   * @param {KeyboardEventContext} context    The context data of the event
    * @private
    */
   static _onMacroExecute(context, number) {
@@ -857,7 +847,6 @@ class ClientKeybindings {
   /**
    * Handle Macro page swaps
    * @param {KeyboardEventContext} context    The context data of the event
-   * @param {number} page                     The numbered macro page to activate
    * @private
    */
   static _onMacroPageSwap(context, page) {
@@ -892,7 +881,7 @@ class ClientKeybindings {
     if ( !canvas.ready ) return false;
     let layer = canvas.activeLayer;
     if ( (layer instanceof PlaceablesLayer) && layer._copy.length ) {
-      const pos = canvas.mousePosition;
+      const pos = canvas.app.renderer.plugins.interaction.mouse.getLocalPosition(canvas.stage);
       layer.pasteObjects(pos, {hidden: context.isAlt, snap: !context.isShift});
       return true;
     }

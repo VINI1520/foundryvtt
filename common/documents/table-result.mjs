@@ -52,11 +52,11 @@ class BaseTableResult extends Document {
       _id: new fields.DocumentIdField(),
       type: new fields.NumberField({required: true, choices: Object.values(CONST.TABLE_RESULT_TYPES),
         initial: CONST.TABLE_RESULT_TYPES.TEXT, validationError: "must be a value in CONST.TABLE_RESULT_TYPES"}),
-      text: new fields.HTMLField({textSearch: true}),
+      text: new fields.HTMLField(),
       img: new fields.FilePathField({categories: ["IMAGE"]}),
       documentCollection: new fields.StringField(),
       documentId: new fields.ForeignDocumentField(Document, {idOnly: true}),
-      weight: new fields.NumberField({required: true, integer: true, positive: true, nullable: false, initial: 1}),
+      weight: new fields.NumberField({required: true, integer: true, positive: true}),
       range: new fields.ArrayField(new fields.NumberField({integer: true}), {
         validate: r => (r.length === 2) && (r[1] >= r[0]),
         validationError: "must be a length-2 array of ascending integers"

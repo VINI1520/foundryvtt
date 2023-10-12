@@ -4,11 +4,12 @@
  * @param {DocumentSheetOptions} [options]  Additional application configuration options
  */
 class AmbientLightConfig extends DocumentSheet {
+
   /**
-   * Maintain a copy of the original to show a real-time preview of changes.
-   * @type {AmbientLightDocument}
+   * Preserve a copy of the original document before any changes are made.
+   * @type {object}
    */
-  preview;
+  original;
 
   /* -------------------------------------------- */
 
@@ -27,19 +28,9 @@ class AmbientLightConfig extends DocumentSheet {
 
   /* -------------------------------------------- */
 
-  /** @inheritdoc */
+  /** @override */
   async _render(force, options) {
-    const states = Application.RENDER_STATES;
-    if ( force && [states.CLOSED, states.NONE].includes(this._state) && this.document.object ) {
-      if ( !this.preview ) {
-        const clone = this.document.object.clone();
-        this.preview = clone.document;
-      }
-      await this.preview.object.draw();
-      this.document.object.renderable = false;
-      this.preview.object.layer.preview.addChild(this.preview.object);
-      this._previewChanges();
-    }
+    if ( !this.rendered ) this.original = this.object.toObject();
     return super._render(force, options);
   }
 
@@ -47,11 +38,7 @@ class AmbientLightConfig extends DocumentSheet {
 
   /** @inheritdoc */
   getData(options={}) {
-    const context = super.getData(options);
-    delete context.document; // Replaced below
-    return foundry.utils.mergeObject(context, {
-      data: this.preview.toObject(false),
-      document: this.preview,
+    return foundry.utils.mergeObject(super.getData(options), {
       isAdvanced: this._tabs[0].active === "advanced",
       colorationTechniques: AdaptiveLightingShader.SHADER_TECHNIQUES,
       lightAnimations: CONFIG.Canvas.lightAnimations,
@@ -64,11 +51,8 @@ class AmbientLightConfig extends DocumentSheet {
 
   /** @inheritdoc */
   async close(options={}) {
-    const states = Application.RENDER_STATES;
-    if ( options.force || [states.RENDERED, states.ERROR].includes(this._state) ) {
-      this._resetPreview();
-    }
-    await super.close(options);
+    if ( !options.force ) this._resetPreview();
+    return super.close(options);
   }
 
   /* -------------------------------------------- */
@@ -114,16 +98,15 @@ class AmbientLightConfig extends DocumentSheet {
 
   /**
    * Preview changes to the AmbientLight document as if they were true document updates.
-   * @param {object} [change]  A change to preview.
+   * @param {object} change         Data which simulates a document update
+   * @param {boolean} [reset=false] To know if this preview change is a reset
    * @protected
    */
-  _previewChanges(change) {
-    if ( !this.preview ) return;
-    if ( change ) this.preview.updateSource(change);
-    if ( this.preview.object?.destroyed === false ) {
-      this.preview.object.renderFlags.set({refresh: true});
-      this.preview.object.updateSource();
-    }
+  _previewChanges(change, reset=false) {
+    // Don't trigger updates for these values if we're just resetting after closing the form
+    this.object.updateSource(foundry.utils.mergeObject(this.original, change, {inplace: false}), {recursive: false});
+    if ( reset ) return;
+    this.object._onUpdate(change, {render: false, preview: true}, game.user.id);
   }
 
   /* -------------------------------------------- */
@@ -133,16 +116,7 @@ class AmbientLightConfig extends DocumentSheet {
    * @protected
    */
   _resetPreview() {
-    if ( !this.preview ) return;
-    if ( this.preview.object?.destroyed === false ) {
-      this.preview.object.destroy({children: true});
-    }
-    this.preview = null;
-    if ( this.document.object?.destroyed === false ) {
-      this.document.object.renderable = true;
-      this.document.object.renderFlags.set({refresh: true});
-      this.document.object.updateSource();
-    }
+    this._previewChanges(this.original, this._state === this.constructor.RENDER_STATES.CLOSING);
   }
 
   /* -------------------------------------------- */

@@ -1,98 +1,35 @@
-<article class="flexcol">
-    <!-- Support & Issues Tabs -->
-    <nav class="sheet-tabs tabs" data-group="main">
-        <a class="item" data-tab="support">
-            <i class="fas fa-hands-helping"></i> {{localize "SUPPORT.Title"}}
-        </a>
-        <a class="item" data-tab="documents">
-            <i class="fa-solid fa-file-circle-exclamation"></i> {{localize "SUPPORT.DocumentIssues"}}
-        </a>
-        <a class="item" data-tab="client">
-            <i class="fa-regular fa-window"></i> {{localize "SUPPORT.ClientIssues"}}
-        </a>
-        <a class="item" data-tab="modules">
-            <i class="fa-solid fa-box-open"></i> {{localize "SUPPORT.ModuleIssues"}}
-        </a>
-    </nav>
+<article>
+    <h2>{{ localize 'SUPPORT.Places' }}</h2>
+    <p class="notes">
+        {{ localize 'SUPPORT.Discord' }} <a href="https://discord.gg/foundryvtt" target="_blank" rel="nofollow" title="FoundryVTT Discord">https://discord.gg/foundryvtt</a>
+    </p>
+    <p class="notes">
+        {{ localize 'SUPPORT.BugReporting' }} <a href="https://foundryvtt.com/contact-us?category=bug" target="_blank" rel="nofollow" title="FoundryVTT Contact Us">https://foundryvtt.com/contact-us/</a>
+    </p>
 
-    <!-- Support Details Report -->
-    <div class="tab" data-group="main" data-tab="support">
-        <h2>{{ localize 'SUPPORT.Places' }}</h2>
-        <p class="notes">
-            {{ localize 'SUPPORT.Discord' }} <a href="https://discord.gg/foundryvtt" target="_blank" rel="nofollow" title="FoundryVTT Discord">https://discord.gg/foundryvtt</a>
-        </p>
-        <p class="notes">
-            {{ localize 'SUPPORT.BugReporting' }} <a href="https://foundryvtt.com/contact-us?category=bug" target="_blank" rel="nofollow" title="FoundryVTT Contact Us">https://foundryvtt.com/contact-us/</a>
-        </p>
+    <h2>{{ localize 'SUPPORT.Details' }}</h2>
+    <p class="notes">{{ localize 'SUPPORT.ReportPrelude' }}</p>
 
-        <h2>{{ localize 'SUPPORT.Details' }}</h2>
-        <p class="notes">{{ localize 'SUPPORT.ReportPrelude' }}</p>
+    <pre tabindex="0" id="support-report">{{ localize 'Foundry Virtual Tabletop' }}: {{ report.coreVersion }}
+{{ localize 'WORLD.GameSystem' }}: {{ report.systemVersion }}
+{{ localize 'MODMANAGE.FilterActive' }}: {{ report.activeModuleCount }}
+{{ localize 'SETTINGS.PerformanceModeN' }}: {{ report.performanceMode }}
 
-        <pre tabindex="0" id="support-report">{{> supportDetailsReport }}</pre>
-        <button type="button" data-action="copy">
-            <i class="fas fa-copy"></i> {{ localize 'SUPPORT.CopyReport' }}
-        </button>
-    </div>
+{{ localize 'SUPPORT.OS' }}: {{ report.os }}
+{{ localize 'SUPPORT.Client' }}: {{ report.client }}
+{{ localize 'SUPPORT.GPU' }}: {{ report.gpu }}
+{{ localize 'SUPPORT.MaxTextureSize' }}: {{ report.maxTextureSize }}
 
-    <!-- Document Issues -->
-    <div class="tab" data-group="main" data-tab="documents">
-        <ul class="summary-tree summary-tree-root">
-            {{#each documentIssues}}
-            <li>
-                <details>
-                    <summary>{{label}}</summary>
-                    <ul>
-                        {{#each documents}}
-                        <li>
-                            <details>
-                                <summary>{{name}}</summary>
-                                {{{validationError}}}
-                            </details>
-                        </li>
-                        {{/each}}
-                    </ul>
-                </details>
-            </li>
-            {{/each}}
-        </ul>
-    </div>
+{{#if report.hasViewedScene }}
+{{ localize 'DOCUMENT.Scene' }}: {{ report.sceneDimensions }} | {{ localize 'SCENES.GridSize' }}: {{ report.grid }} | {{ localize 'SCENES.Padding' }}: {{ report.padding }}
+{{ localize 'DOCUMENT.Walls' }}: {{ report.walls }} | {{ localize 'DOCUMENT.AmbientLights' }}: {{ report.lights }} | {{ localize 'DOCUMENT.AmbientSounds' }}: {{ report.sounds }} | {{ localize 'DOCUMENT.Tiles' }}: {{ report.tiles }} | {{ localize 'DOCUMENT.Tokens' }}: {{ report.tokens }}
+{{else}}
+{{ localize 'SUPPORT.NoViewedScene' }}
+{{/if }}
 
-    <!-- Client Issues -->
-    <div class="tab" data-group="main" data-tab="client">
-        <ul class="issues">
-            {{#each clientIssues}}
-            <li class="issue notification {{severity}}">{{{message}}}</li>
-            {{/each}}
-        </ul>
-    </div>
-
-    <!-- Module Issues -->
-    {{#*inline "moduleIssue"}}
-    <li>
-        <details>
-            <summary>{{label}}</summary>
-            <ul>
-                {{#each issues}}
-                <li>
-                    <details>
-                        <summary>{{label}}</summary>
-                        <ul class="issues">
-                            {{#each issues}}
-                            <li class="issue notification {{severity}}">{{message}}</li>
-                            {{/each}}
-                        </ul>
-                    </details>
-                </li>
-                {{/each}}
-            </ul>
-        </details>
-    </li>
-    {{/inline}}
-    <div class="tab" data-group="main" data-tab="modules">
-        <ul>
-            {{#each moduleIssues}}
-                {{> moduleIssue}}
-            {{/each}}
-        </ul>
-    </div>
+{{ localize 'DOCUMENT.Actors' }}: {{ report.actors }} | {{ localize 'DOCUMENT.Items' }}: {{report.items }} | {{ localize 'DOCUMENT.JournalEntries' }}: {{ report.journal }} | {{ localize 'DOCUMENT.RollTables' }}: {{ report.tables }} |
+{{ localize 'PLAYLIST.VolPlaylist' }}: {{ report.playlists }} | {{ localize 'SIDEBAR.TabCompendium' }}: {{ report.packs }} | {{ localize 'DOCUMENT.ChatMessages' }}: {{ report.messages }}</pre>
+    <button type="button" name="copy">
+        <i class="fas fa-copy"></i> {{ localize 'SUPPORT.CopyReport' }}
+    </button>
 </article>

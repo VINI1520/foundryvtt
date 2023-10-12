@@ -40,13 +40,6 @@ class Settings extends SidebarTab {
       });
     }
 
-    const issues = CONST.DOCUMENT_TYPES.reduce((count, documentName) => {
-      const collection = CONFIG[documentName].collection.instance;
-      return count + collection.invalidDocumentIds.size;
-    }, 0) + Object.values(game.issues.packageCompatibilityIssues).reduce((count, {error}) => {
-      return count + error.length;
-    }, 0) + Object.keys(game.issues.usabilityIssues).length;
-
     // Return rendering context
     const isDemo = game.data.demoMode;
     return foundry.utils.mergeObject(context, {
@@ -58,7 +51,6 @@ class Settings extends SidebarTab {
       canManagePlayers: game.user.isGM && !isDemo,
       canReturnSetup: game.user.hasRole("GAMEMASTER") && !isDemo,
       modules: game.modules.reduce((n, m) => n + (m.active ? 1 : 0), 0),
-      issues,
       isDemo,
       coreUpdate,
       systemUpdate
@@ -91,7 +83,7 @@ class Settings extends SidebarTab {
         new ModuleManagement().render(true);
         break;
       case "world":
-        new WorldConfig(game.world).render(true);
+        new WorldConfig(game.world, { inWorld: true }).render(true);
         break;
       case "players":
         return ui.menu.items.players.onClick();

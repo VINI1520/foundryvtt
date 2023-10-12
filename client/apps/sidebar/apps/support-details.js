@@ -9,133 +9,40 @@ class SupportDetails extends Application {
     options.title = "SUPPORT.Title";
     options.id = "support-details";
     options.template = "templates/sidebar/apps/support-details.html";
-    options.width = 780;
-    options.height = 680;
-    options.resizable = true;
-    options.classes = ["sheet"];
-    options.tabs = [{navSelector: ".tabs", contentSelector: "article", initial: "support"}];
+    options.width = 620;
+    options.height = "auto";
     return options;
   }
 
   /* -------------------------------------------- */
 
-  /** @inheritdoc */
-  getData(options={}) {
-    const context = super.getData(options);
+  /**
+   * Returns the support report data
+   * @param options
+   * @return {Object|Promise}
+   */
+  getData(options = {}) {
+    let data = super.getData(options);
 
     // Build report data
-    context.report = SupportDetails.generateSupportReport();
-
-    // Build document issues data.
-    context.documentIssues = this._getDocumentValidationErrors();
-
-    // Build module issues data.
-    context.moduleIssues = this._getModuleIssues();
-
-    // Build client issues data.
-    context.clientIssues = Object.values(game.issues.usabilityIssues).map(({message, severity, params}) => {
-      return {severity, message: params ? game.i18n.format(message, params) : game.i18n.localize(message)};
-    });
-
-    return context;
+    data.report = SupportDetails.generateSupportReport();
+    return data;
   }
 
   /* -------------------------------------------- */
 
-  /** @inheritdoc */
+  /**
+   * Binds the Support Report copy button
+   * @param html
+   */
   activateListeners(html) {
     super.activateListeners(html);
-    html.find("button[data-action]").on("click", this._onClickAction.bind(this));
-  }
 
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  async _render(force=false, options={}) {
-    await super._render(force, options);
-    if ( options.tab ) this._tabs[0].activate(options.tab);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  async _renderInner(data) {
-    await loadTemplates({supportDetailsReport: "templates/sidebar/apps/parts/support-details-report.html"});
-    return super._renderInner(data);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle a button click action.
-   * @param {MouseEvent} event  The click event.
-   * @protected
-   */
-  _onClickAction(event) {
-    const action = event.currentTarget.dataset.action;
-    switch ( action ) {
-      case "copy":
-        this._copyReport();
-        break;
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Copy the support details report to clipboard.
-   * @protected
-   */
-  _copyReport() {
-    const report = document.getElementById("support-report");
-    game.clipboard.copyPlainText(report.innerText);
-    ui.notifications.info("SUPPORT.ReportCopied", {localize: true});
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Marshal information on Documents that failed validation and format it for display.
-   * @returns {object[]}
-   * @protected
-   */
-  _getDocumentValidationErrors() {
-    const context = [];
-    for ( const [documentName, documents] of Object.entries(game.issues.validationFailures) ) {
-      const cls = getDocumentClass(documentName);
-      const label = game.i18n.localize(cls.metadata.labelPlural);
-      context.push({
-        label,
-        documents: Object.entries(documents).map(([id, {name, error}]) => {
-          return {name: name ?? id, validationError: error.asHTML()};
-        })
-      });
-    }
-    return context;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Marshal package-related warnings and errors and format it for display.
-   * @returns {object[]}
-   * @protected
-   */
-  _getModuleIssues() {
-    const errors = {label: game.i18n.localize("Errors"), issues: []};
-    const warnings = {label: game.i18n.localize("Warnings"), issues: []};
-    for ( const [moduleId, {error, warning}] of Object.entries(game.issues.packageCompatibilityIssues) ) {
-      const label = game.modules.get(moduleId)?.title ?? moduleId;
-      if ( error.length ) errors.issues.push({label, issues: error.map(message => ({severity: "error", message}))});
-      if ( warning.length ) warnings.issues.push({
-        label,
-        issues: warning.map(message => ({severity: "warning", message}))
-      });
-    }
-    const context = [];
-    if ( errors.issues.length ) context.push(errors);
-    if ( warnings.issues.length ) context.push(warnings);
-    return context;
+    html.find("button[name=copy]").click(() => {
+      const supportReport = html.find("#support-report")[0];
+      game.clipboard.copyPlainText(supportReport.innerText);
+      ui.notifications.info("Report Copied");
+    });
   }
 
   /* -------------------------------------------- */

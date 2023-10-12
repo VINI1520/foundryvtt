@@ -5,8 +5,6 @@
  * @mixes ClientDocumentMixin
  *
  * @see {@link documents.Messages}                The world-level collection of ChatMessage documents
- *
- * @property {Roll[]} rolls                       The prepared array of Roll instances
  */
 class ChatMessage extends ClientDocumentMixin(foundry.documents.BaseChatMessage) {
 
@@ -211,6 +209,11 @@ class ChatMessage extends ClientDocumentMixin(foundry.documents.BaseChatMessage)
    * @private
    */
   static _getSpeakerFromToken({token, alias}) {
+    if ( token instanceof Token ) {
+      token = token.document;
+      foundry.utils.logCompatibilityWarning("You are passing a Token instance to _getSpeakerFromToken which now"
+        + " expects a TokenDocument instance instead", {since: 9, until: 11});
+    }
     return {
       scene: token.parent?.id || null,
       token: token.id,
@@ -312,11 +315,12 @@ class ChatMessage extends ClientDocumentMixin(foundry.documents.BaseChatMessage)
       return game.users.players;
     }
 
+    // Whisper to a single person
     const lowerName = name.toLowerCase();
-    const users = game.users.filter(u => u.name.toLowerCase() === lowerName);
-    if ( users.length ) return users;
-    const actors = game.users.filter(a => a.character && (a.character.name.toLowerCase() === lowerName));
-    if ( actors.length ) return actors;
+    let user = game.users.find(u => u.name.toLowerCase() === lowerName);
+    if (user) return [user];
+    let actor = game.users.find(a => a.character && a.character.name.toLowerCase() === lowerName);
+    if (actor) return [actor];
 
     // Otherwise, return an empty array
     return [];
@@ -371,6 +375,16 @@ class ChatMessage extends ClientDocumentMixin(foundry.documents.BaseChatMessage)
 
     // Flag expanded state of dice rolls
     if ( this._rollExpanded ) html.find(".dice-tooltip").addClass("expanded");
+
+    /**
+     * A hook event that fires for each ChatMessage which is rendered for addition to the ChatLog.
+     * This hook allows for final customization of the message HTML before it is added to the log.
+     * @function renderChatMessage
+     * @memberof hookEvents
+     * @param {ChatMessage} message   The ChatMessage document being rendered
+     * @param {jQuery} html           The pending HTML as a jQuery object
+     * @param {object} data           The input data provided for template rendering
+     */
     Hooks.call("renderChatMessage", this, html, messageData);
     return html;
   }
@@ -400,7 +414,7 @@ class ChatMessage extends ClientDocumentMixin(foundry.documents.BaseChatMessage)
     if ( this.isContentVisible ) {
       const el = document.createElement("div");
       el.innerHTML = data.content;  // Ensure the content does not already contain custom HTML
-      if ( !el.childElementCount && this.rolls.length ) data.content = await this._renderRollHTML(false);
+      if ( !el.childElementCount && this.rolls.length ) data.content = await renderRolls(false);
     }
 
     // Otherwise, show "rolled privately" messages for Roll content
@@ -410,22 +424,6 @@ class ChatMessage extends ClientDocumentMixin(foundry.documents.BaseChatMessage)
       data.content = await renderRolls(true);
       messageData.alias = name;
     }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Render HTML for the array of Roll objects included in this message.
-   * @param {boolean} isPrivate   Is the chat message private?
-   * @returns {Promise<string>}   The rendered HTML string
-   * @private
-   */
-  async _renderRollHTML(isPrivate) {
-    let html = "";
-    for ( const roll of this.rolls ) {
-      html += await roll.render({isPrivate});
-    }
-    return html;
   }
 
   /* -------------------------------------------- */

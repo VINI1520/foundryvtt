@@ -15,12 +15,6 @@ class CanvasDepthMask extends CachedContainer {
   roofs;
 
   /** @override */
-  static textureConfiguration = {
-    scaleMode: PIXI.SCALE_MODES.NEAREST,
-    format: PIXI.FORMATS.RGB
-  };
-
-  /** @override */
   clearColor = [0, 0, 0, 0];
 
   /* -------------------------------------------- */
@@ -41,9 +35,8 @@ class CanvasDepthMask extends CachedContainer {
   #createRoofsContainer() {
     const c = new PIXI.Container();
     const render = renderer => {
-      // Render the depth of each primary canvas object
-      for ( const pco of canvas.primary.children ) {
-        pco.renderDepthData?.(renderer);
+      for ( const tileMesh of canvas.primary.tiles ) {
+        tileMesh.renderOcclusion(renderer);
       }
     };
     c.render = render.bind(c);

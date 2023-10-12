@@ -1,0 +1,89 @@
+<form id="{{cssId}}" class="{{cssClass}}" data-tab="{{cssId}}" autocomplete="off">
+    <p class="notification warning">{{localize "SETUP.ConfigurationWarning"}}</p>
+
+    <section class="form-content">
+        <div class="form-group">
+            <label>{{localize fields.adminPassword.label}}</label>
+            <input type="password" name="adminPassword" value="{{ config.adminPassword }}"/>
+            <p class="hint">{{localize fields.adminPassword.hint}}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize fields.dataPath.label}}</label>
+            <input type="text" name="dataPath" value="{{ config.dataPath }}"/>
+            <p class="hint">{{localize fields.dataPath.hint}}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize fields.world.label}}</label>
+            <select name="world">
+                {{#select config.world}}
+                <option value=""></option>
+                {{#each worlds}}
+                <option value="{{ this.id }}">{{ this.title }}</option>
+                {{/each}}
+                {{/select}}
+            </select>
+            <p class="hint">{{localize fields.world.hint}}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize fields.language.label}}</label>
+            <select name="language">
+                {{#select config.language}}
+                {{#each languages as |language|}}
+                <optgroup label="{{language.label}}">
+                    {{#each language.modules as |module|}}
+                    <option value="{{language.id}}.{{module.id}}">{{ language.label }} - {{module.label}}</option>
+                    {{/each}}
+                </optgroup>
+                {{/each}}
+                {{/select}}
+            </select>
+            <p class="hint">{{localize fields.language.hint}}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize fields.port.label}}</label>
+            <div class="form-fields">
+                {{numberInput config.port name="port" step=1}}
+                <label class="checkbox">
+                    {{localize "SETUP.UPNPLabel"}}
+                    <input type="checkbox" name="upnp" {{checked config.upnp}}/>
+                </label>
+            </div>
+            <p class="hint">{{localize fields.port.hint}}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize fields.compressStatic.label}}</label>
+            <input type="checkbox" name="compressStatic" {{checked config.compressStatic}}/>
+            <p class="hint">{{localize fields.compressStatic.hint}}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize fields.sslCert.label}}</label>
+            <input type="text" name="sslCert" value="{{ config.sslCert }}"/>
+        </div>
+        <div class="form-group">
+            <label>{{localize fields.sslKey.label}}</label>
+            <input type="text" name="sslKey" value="{{ config.sslKey }}"/>
+            <p class="hint">{{localize fields.sslCert.hint}}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize fields.awsConfig.label}}</label>
+            <input type="text" name="awsConfig" value="{{ config.awsConfig }}"/>
+            <p class="hint">{{localize fields.awsConfig.hint}}</p>
+        </div>
+    </section>
+
+    <footer class="setup-footer flexrow">
+        <button type="button" name="action" data-action="adminLogout">
+            <i class="fas fa-door-open"></i> {{ localize "SETUP.AdminLogout" }}
+        </button>
+        <button type="submit">
+            <i class="fas fa-save"></i> {{ localize "SETUP.SaveConfiguration" }}
+        </button>
+    </footer>
+</form>

@@ -29,6 +29,12 @@ class Canvas {
   constructor() {
 
     /**
+     * An Array of pending canvas operations which should trigger on the next re-paint
+     * @type {object[]}
+     */
+    this.pendingOperations = [];
+
+    /**
      * A perception manager interface for batching lighting, sight, and sound updates
      * @type {PerceptionManager}
      */
@@ -53,12 +59,18 @@ class Canvas {
      */
     this._panTime = 0;
 
+    /**
+     * A Set of unique pending operation names to ensure operations are only performed once
+     * @type {Set<string>}
+     */
+    this._pendingOperationNames = new Set();
+
     // Define an immutable object for the canvas dimensions
     Object.defineProperty(this, "dimensions", {value: {}, writable: false});
   }
 
   /**
-   * A set of blur filter instances which are modified by the zoom level and the "soft shadows" setting
+   * An set of blur filter instances which are modified by the zoom level and the "soft shadows" setting
    * @type {Set<PIXI.filters>}
    */
   blurFilters = new Set();
@@ -74,35 +86,6 @@ class Canvas {
    * @type {SceneDimensions}
    */
   dimensions;
-
-  /**
-   * Configure options passed to the texture loaded for the Scene.
-   * This object can be configured during the canvasInit hook before textures have been loaded.
-   * @type {{expireCache: boolean, additionalSources: string[]}}
-   */
-  loadTexturesOptions;
-
-  /**
-   * Configure options used by the visibility framework for special effects
-   * This object can be configured during the canvasInit hook before visibility is initialized.
-   * @type {{persistentVision: boolean}}
-   */
-  visibilityOptions;
-
-  /**
-   * Configure options passed to initialize blur for the Scene and override normal behavior.
-   * This object can be configured during the canvasInit hook before blur is initialized.
-   * @type {{enabled: boolean, blurClass: Class, strength: number, passes: number, kernels: number}}
-   */
-  blurOptions;
-
-  /**
-   * Configure the Textures to apply to the Scene.
-   * Textures registered here will be automatically loaded as part of the TextureLoader.loadSceneTextures workflow.
-   * Textures which need to be loaded should be configured during the "canvasInit" hook.
-   * @type {{[background]: PIXI.Texture, [foreground]: PIXI.Texture, [fogOverlay]: PIXI.Texture}}
-   */
-  sceneTextures = {};
 
   /**
    * Record framerate performance data.
@@ -139,25 +122,6 @@ class Canvas {
    * @type {CanvasPerformanceSettings}
    */
   performance;
-
-  /**
-   * @typedef {Object} CanvasSupportedComponents
-   * @property {boolean} webGL2           Is WebGL2 supported?
-   * @property {boolean} readPixelsRED    Is reading pixels in RED format supported?
-   * @property {boolean} offscreenCanvas  Is the OffscreenCanvas supported?
-   */
-
-  /**
-   * A list of supported webGL capabilities and limitations.
-   * @type {CanvasSupportedComponents}
-   */
-  supported;
-
-  /**
-   * Is the photosensitive mode enabled?
-   * @type {boolean}
-   */
-  photosensitiveMode;
 
   /**
    * The renderer screen dimensions.
@@ -208,7 +172,7 @@ class Canvas {
 
   /**
    * A debounced function which tracks movements of the mouse on the game canvas.
-   * @type {function(PIXI.FederatedEvent)}
+   * @type {function(PIXI.InteractionEvent)}
    */
   #debounceMouseMove = foundry.utils.debounce(this._onMouseMove.bind(this), this.#mouseMoveDebounceMS);
 
@@ -252,22 +216,10 @@ class Canvas {
   interface;
 
   /**
-   * The overlay Canvas group which is rendered above other groups and contains elements not bound to stage transform.
-   * @type {OverlayCanvasGroup}
-   */
-  overlay;
-
-  /**
    * The singleton HeadsUpDisplay container which overlays HTML rendering on top of this Canvas.
    * @type {HeadsUpDisplay}
    */
   hud;
-
-  /**
-   * Position of the mouse on stage.
-   * @type {PIXI.Point}
-   */
-  mousePosition = new PIXI.Point();
 
   /* -------------------------------------------- */
   /*  Properties and Attributes
@@ -435,19 +387,13 @@ class Canvas {
     this._configurePerformanceMode();
 
     // Display any performance warnings which suggest that the created Application will not function well
-    game.issues._detectWebGLIssues();
+    this.#displayPerformanceWarnings();
 
     // Activate drop handling
     this.#dragDrop = new DragDrop({ callbacks: { drop: this._onDrop.bind(this) } }).bind(canvas);
 
     // Create heads up display
     Object.defineProperty(this, "hud", {value: new HeadsUpDisplay(), writable: false});
-
-    // Cache photosensitive mode
-    Object.defineProperty(this, "photosensitiveMode", {
-      value: game.settings.get("core", "photosensitiveMode"),
-      writable: false
-    });
 
     // Create groups
     this.#createGroups("stage", this.stage);
@@ -538,48 +484,10 @@ class Canvas {
 
     // Reference the Stage
     Object.defineProperty(this, "stage", {value: this.app.stage, writable: false});
+    Object.defineProperty(this.stage.constructor, "name", {value: "CanvasStage", writable: false});
 
-    // Map all the custom blend modes
-    this.#mapBlendModes();
-
-    // Attach specific behaviors to the PIXI runners
-    this.#attachToRunners();
-
-    // Test the support of some GPU features
-    const supported = this.#testSupport(app.renderer);
-    Object.defineProperty(this, "supported", {
-      value: Object.freeze(supported),
-      writable: false,
-      enumerable: true
-    });
-
-    // Additional PIXI configuration : Adding the FramebufferSnapshot to the canvas
-    const snapshot = new FramebufferSnapshot();
-    Object.defineProperty(this, "snapshot", {value: snapshot, writable: false});
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Attach specific behaviors to the PIXI runners.
-   * - contextChange => Remap all the blend modes
-   */
-  #attachToRunners() {
-    const contextChange = {
-      contextChange: () => {
-        console.debug(`${vtt} | Recovering from context loss.`);
-        this.#mapBlendModes();
-      }
-    };
-    this.app.renderer.runners.contextChange.add(contextChange);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Map custom blend modes and premultiplied blend modes.
-   */
-  #mapBlendModes() {
+    // Additional PIXI configuration : Adding custom blend modes
+    this.app.renderer.plugins.interaction.moveWhenInside = true;
     for ( let [k, v] of Object.entries(BLEND_MODES) ) {
       const pos = this.app.renderer.state.blendModes.push(v) - 1;
       PIXI.BLEND_MODES[k] = pos;
@@ -587,6 +495,10 @@ class Canvas {
     }
     // Fix a PIXI bug with custom blend modes
     this.#mapPremultipliedBlendModes();
+
+    // Additional PIXI configuration : Adding the FramebufferSnapshot to the canvas
+    const snapshot = new FramebufferSnapshot();
+    Object.defineProperty(this, "snapshot", {value: snapshot, writable: false});
   }
 
   /* -------------------------------------------- */
@@ -623,6 +535,31 @@ class Canvas {
   /* -------------------------------------------- */
 
   /**
+   * Display warnings for known performance issues which may occur due to the user's hardware or browser configuration.
+   * @private
+   */
+  #displayPerformanceWarnings() {
+    const context = this.app.renderer.context;
+    const gl = context.gl;
+    try {
+      const rendererInfo = SupportDetails.getWebGLRendererInfo(gl);
+      if ( /swiftshader/i.test(rendererInfo) ) {
+        ui.notifications.warn("ERROR.NoHardwareAcceleration", {localize: true, permanent: true});
+      }
+    } catch(err) {
+      ui.notifications.warn("ERROR.RendererNotDetected", {localize: true});
+    }
+
+    // Verify that WebGL2 is being used
+    if (context.webGLVersion !== 2 ) {
+      const err = new Error(game.i18n.localize("ERROR.NoWebGL2"));
+      ui.notifications.warn(err.message, {permanent: true});
+    }
+  }
+
+  /* -------------------------------------------- */
+
+  /**
    * Initialize the group containers of the game Canvas.
    * @param {string} parentName
    * @param {PIXI.DisplayObject} parent
@@ -644,10 +581,9 @@ class Canvas {
   /**
    * TODO: Add a quality parameter
    * Compute the blur parameters according to grid size and performance mode.
-   * @param options            Blur options.
    * @private
    */
-  _initializeBlur(options={}) {
+  _initializeBlur() {
     // Discard shared filters
     this.blurFilters.clear();
 
@@ -663,13 +599,10 @@ class Canvas {
 
     // Compute blur parameters
     this.blur = new Proxy(Object.seal({
-      enabled: options.enabled ?? this.performance.mode > CONST.CANVAS_PERFORMANCE_MODES.MED,
-      blurClass: options.blurClass ?? AlphaBlurFilter,
-      blurPassClass: options.blurPassClass ?? AlphaBlurFilterPass,
-      strength: options.strength ?? blurStrength,
-      passes: options.passes ?? Math.clamped(level + Math.floor(blurFactor), 2, maxPass),
-      kernels: options.kernels
-        ?? Math.clamped((2 * Math.ceil((1 + (2 * level) + Math.floor(blurFactor)) / 2)) - 1, 5, maxKernels)
+      enabled: this.performance.mode > CONST.CANVAS_PERFORMANCE_MODES.LOW,
+      strength: blurStrength,
+      passes: Math.clamped(level + Math.floor(blurFactor), 2, maxPass),
+      kernels: Math.clamped((2 * Math.ceil((1 + (2 * level) + Math.floor(blurFactor)) / 2)) - 1, 5, maxKernels)
     }), {
       set(obj, prop, value) {
         if ( prop !== "strength" ) throw new Error(`canvas.blur.${prop} is immutable`);
@@ -706,7 +639,7 @@ class Canvas {
       fps: Math.clamped(fps, 0, 60),
       tokenAnimation: true,
       lightAnimation: true,
-      lightSoftEdges: false
+      lightSoftEdges: false,
     };
 
     // Deprecation shim for blur
@@ -716,7 +649,9 @@ class Canvas {
     }, {
       get(obj, prop, receiver) {
         foundry.utils.logCompatibilityWarning("canvas.performance.blur is deprecated and replaced by canvas.blur", {
-          since: 10, until: 12});
+          since: 10,
+          until: 11
+        });
         return Reflect.get(obj, prop, receiver);
       }
     });
@@ -740,8 +675,10 @@ class Canvas {
       p2StepsMax: 3
     }, {
       get(obj, prop, receiver) {
-        foundry.utils.logCompatibilityWarning("canvas.performance.textures is deprecated", {
-          since: 10, until: 12});
+        foundry.utils.logCompatibilityWarning("canvas.performance.textures is deprecated and will be removed in V11", {
+          since: 10,
+          until: 11
+        });
         return Reflect.get(obj, prop, receiver);
       }
     });
@@ -773,8 +710,8 @@ class Canvas {
     }
 
     // Configure performance settings
-    PIXI.BaseTexture.defaultOptions.mipmap = PIXI.MIPMAP_MODES[settings.mipmap];
-    PIXI.Filter.defaultResolution = canvas.app.renderer.resolution;
+    PIXI.settings.MIPMAP_TEXTURES = PIXI.MIPMAP_MODES[settings.mipmap];
+    PIXI.settings.FILTER_RESOLUTION = canvas.app.renderer.resolution;
     this.app.ticker.maxFPS = PIXI.Ticker.shared.maxFPS = PIXI.Ticker.system.maxFPS = settings.fps;
     return this.performance = settings;
   }
@@ -813,7 +750,7 @@ class Canvas {
         await this.tearDown();
       } catch(err) {
         err.message = `Encountered an error while tearing down the previous scene: ${err.message}`;
-        logger.error(err);
+        logger.warn(err);
       }
     }
 
@@ -823,11 +760,9 @@ class Canvas {
       if ( game.user.viewedScene === this.#scene.id ) game.user.viewedScene = null;
     }
     this.#scene = scene;
+    if ( this.#scene === null ) return this.#drawBlank(); // Draw a blank canvas
 
-    // Draw a blank canvas
-    if ( this.#scene === null ) return this.#drawBlank();
-
-    // Initialize color manager for this scene
+    // Updating color manager for this scene
     this.colorManager.initialize();
 
     // Configure Scene dimensions
@@ -836,74 +771,58 @@ class Canvas {
     document.documentElement.style.setProperty("--gridSize", `${this.dimensions.size}px`);
 
     // Call Canvas initialization hooks
-    this.loadTexturesOptions = {expireCache: true, additionalSources: []};
-    this.visibilityOptions = {persistentVision: false};
     console.log(`${vtt} | Drawing game canvas for scene ${this.#scene.name}`);
     Hooks.callAll("canvasInit", this);
 
     // Configure attributes of the Stage
     this.stage.position.set(window.innerWidth / 2, window.innerHeight / 2);
     this.stage.hitArea = new PIXI.Rectangle(0, 0, this.dimensions.width, this.dimensions.height);
-    this.stage.eventMode = "static";
-    this.stage.sortableChildren = true;
+    this.stage.interactive = this.stage.sortableChildren = true;
 
     // Initialize the camera view position (although the canvas is hidden)
     this.initializeCanvasPosition();
 
     // Initialize blur parameters
-    this._initializeBlur(this.blurOptions);
+    this._initializeBlur();
 
     // Load required textures
     try {
-      await TextureLoader.loadSceneTextures(this.#scene, this.loadTexturesOptions);
-    } catch(err) {
-      Hooks.onError("Canvas#draw", err, {
-        msg: `Texture loading failed: ${err.message}`,
-        log: "error",
-        notify: "error"
-      });
-      this.loading = false;
-      return this;
-    }
+      await TextureLoader.loadSceneTextures(this.#scene);
 
-    // Activate ticker render workflows
-    this.#activateTicker();
+      // Initialize the Fog Manager
+      await this.fog.initialize();
 
-    // Draw canvas groups
-    Hooks.callAll("canvasDraw", this);
-    for ( const name of Object.keys(CONFIG.Canvas.groups) ) {
-      const group = this[name];
+      // Draw canvas groups
       try {
-        await group.draw();
+        for ( const name of Object.keys(CONFIG.Canvas.groups) ) {
+          const group = this[name];
+          await group.draw();
+        }
       } catch(err) {
         Hooks.onError("Canvas#draw", err, {
-          msg: `Failed drawing ${name} canvas group: ${err.message}`,
+          msg: `Canvas drawing failed: ${err.message}`,
           log: "error",
           notify: "error"
         });
-        this.loading = false;
-        return this;
       }
+
+      // Mask primary and effects layers by the overall canvas
+      const cr = canvas.dimensions.rect;
+      this.masks.canvas.clear().beginFill(0xFFFFFF, 1.0).drawRect(cr.x, cr.y, cr.width, cr.height).endFill();
+      this.primary.sprite.mask = this.primary.mask = this.effects.mask = this.interface.grid.mask = this.masks.canvas;
+
+      // Initialize starting conditions
+      await this.#initialize();
+
+      this.#scene._view = true;
+      this.stage.visible = true;
+      Hooks.call("canvasReady", this);
     }
 
-    // Mask primary and effects layers by the overall canvas
-    const cr = canvas.dimensions.rect;
-    this.masks.canvas.clear().beginFill(0xFFFFFF, 1.0).drawRect(cr.x, cr.y, cr.width, cr.height).endFill();
-    this.primary.sprite.mask = this.primary.mask = this.effects.mask = this.interface.grid.mask = this.masks.canvas;
-
-    // Compute the scene scissor mask
-    const sr = canvas.dimensions.sceneRect;
-    this.masks.scene.clear().beginFill(0xFFFFFF, 1.0).drawRect(sr.x, sr.y, sr.width, sr.height).endFill();
-
-    // Initialize starting conditions
-    await this.#initialize();
-
-    this.#scene._view = true;
-    this.stage.visible = true;
-    Hooks.call("canvasReady", this);
-
     // Record that loading was complete and return
-    this.loading = false;
+    finally {
+      this.loading = false;
+    }
     return this;
   }
 
@@ -915,8 +834,6 @@ class Canvas {
    */
   async tearDown() {
     this.stage.visible = false;
-    this.sceneTextures = {};
-    this.blurOptions = undefined;
 
     // Track current data which should be restored on draw
     this.#reload = {
@@ -926,8 +843,10 @@ class Canvas {
       targetedTokens: Array.from(game.user.targets).map(t => t.id)
     };
 
-    // Deactivate ticker workflows
-    this.#deactivateTicker();
+    // Deactivate perception refresh
+    this.perception.deactivate();
+
+    // Cancel framerate tracking
     this.deactivateFPSMeter();
 
     // Deactivate every layer before teardown
@@ -1005,17 +924,15 @@ class Canvas {
     this._onResize();
     this.#reload = {};
 
-    // Initialize perception manager
+    // Activate Perception Manager refresh
+    this.perception.activate();
     this.perception.initialize();
-
-    // Broadcast user presence in the Scene
-    game.user.broadcastActivity({sceneId: this.#scene.id});
 
     // Activate user interaction
     this.#addListeners();
 
-    // Call PCO sorting
-    canvas.primary.sortChildren();
+    // Broadcast user presence in the Scene
+    game.user.broadcastActivity({sceneId: this.#scene.id});
   }
 
   /* -------------------------------------------- */
@@ -1127,26 +1044,6 @@ class Canvas {
   }
 
   /* -------------------------------------------- */
-
-  /**
-   * Get the InteractionLayer of the canvas which manages Documents of a certain collection within the Scene.
-   * @param {string} collectionName     The collection name
-   * @returns {PlaceablesLayer}         The canvas layer
-   */
-  getCollectionLayer(collectionName) {
-    return {
-      lights: this.lighting,
-      sounds: this.sounds,
-      drawings: this.drawings,
-      notes: this.notes,
-      templates: this.templates,
-      tiles: this.tiles,
-      tokens: this.tokens,
-      walls: this.walls
-    }[collectionName];
-  }
-
-  /* -------------------------------------------- */
   /*  Methods                                     */
   /* -------------------------------------------- */
 
@@ -1156,7 +1053,9 @@ class Canvas {
   activateFPSMeter() {
     this.deactivateFPSMeter();
     if ( !this.#ready ) return;
+    // Show element
     this.fps.element.style.display = "block";
+    // Activate ticker
     this.app.ticker.add(this.#measureFPS, this, PIXI.UPDATE_PRIORITY.LOW);
   }
 
@@ -1166,7 +1065,9 @@ class Canvas {
    * Deactivate framerate tracking by canceling ticker updates and removing the HTML element.
    */
   deactivateFPSMeter() {
+    // Deactivate ticker
     this.app.ticker.remove(this.#measureFPS, this);
+    // Hide element
     this.fps.element.style.display = "none";
   }
 
@@ -1212,7 +1113,7 @@ class Canvas {
   pan({x=null, y=null, scale=null}={}) {
 
     // Constrain the resulting canvas view
-    const constrained = this._constrainView({x, y, scale});
+    const constrained = this.#constrainView({x, y, scale});
     const scaleChange = constrained.scale !== this.stage.scale.x;
 
     // Set the pivot point
@@ -1259,7 +1160,7 @@ class Canvas {
     }
 
     // Constrain the resulting dimensions and construct animation attributes
-    const constrained = this._constrainView({x, y, scale});
+    const constrained = this.#constrainView({x, y, scale});
     const attributes = [
       { parent: this.stage.pivot, attribute: "x", to: constrained.x },
       { parent: this.stage.pivot, attribute: "y", to: constrained.y },
@@ -1312,9 +1213,11 @@ class Canvas {
     if ( !this.#ready ) return;
     for ( let layer of this.layers ) {
       if ( !layer.objects || !layer.interactiveChildren ) continue;
-      layer.highlightObjects = active;
+      layer._highlight = active;
       for ( let o of layer.placeables ) {
-        o.renderFlags.set({refreshState: true});
+        if ( (!active && o._isHoverIn) || !o.visible || !o.can(game.user, "hover") ) continue;
+        o.hover = active;
+        o.refresh();
       }
     }
     /** @see hookEvents.highlightObjects */
@@ -1359,9 +1262,9 @@ class Canvas {
    * Get the constrained zoom scale parameter which is allowed by the maxZoom parameter
    * @param {CanvasViewPosition} position   The unconstrained position
    * @returns {CanvasViewPosition}          The constrained position
-   * @internal
+   * @private
    */
-  _constrainView({x, y, scale}) {
+  #constrainView({x, y, scale}) {
     const d = canvas.dimensions;
 
     // Constrain the maximum zoom level
@@ -1493,21 +1396,6 @@ class Canvas {
   }
 
   /* -------------------------------------------- */
-
-  /**
-   * Get a texture with the required configuration and clear color.
-   * @param {object} options
-   * @param {number[]} [options.clearColor]           The clear color to use for this texture. Transparent by default.
-   * @param {object} [options.textureConfiguration]   The render texture configuration.
-   * @returns {PIXI.RenderTexture}
-   */
-  static getRenderTexture({clearColor, textureConfiguration}={}) {
-    const texture = PIXI.RenderTexture.create(textureConfiguration);
-    if ( clearColor ) texture.baseTexture.clearColor = clearColor;
-    return texture;
-  }
-
-  /* -------------------------------------------- */
   /* Event Handlers
   /* -------------------------------------------- */
 
@@ -1547,7 +1435,7 @@ class Canvas {
 
     // Add a listener for cursor movement
     this.stage.on("mousemove", event => {
-      const now = event.now = Date.now();
+      const now = event.data.now = Date.now();
       const dt = now - this.#mouseMoveTime;
       if ( dt > this.#mouseMoveDebounceMS ) return this._onMouseMove(event);  // Handle immediately
       else return this.#debounceMouseMove(event);  // Handle on debounced delay
@@ -1559,12 +1447,11 @@ class Canvas {
   /**
    * Handle mouse movement on the game canvas.
    * This handler fires on both a throttle and a debounce, ensuring that the final update is always recorded.
-   * @param {PIXI.FederatedEvent} event
+   * @param {PIXI.InteractionEvent} event
    * @private
    */
   _onMouseMove(event) {
-    this.mousePosition = event.getLocalPosition(this.stage);
-    this.#mouseMoveTime = event.now;
+    this.#mouseMoveTime = event.data.now;
     canvas.controls._onMouseMove(event);
     canvas.sounds._onMouseMove(event);
   }
@@ -1573,8 +1460,8 @@ class Canvas {
 
   /**
    * Handle left mouse-click events occurring on the Canvas.
-   * @see {MouseInteractionManager##handleClickLeft}
-   * @param {PIXI.FederatedEvent} event
+   * @see {MouseInteractionManager#_handleClickLeft}
+   * @param {PIXI.InteractionEvent} event
    * @private
    */
   _onClickLeft(event) {
@@ -1586,8 +1473,8 @@ class Canvas {
 
   /**
    * Handle double left-click events occurring on the Canvas.
-   * @see {MouseInteractionManager##handleClickLeft2}
-   * @param {PIXI.FederatedEvent} event
+   * @see {MouseInteractionManager#_handleClickLeft2}
+   * @param {PIXI.InteractionEvent} event
    */
   _onClickLeft2(event) {
     const layer = this.activeLayer;
@@ -1598,8 +1485,8 @@ class Canvas {
 
   /**
    * Handle long press events occurring on the Canvas.
-   * @see {MouseInteractionManager##handleLongPress}
-   * @param {PIXI.FederatedEvent}   event   The triggering canvas interaction event.
+   * @see {MouseInteractionManager#_handleLongPress}
+   * @param {PIXI.InteractionEvent} event   The triggering canvas interaction event.
    * @param {PIXI.Point}            origin  The local canvas coordinates of the mousepress.
    * @private
    */
@@ -1611,23 +1498,26 @@ class Canvas {
 
   /**
    * Handle the beginning of a left-mouse drag workflow on the Canvas stage or its active Layer.
-   * @see {MouseInteractionManager##handleDragStart}
-   * @param {PIXI.FederatedEvent} event
+   * @see {MouseInteractionManager#_handleDragStart}
+   * @param {PIXI.InteractionEvent} event
    * @internal
    */
   _onDragLeftStart(event) {
+
+    // Extract event data
     const layer = this.activeLayer;
+    const isRuler = game.activeTool === "ruler";
+    const isCtrlRuler = game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.CONTROL)
+      && (layer instanceof TokenLayer);
 
     // Begin ruler measurement
-    if ( (layer instanceof TokenLayer) && CONFIG.Canvas.rulerClass.canMeasure ) {
-      return this.controls.ruler._onDragStart(event);
-    }
+    if ( isRuler || isCtrlRuler ) return this.controls.ruler._onDragStart(event);
 
     // Activate select rectangle
     const isSelect = ["select", "target"].includes(game.activeTool);
     if ( isSelect ) {
       // The event object appears to be reused, so delete any coords from a previous selection.
-      delete event.interactionData.coords;
+      delete event.data.coords;
       canvas.controls.select.active = true;
       return;
     }
@@ -1640,15 +1530,15 @@ class Canvas {
 
   /**
    * Handle mouse movement events occurring on the Canvas.
-   * @see {MouseInteractionManager##handleDragMove}
-   * @param {PIXI.FederatedEvent} event
+   * @see {MouseInteractionManager#_handleDragMove}
+   * @param {PIXI.InteractionEvent} event
    * @internal
    */
   _onDragLeftMove(event) {
     const layer = this.activeLayer;
 
     // Pan the canvas if the drag event approaches the edge
-    this._onDragCanvasPan(event);
+    this._onDragCanvasPan(event.data.originalEvent);
 
     // Continue a Ruler measurement
     const ruler = this.controls.ruler;
@@ -1666,33 +1556,33 @@ class Canvas {
 
   /**
    * Handle the conclusion of a left-mouse drag workflow when the mouse button is released.
-   * @see {MouseInteractionManager##handleDragDrop}
-   * @param {PIXI.FederatedEvent} event
+   * @see {MouseInteractionManager#_handleDragDrop}
+   * @param {PIXI.InteractionEvent} event
    * @internal
    */
   _onDragLeftDrop(event) {
 
     // Extract event data
-    const coords = event.interactionData.coords;
+    const {coords, originalEvent} = event.data;
     const tool = game.activeTool;
     const layer = canvas.activeLayer;
 
     // Conclude a measurement event if we aren't holding the CTRL key
     const ruler = canvas.controls.ruler;
     if ( ruler.active ) {
-      if ( game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.CONTROL) ) event.preventDefault();
+      if ( game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.CONTROL) ) originalEvent.preventDefault();
       return ruler._onMouseUp(event);
     }
 
     // Conclude a select event
     const isSelect = ["select", "target"].includes(tool);
-    if ( isSelect && canvas.controls.select.active && (layer instanceof PlaceablesLayer) ) {
+    if ( isSelect && canvas.controls.select.active ) {
       canvas.controls.select.clear();
       canvas.controls.select.active = false;
-      const releaseOthers = !event.shiftKey;
+      const releaseOthers = !originalEvent.shiftKey;
       if ( !coords ) return;
       if ( tool === "select" ) return layer.selectObjects(coords, {releaseOthers});
-      else if ( tool === "target") return layer.targetObjects(coords, {releaseOthers});
+      if ( tool === "target" ) return layer.targetObjects(coords, {releaseOthers});
     }
 
     // Dispatch the event to the active layer
@@ -1703,7 +1593,7 @@ class Canvas {
 
   /**
    * Handle the cancellation of a left-mouse drag workflow
-   * @see {MouseInteractionManager##handleDragCancel}
+   * @see {MouseInteractionManager#_handleDragCancel}
    * @param {PointerEvent} event
    * @internal
    */
@@ -1713,28 +1603,22 @@ class Canvas {
 
     // Don't cancel ruler measurement
     const ruler = canvas.controls.ruler;
-    if ( ruler.active ) {
-      event.preventDefault();
-      return true;
-    }
+    if ( ruler.active ) return event.preventDefault();
 
     // Clear selection
     const isSelect = ["select", "target"].includes(tool);
-    if ( isSelect ) {
-      canvas.controls.select.clear();
-      return true;
-    }
+    if ( isSelect ) return canvas.controls.select.clear();
 
     // Dispatch the event to the active layer
-    if ( layer instanceof InteractionLayer ) return layer._onDragLeftCancel(event);
+    if ( layer instanceof InteractionLayer ) layer._onDragLeftCancel(event);
   }
 
   /* -------------------------------------------- */
 
   /**
    * Handle right mouse-click events occurring on the Canvas.
-   * @see {MouseInteractionManager##handleClickRight}
-   * @param {PIXI.FederatedEvent} event
+   * @see {MouseInteractionManager#_handleClickRight}
+   * @param {PIXI.InteractionEvent} event
    * @private
    */
   _onClickRight(event) {
@@ -1750,8 +1634,8 @@ class Canvas {
 
   /**
    * Handle double right-click events occurring on the Canvas.
-   * @see {MouseInteractionManager##handleClickRight}
-   * @param {PIXI.FederatedEvent} event
+   * @see {MouseInteractionManager#_handleClickRight}
+   * @param {PIXI.InteractionEvent} event
    * @private
    */
   _onClickRight2(event) {
@@ -1763,15 +1647,15 @@ class Canvas {
 
   /**
    * Handle right-mouse drag events occurring on the Canvas.
-   * @see {MouseInteractionManager##handleDragMove}
-   * @param {PIXI.FederatedEvent} event
+   * @see {MouseInteractionManager#_handleDragMove}
+   * @param {PIXI.InteractionEvent} event
    * @private
    */
   _onDragRightMove(event) {
 
     // Extract event data
-    const cursorTime = event.interactionData.cursorTime;
-    const {origin, destination} = event.interactionData;
+    const DRAG_SPEED_MODIFIER = 0.8;
+    const {cursorTime, origin, destination} = event.data;
     const dx = destination.x - origin.x;
     const dy = destination.y - origin.y;
 
@@ -1779,13 +1663,13 @@ class Canvas {
     const now = Date.now();
     if ( (now - (cursorTime || 0)) > 100 ) {
       if ( this.controls ) this.controls._onMouseMove(event, destination);
-      event.interactionData.cursorTime = now;
+      event.data.cursorTime = now;
     }
 
     // Pan the canvas
     this.pan({
-      x: canvas.stage.pivot.x - (dx * CONFIG.Canvas.dragSpeedModifier),
-      y: canvas.stage.pivot.y - (dy * CONFIG.Canvas.dragSpeedModifier)
+      x: canvas.stage.pivot.x - (dx * DRAG_SPEED_MODIFIER),
+      y: canvas.stage.pivot.y - (dy * DRAG_SPEED_MODIFIER)
     });
 
     // Reset Token tab cycling
@@ -1797,8 +1681,8 @@ class Canvas {
 
   /**
    * Handle the conclusion of a right-mouse drag workflow the Canvas stage.
-   * @see {MouseInteractionManager##handleDragDrop}
-   * @param {PIXI.FederatedEvent} event
+   * @see {MouseInteractionManager#_handleDragDrop}
+   * @param {PIXI.InteractionEvent} event
    * @private
    */
   _onDragRightDrop(event) {}
@@ -1807,13 +1691,13 @@ class Canvas {
 
   /**
    * Determine selection coordinate rectangle during a mouse-drag workflow
-   * @param {PIXI.FederatedEvent} event
+   * @param {PIXI.InteractionEvent} event
    * @private
    */
   _onDragSelect(event) {
 
     // Extract event data
-    const {origin, destination} = event.interactionData;
+    const {origin, destination} = event.data;
 
     // Determine rectangle coordinates
     let coords = {
@@ -1825,7 +1709,7 @@ class Canvas {
 
     // Draw the select rectangle
     canvas.controls.drawSelect(coords);
-    event.interactionData.coords = coords;
+    event.data.coords = coords;
   }
 
   /* -------------------------------------------- */
@@ -1941,124 +1825,39 @@ class Canvas {
   }
 
   /* -------------------------------------------- */
-  /*  Pre-Rendering Workflow                      */
+  /*  Pending Operations                          */
   /* -------------------------------------------- */
 
   /**
-   * Track objects which have pending render flags.
-   * @enum {Set<RenderFlagObject>}
+   * Add a pending canvas operation that should fire once the socket handling workflow concludes.
+   * This registers operations by a unique string name into a queue - avoiding repeating the same work multiple times.
+   * This is especially helpful for multi-object updates to avoid costly and redundant refresh operations.
+   * TODO: this should be deprecated
+   * @param {string} name     A unique name for the pending operation, conventionally Class.method
+   * @param {Function} fn     The unbound function to execute later
+   * @param {*} scope         The scope to which the method should be bound when called
+   * @param {...*} args       Arbitrary arguments to pass to the method when called
    */
-  pendingRenderFlags;
-
-  /**
-   * Cached references to bound ticker functions which can be removed later.
-   * @type {Object<Function>}
-   */
-  #tickerFunctions = {};
-
-  /* -------------------------------------------- */
-
-  /**
-   * Activate ticker functions which should be called as part of the render loop.
-   * This occurs as part of setup for a newly viewed Scene.
-   */
-  #activateTicker() {
-    const p = PIXI.UPDATE_PRIORITY;
-
-    // Define custom ticker priorities
-    Object.assign(p, {
-      OBJECTS: p.HIGH - 2,
-      PERCEPTION: p.NORMAL + 2
-    });
-
-    // Create pending queues
-    Object.defineProperty(this, "pendingRenderFlags", {
-      value: {
-        OBJECTS: new Set(),
-        PERCEPTION: new Set()
-      },
-      configurable: true,
-      writable: false
-    });
-
-    // Apply PlaceableObject RenderFlags
-    this.#tickerFunctions.OBJECTS = this.#applyRenderFlags.bind(this, this.pendingRenderFlags.OBJECTS);
-    canvas.app.ticker.add(this.#tickerFunctions.OBJECTS, undefined, p.OBJECTS);
-
-    // Update Perception
-    this.#tickerFunctions.PERCEPTION = this.#applyRenderFlags.bind(this, this.pendingRenderFlags.PERCEPTION);
-    canvas.app.ticker.add(this.#tickerFunctions.PERCEPTION, undefined, p.PERCEPTION);
+  addPendingOperation(name, fn, scope, args) {
+    if ( this._pendingOperationNames.has(name) ) return;
+    this._pendingOperationNames.add(name);
+    this.pendingOperations.push([fn, scope, args]);
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Deactivate ticker functions which were previously registered.
-   * This occurs during tear-down of a previously viewed Scene.
+   * Fire all pending functions that are registered in the pending operations queue and empty it.
+   * TODO: this should be deprecated
    */
-  #deactivateTicker() {
-    for ( const queue of Object.values(this.pendingRenderFlags) ) queue.clear();
-    for ( const [k, fn] of Object.entries(this.#tickerFunctions) ) {
-      canvas.app.ticker.remove(fn);
-      delete this.#tickerFunctions[k];
+  triggerPendingOperations() {
+    for ( let [fn, scope, args] of this.pendingOperations ) {
+      if ( !fn ) continue;
+      args = args || [];
+      fn = fn.call(scope, ...args);
     }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Apply pending render flags which should be handled at a certain ticker priority.
-   * @param {Set<RenderFlagObject>} queue       The queue of objects to handle
-   */
-  #applyRenderFlags(queue) {
-    if ( !queue.size ) return;
-    const objects = Array.from(queue);
-    queue.clear();
-    for ( const object of objects ) object.applyRenderFlags();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Test support for some GPU capabilities and update the supported property.
-   * @param {PIXI.Renderer} renderer
-   */
-  #testSupport(renderer) {
-    const supported = {};
-    const gl = renderer?.gl;
-
-    if ( !(gl instanceof WebGL2RenderingContext) ) {
-      supported.webGL2 = false;
-      return supported;
-    }
-
-    supported.webGL2 = true;
-    let renderTexture;
-
-    // Test support for reading pixels in RED/UNSIGNED_BYTE format
-    renderTexture = PIXI.RenderTexture.create({
-      width: 1,
-      height: 1,
-      format: PIXI.FORMATS.RED,
-      type: PIXI.TYPES.UNSIGNED_BYTE,
-      resolution: 1,
-      multisample: PIXI.MSAA_QUALITY.NONE
-    });
-    renderer.renderTexture.bind(renderTexture);
-    const format = gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_FORMAT);
-    const type = gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_TYPE);
-    supported.readPixelsRED = (format === gl.RED) && (type === gl.UNSIGNED_BYTE);
-    renderer.renderTexture.bind();
-    renderTexture?.destroy(true);
-
-    // Test support for OffscreenCanvas
-    try {
-      supported.offscreenCanvas =
-        (typeof OffscreenCanvas !== "undefined") && (!!new OffscreenCanvas(10, 10).getContext("2d"));
-    } catch(e) {
-      supported.offscreenCanvas = false;
-    }
-    return supported;
+    this.pendingOperations = [];
+    this._pendingOperationNames.clear();
   }
 
   /* -------------------------------------------- */
@@ -2117,38 +1916,5 @@ class Canvas {
     const msg = "Canvas#setBackgroundColor is deprecated in favor of Canvas#colorManager#initialize";
     foundry.utils.logCompatibilityWarning(msg, {since: 10, until: 12});
     this.#colorManager.initialize({backgroundColor: color});
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  addPendingOperation(name, fn, scope, args) {
-    const msg = "Canvas#addPendingOperation is deprecated without replacement in v11. The callback that you have "
-      + "passed as a pending operation has been executed immediately. We recommend switching your code to use a "
-      + "debounce operation or RenderFlags to de-duplicate overlapping requests.";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    fn.call(scope, ...args);
-  }
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  triggerPendingOperations() {
-    const msg = "Canvas#triggerPendingOperations is deprecated without replacement in v11 and performs no action.";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-  }
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  get pendingOperations() {
-    const msg = "Canvas#pendingOperations is deprecated without replacement in v11.";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return [];
   }
 }

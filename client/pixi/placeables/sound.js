@@ -10,33 +10,25 @@ class AmbientSound extends PlaceableObject {
    * The Sound which manages playback for this AmbientSound effect
    * @type {Sound|null}
    */
-  sound = this.#createSound();
+  sound = this._createSound();
 
   /**
    * A SoundSource object which manages the area of effect for this ambient sound
    * @type {SoundSource}
    */
-  source = new SoundSource({object: this});
+  source = new SoundSource(this);
 
   /** @inheritdoc */
   static embeddedName ="AmbientSound";
-
-  /** @override */
-  static RENDER_FLAGS = {
-    redraw: {propagate: ["refresh"]},
-    refresh: {propagate: ["refreshField"], alias: true},
-    refreshField: {propagate: ["refreshPosition", "refreshState"]},
-    refreshPosition: {},
-    refreshState: {}
-  };
 
   /* -------------------------------------------- */
 
   /**
    * Create a Sound used to play this AmbientSound object
    * @returns {Sound|null}
+   * @private
    */
-  #createSound() {
+  _createSound() {
     if ( !this.id || !this.document.path ) return null;
     return game.audio.create({
       src: this.document.path,
@@ -55,7 +47,7 @@ class AmbientSound extends PlaceableObject {
    * @type {boolean}
    */
   get isAudible() {
-    if ( this.document.hidden || !this.document.radius ) return false;
+    if ( this.document.hidden ) return false;
     return canvas.darknessLevel.between(this.document.darkness.min ?? 0, this.document.darkness.max ?? 1);
   }
 
@@ -84,7 +76,7 @@ class AmbientSound extends PlaceableObject {
   /* -------------------------------------------- */
 
   /**
-   * Toggle playback of the sound depending on whether it is audible.
+   * Toggle playback of the sound depending on whether or not it is audible
    * @param {boolean} isAudible     Is the sound audible?
    * @param {number} volume         The target playback volume
    * @param {object} [options={}]   Additional options which affect sound synchronization
@@ -135,8 +127,8 @@ class AmbientSound extends PlaceableObject {
   /** @override */
   async _draw() {
     this.field = this.addChild(new PIXI.Graphics());
-    this.field.eventMode = "none";
-    this.controlIcon = this.addChild(this.#drawControlIcon());
+    this.controlIcon = this.addChild(this._drawControlIcon());
+    this.updateSource();
   }
 
   /* -------------------------------------------- */
@@ -151,8 +143,9 @@ class AmbientSound extends PlaceableObject {
   /**
    * Draw the ControlIcon for the AmbientLight
    * @returns {ControlIcon}
+   * @private
    */
-  #drawControlIcon() {
+  _drawControlIcon() {
     const size = Math.max(Math.round((canvas.dimensions.size * 0.5) / 20) * 20, 40);
     let icon = new ControlIcon({texture: CONFIG.controlIcons.sound, size: size});
     icon.x -= (size * 0.5);
@@ -161,53 +154,27 @@ class AmbientSound extends PlaceableObject {
   }
 
   /* -------------------------------------------- */
-  /*  Incremental Refresh                         */
-  /* -------------------------------------------- */
 
-  /** @override */
-  _applyRenderFlags(flags) {
-    if ( flags.refreshField ) this.#refreshField();
-    if ( flags.refreshPosition ) this.#refreshPosition();
-    if ( flags.refreshState ) this.#refreshState();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the shape of the sound field-of-effect. This is refreshed when the SoundSource fov polygon changes.
-   */
-  #refreshField() {
-    this.field.clear();
-    if ( !this.source.disabled ) {
-      this.field.beginFill(0xAADDFF, 0.15).lineStyle(1, 0xFFFFFF, 0.5).drawShape(this.source.shape).endFill();
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the position of the AmbientSound. Called with the coordinates change.
-   */
-  #refreshPosition() {
+  /** @inheritdoc */
+  _refresh(options) {
     const {x, y} = this.document;
     this.position.set(x, y);
     this.field.position.set(-x, -y);
-  }
 
-  /* -------------------------------------------- */
+    // Draw the light field
+    this.field.clear();
+    if ( this.source.active ) {
+      this.field.beginFill(0xAADDFF, 0.15).lineStyle(1, 0xFFFFFF, 0.5).drawShape(this.source.los).endFill();
+    }
 
-  /**
-   * Refresh the state of the light. Called when the disabled state or darkness conditions change.
-   */
-  #refreshState() {
-    this.alpha = this._getTargetAlpha();
+    // Update control icon appearance
     this.refreshControl();
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Refresh the display of the ControlIcon for this AmbientSound source.
+   * Refresh the display of the ControlIcon for this AmbientSound source
    */
   refreshControl() {
     const isHidden = this.id && (this.document.hidden || !this.document.path);
@@ -216,7 +183,7 @@ class AmbientSound extends PlaceableObject {
     this.controlIcon.texture = getTexture(this.isAudible ? CONFIG.controlIcons.sound : CONFIG.controlIcons.soundOff);
     this.controlIcon.draw();
     this.controlIcon.visible = this.layer.active;
-    this.controlIcon.border.visible = this.hover || this.layer.highlightObjects;
+    this.controlIcon.border.visible = this.hover;
   }
 
   /* -------------------------------------------- */
@@ -224,33 +191,33 @@ class AmbientSound extends PlaceableObject {
   /**
    * Compute the field-of-vision for an object, determining its effective line-of-sight and field-of-vision polygons
    * @param {object} [options={}]   Options which modify how the audio source is updated
-   * @param {boolean} [options.defer]    Defer updating perception to manually update it later
+   * @param {boolean} [options.defer]    Defer refreshing the SoundsLayer to manually call that refresh later.
    * @param {boolean} [options.deleted]  Indicate that this SoundSource has been deleted.
    */
   updateSource({defer=false, deleted=false}={}) {
+    if ( !this.isAudible ) deleted = true;
 
     // Remove the audio source from the Scene
     if ( deleted ) {
+      this.source.active = false;
       this.layer.sources.delete(this.sourceId);
     }
 
     // Update the source and add it to the Scene
     else {
+      this.source.active = true;
       this.source.initialize({
         x: this.document.x,
         y: this.document.y,
         radius: Math.clamped(this.radius, 0, canvas.dimensions.maxR),
         walls: this.document.walls,
-        z: this.document.getFlag("core", "priority") ?? null,
-        disabled: !this.isAudible,
-        preview: this.isPreview
+        z: this.document.getFlag("core", "priority") ?? null
       });
       this.layer.sources.set(this.sourceId, this.source);
     }
 
     // Schedule a perception refresh, unless that operation is deferred for some later workflow
-    if ( !defer ) canvas.perception.update({refreshSounds: true});
-    if ( this.layer.active ) this.renderFlags.set({refreshField: true});
+    if ( !defer ) canvas.perception.update({refreshSounds: true}, true);
   }
 
   /* -------------------------------------------- */
@@ -258,53 +225,39 @@ class AmbientSound extends PlaceableObject {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onCreate(data, options, userId) {
-    super._onCreate(data, options, userId);
+  _onCreate(...args) {
+    super._onCreate(...args);
     this.updateSource();
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  _onUpdate(data, options, userId) {
-    super._onUpdate(data, options, userId);
-
-    // Change the Sound buffer
-    if ( "path" in data ) {
-      if ( this.sound ) this.sound.stop();
-      this.sound = this.#createSound();
-    }
-
-    // Re-initialize SoundSource
-    this.updateSource();
-
-    // Incremental Refresh
-    this.renderFlags.set({
-      refreshField: ["x", "y", "radius", "darkness", "walls"].some(k => k in data),
-      refreshState: ["path", "hidden", "darkness"].some(k => k in data)
-    });
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onDelete(options, userId) {
-    // Stop audio playback
+  _onUpdate(data, ...args) {
+    if ( "path" in data ) {
+      if ( this.sound ) this.sound.stop();
+      this.sound = this._createSound();
+    }
+    this.updateSource();
+    return super._onUpdate(data, ...args);
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  _onDelete(...args) {
+    super._onDelete(...args);
     if ( this.sound ) {
       if ( !this.sound.loaded && (this.sound.loading instanceof Promise) ) {
         this.sound.loading.then(() => this.sound.stop());
       }
       else this.sound.stop();
     }
-
-    // Decommission the SoundSource
     this.updateSource({deleted: true});
-
-    super._onDelete(options, userId);
   }
 
   /* -------------------------------------------- */
-  /*  Interactivity                               */
+  /*  Interaction Event Handlers                  */
   /* -------------------------------------------- */
 
   /** @inheritdoc */
@@ -312,41 +265,27 @@ class AmbientSound extends PlaceableObject {
     return user.isGM; // Allow GMs to single right-click
   }
 
-  /* -------------------------------------------- */
-
   /** @inheritdoc */
   _canConfigure(user, event) {
     return false; // Double-right does nothing
   }
 
-  /* -------------------------------------------- */
-
-  /** @override */
+  /** @inheritdoc */
   _onClickRight(event) {
     this.document.update({hidden: !this.document.hidden});
   }
 
-  /* -------------------------------------------- */
-
   /** @override */
   _onDragLeftMove(event) {
-    canvas._onDragCanvasPan(event);
-    const {clones, destination, origin} = event.interactionData;
+    const {clones, destination, origin, originalEvent} = event.data;
+    canvas._onDragCanvasPan(originalEvent);
     const dx = destination.x - origin.x;
     const dy = destination.y - origin.y;
     for ( let c of clones || [] ) {
       c.document.x = c._original.document.x + dx;
       c.document.y = c._original.document.y + dy;
       c.updateSource();
+      c.refresh();
     }
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  _onDragEnd() {
-    this.updateSource({deleted: true});
-    this._original?.updateSource();
-    super._onDragEnd();
   }
 }

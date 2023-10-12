@@ -7,6 +7,18 @@
  */
 
 /**
+ * @typedef {PointSourcePolygonConfig} ClockwiseSweepPolygonConfig
+ * @property {number} [density]  The desired density of padding rays, a number per PI
+ * @property {number} [externalRadius]  A secondary radius used in the case of a limited angle
+ * @property {number} [aMin]        The minimum angle of emission
+ * @property {number} [aMax]        The maximum angle of emission
+ * @property {boolean} [hasLimitedRadius] Does this polygon have a limited radius?
+ * @property {boolean} [hasLimitedAngle]  Does this polygon have a limited angle?
+ * @property {number} [radiusE]     A small epsilon used for avoiding floating point precision issues
+ * @property {boolean} [useInnerBounds] Whether to use the inner or outer bounding rectangle
+ */
+
+/**
  * @typedef {Ray} PolygonRay
  * @property {CollisionResult} result
  */
@@ -19,6 +31,12 @@
  * @extends PointSourcePolygon
  */
 class ClockwiseSweepPolygon extends PointSourcePolygon {
+
+  /**
+   * The configuration of this polygon.
+   * @type {ClockwiseSweepPolygonConfig}
+   */
+  config = {};
 
   /**
    * A mapping of vertices which define potential collision points
@@ -38,12 +56,6 @@ class ClockwiseSweepPolygon extends PointSourcePolygon {
    */
   rays = [];
 
-  /**
-   * The squared maximum distance of a ray that is needed for this Scene.
-   * @type {number}
-   */
-  #rayDistance2;
-
   /* -------------------------------------------- */
   /*  Initialization                              */
   /* -------------------------------------------- */
@@ -51,18 +63,49 @@ class ClockwiseSweepPolygon extends PointSourcePolygon {
   /** @inheritDoc */
   initialize(origin, config) {
     super.initialize(origin, config);
-    this.#rayDistance2 = Math.pow(canvas.dimensions.maxR, 2);
+    const cfg = this.config;
+    cfg.boundaryShapes ||= [];
+
+    // Configure origin
+    origin.x = Math.roundFast(origin.x);
+    origin.y = Math.roundFast(origin.y);
+
+    // Configure radius
+    cfg.hasLimitedRadius = cfg.radius > 0;
+    cfg.radius = cfg.radius ?? canvas.dimensions.maxR;
+    cfg.density = cfg.density ?? PIXI.Circle.approximateVertexDensity(cfg.radius);
+    cfg.rayDistance = Math.pow(canvas.dimensions.maxR, 2);
+    cfg.radiusE = 0.5 / cfg.radius;
+
+    // Configure angle
+    cfg.angle = cfg.angle ?? 360;
+    cfg.rotation = cfg.rotation ?? 0;
+    cfg.hasLimitedAngle = cfg.angle !== 360;
+
+    // Determine whether to use inner or outer bounds
+    cfg.useInnerBounds ??= (cfg.type === "sight") && canvas.dimensions.sceneRect.contains(origin.x, origin.y);
+
+    // Configure custom boundary shapes
+    if ( cfg.hasLimitedAngle ) this.#configureLimitedAngle();
+    else if ( cfg.hasLimitedRadius ) this.#configureLimitedRadius();
   }
 
   /* -------------------------------------------- */
 
-  /** @inheritDoc */
-  clone() {
-    const poly = super.clone();
-    for ( const attr of ["vertices", "edges", "rays", "#rayDistance2"] ) { // Shallow clone only
-      poly[attr] = this[attr];
-    }
-    return poly;
+  /**
+   * Configure a limited angle and rotation into a triangular polygon boundary shape.
+   */
+  #configureLimitedAngle() {
+    this.config.boundaryShapes.push(new LimitedAnglePolygon(this.origin, this.config));
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Configure a provided limited radius as a circular polygon boundary shape.
+   */
+  #configureLimitedRadius() {
+    this.config.boundaryShapes.push(new PIXI.Circle(this.origin.x, this.origin.y, this.config.radius));
   }
 
   /* -------------------------------------------- */
@@ -115,6 +158,70 @@ class ClockwiseSweepPolygon extends PointSourcePolygon {
       edge._isBoundary = true;
       this.edges.add(edge);
     }
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Get the super-set of walls which could potentially apply to this polygon.
+   * Define a custom collision test used by the Quadtree to obtain candidate Walls.
+   * @returns {Set<Wall>}
+   * @protected
+   */
+  _getWalls() {
+    const bounds = this.config.boundingBox = this._defineBoundingBox();
+    const collisionTest = (o, rect) => this._testWallInclusion(o.t, rect);
+    return canvas.walls.quadtree.getObjects(bounds, { collisionTest });
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Compute the aggregate bounding box which is the intersection of all boundary shapes.
+   * Round and pad the resulting rectangle by 1 pixel to ensure it always contains the origin.
+   * @returns {PIXI.Rectangle}
+   * @protected
+   */
+  _defineBoundingBox() {
+    let b = this.config.useInnerBounds ? canvas.dimensions.sceneRect : canvas.dimensions.rect;
+    for ( const shape of this.config.boundaryShapes ) {
+      b = b.intersection(shape.getBounds());
+    }
+    return new PIXI.Rectangle(b.x, b.y, b.width, b.height).normalize().ceil().pad(1);
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Test whether a wall should be included in the computed polygon for a given origin and type
+   * @param {Wall} wall         The Wall being considered
+   * @param {PIXI.Rectangle} bounds   The overall bounding box
+   * @returns {boolean}         Should the wall be included?
+   * @protected
+   */
+  _testWallInclusion(wall, bounds) {
+    const {type, boundaryShapes} = this.config;
+
+    // First test for inclusion in our overall bounding box
+    if ( !bounds.lineSegmentIntersects(wall.A, wall.B, { inside: true }) ) return false;
+
+    // Specific boundary shapes may impose additional requirements
+    for ( const shape of boundaryShapes ) {
+      if ( shape._includeEdge && !shape._includeEdge(wall.A, wall.B) ) return false;
+    }
+
+    // Ignore walls which are nearly collinear with the origin, except for movement
+    const side = wall.orientPoint(this.origin);
+    if ( (type !== "move") && !side ) return false;
+
+    // Always include interior walls underneath active roof tiles
+    if ( (type === "sight") && wall.hasActiveRoof ) return true;
+
+    // Otherwise, ignore walls that are not blocking for this polygon type
+    else if ( !wall.document[type] || wall.isOpen ) return false;
+
+    // Ignore one-directional walls which are facing away from the origin
+    return !wall.document.dir || (side !== wall.document.dir);
   }
 
   /* -------------------------------------------- */
@@ -188,6 +295,9 @@ class ClockwiseSweepPolygon extends PointSourcePolygon {
         if ( this.vertices.has(v.key) ) v = this.vertices.get(v.key);
         else this.vertices.set(v.key, v);
 
+        // If the intersection is with a boundary edge, truncate the edge
+        if ( other._isBoundary && !v.edges.has(edge) ) this._truncateBoundaryEdge(edge, v);
+
         // Attach edges to the intersection vertex
         // Due to rounding, it is possible for an edge to be completely cw or ccw or only one of the two
         // We know from _identifyVertices that vertex B is clockwise of vertex A for every edge
@@ -203,6 +313,35 @@ class ClockwiseSweepPolygon extends PointSourcePolygon {
         }
       }
       processed.add(edge);
+    }
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Truncate an edge which intersects with a boundary by replacing one of its vertices with the intersection point.
+   * @param {PolygonEdge} edge      The edge which intersects with the boundary
+   * @param {PolygonVertex} v       The vertex of the intersection point
+   * @private
+   */
+  _truncateBoundaryEdge(edge, v) {
+    let replaceA = !this.config.boundingBox.contains(edge.A.x, edge.A.y);
+    let replaceB = !this.config.boundingBox.contains(edge.B.x, edge.B.y);
+    if ( replaceA && replaceB ) { // If both vertices are outside, we need to recover which to replace
+      const da = Math.pow(v.x - edge.A.x, 2) + Math.pow(v.y - edge.A.y, 2);
+      const db = Math.pow(v.x - edge.B.x, 2) + Math.pow(v.y - edge.B.y, 2);
+      if ( da < db ) replaceB = false;
+      else replaceA = false;
+    }
+    if ( replaceA ) {
+      this.vertices.delete(edge.A.key);
+      edge.A = v;
+      v.attachEdge(edge, -1);
+    }
+    else if ( replaceB ) {
+      this.vertices.delete(edge.B.key);
+      edge.B = v;
+      v.attachEdge(edge, 1);
     }
   }
 
@@ -278,7 +417,7 @@ class ClockwiseSweepPolygon extends PointSourcePolygon {
    * @private
    */
   _initializeActiveEdges() {
-    const initial = {x: Math.round(this.origin.x - this.#rayDistance2), y: this.origin.y};
+    const initial = {x: Math.roundFast(this.origin.x - this.config.rayDistance), y: this.origin.y};
     const edges = new Set();
     for ( let edge of this.edges ) {
       const x = foundry.utils.lineSegmentIntersects(this.origin, initial, edge.A, edge.B);
@@ -433,7 +572,7 @@ class ClockwiseSweepPolygon extends PointSourcePolygon {
     const origin = this.origin;
 
     // Construct the ray from the origin
-    const ray = Ray.towardsPointSquared(origin, result.target, this.#rayDistance2);
+    const ray = Ray.towardsPointSquared(origin, result.target, this.config.rayDistance);
     ray.result = result;
     this.rays.push(ray); // For visualization and debugging
 
@@ -526,6 +665,25 @@ class ClockwiseSweepPolygon extends PointSourcePolygon {
   }
 
   /* -------------------------------------------- */
+  /*  Polygon Construction                        */
+  /* -------------------------------------------- */
+
+  /**
+   * Constrain polygon points by applying boundary shapes.
+   * @private
+   */
+  _constrainBoundaryShapes() {
+    const {density, boundaryShapes} = this.config;
+    if ( (this.points.length < 6) || !boundaryShapes.length ) return;
+    let constrained = this;
+    const intersectionOptions = {density, scalingFactor: 100};
+    for ( const c of boundaryShapes ) {
+      constrained = c.intersectPolygon(constrained, intersectionOptions);
+    }
+    this.points = constrained.points;
+  }
+
+  /* -------------------------------------------- */
   /*  Collision Testing                           */
   /* -------------------------------------------- */
 
@@ -550,7 +708,7 @@ class ClockwiseSweepPolygon extends PointSourcePolygon {
     for ( const edge of this.edges ) {
       const x = foundry.utils.lineSegmentIntersection(this.origin, ray.B, edge.A, edge.B);
       if ( !x || (x.t0 <= 0) ) continue;
-      if ( (mode === "any") && (!edge.isLimited || collisions.size) ) return true;
+      if ( (mode === "any") && ((edge.type === CONST.WALL_SENSE_TYPES.NORMAL) || collisions.size) ) return true;
       let c = PolygonVertex.fromPoint(x, {distance: x.t0});
       if ( collisions.has(c.key) ) c = collisions.get(c.key);
       else collisions.set(c.key, c);
@@ -590,9 +748,7 @@ class ClockwiseSweepPolygon extends PointSourcePolygon {
     const limitColors = {
       [CONST.WALL_SENSE_TYPES.NONE]: 0x77E7E8,
       [CONST.WALL_SENSE_TYPES.NORMAL]: 0xFFFFBB,
-      [CONST.WALL_SENSE_TYPES.LIMITED]: 0x81B90C,
-      [CONST.WALL_SENSE_TYPES.PROXIMITY]: 0xFFFFBB,
-      [CONST.WALL_SENSE_TYPES.DISTANCE]: 0xFFFFBB
+      [CONST.WALL_SENSE_TYPES.LIMITED]: 0x81B90C
     };
 
     // Draw boundary shapes
@@ -629,7 +785,6 @@ class ClockwiseSweepPolygon extends PointSourcePolygon {
         }
       }
     }
-    return dg;
   }
 
   /* -------------------------------------------- */
@@ -646,9 +801,7 @@ class ClockwiseSweepPolygon extends PointSourcePolygon {
     const limitColors = {
       [CONST.WALL_SENSE_TYPES.NONE]: 0x77E7E8,
       [CONST.WALL_SENSE_TYPES.NORMAL]: 0xFFFFBB,
-      [CONST.WALL_SENSE_TYPES.LIMITED]: 0x81B90C,
-      [CONST.WALL_SENSE_TYPES.PROXIMITY]: 0xFFFFBB,
-      [CONST.WALL_SENSE_TYPES.DISTANCE]: 0xFFFFBB
+      [CONST.WALL_SENSE_TYPES.LIMITED]: 0x81B90C
     };
 
     // Draw edges

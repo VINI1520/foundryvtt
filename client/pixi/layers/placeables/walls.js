@@ -113,6 +113,7 @@ class WallsLayer extends PlaceablesLayer {
     this.#defineBoundaries();
     this.chain = this.addChildAt(new PIXI.Graphics(), 0);
     this.last = {point: null};
+    this.highlightControlledSegments();
   }
 
   /* -------------------------------------------- */
@@ -230,6 +231,45 @@ class WallsLayer extends PlaceablesLayer {
 
   /* -------------------------------------------- */
 
+  /**
+   * Test whether movement along a given Ray collides with a Wall.
+   * @param {Ray} ray                             The attempted movement
+   * @param {object} [options={}]                 Options which customize how collision is tested.
+   *                                              These options are passed to PointSourcePolygon.testCollision
+   */
+  checkCollision(ray, options={}) {
+    return CONFIG.Canvas.losBackend.testCollision(ray.A, ray.B, options);
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Highlight the endpoints of Wall segments which are currently group-controlled on the Walls layer
+   */
+  highlightControlledSegments() {
+    if ( !this.chain ) return;
+    const drawn = new Set();
+    const c = this.chain.clear();
+
+    // Determine circle radius and line width
+    let lw = 2;
+    if ( canvas.dimensions.size > 150 ) lw = 4;
+    else if ( canvas.dimensions.size > 100 ) lw = 3;
+    const cr = lw * 2;
+    let cr2 = cr * 2;
+    let cr4 = cr * 4;
+
+    for ( let p of this.controlled ) {
+      let p1 = p.coords.slice(0, 2);
+      if ( !drawn.has(p1.join(".")) ) c.lineStyle(cr, 0xFF9829).drawRoundedRect(p1[0] - cr2, p1[1] - cr2, cr4, cr4, cr);
+      let p2 = p.coords.slice(2);
+      if ( !drawn.has(p2.join(".")) ) c.lineStyle(cr, 0xFF9829).drawRoundedRect(p2[0] - cr2, p2[1] - cr2, cr4, cr4, cr);
+      c.lineStyle(cr2, 0xFF9829).moveTo(...p1).lineTo(...p2);
+    }
+  }
+
+  /* -------------------------------------------- */
+
   /** @inheritdoc */
   releaseAll(options) {
     if ( this.chain ) this.chain.clear();
@@ -289,8 +329,8 @@ class WallsLayer extends PlaceablesLayer {
 
     // Throttle panning by 20ms
     const now = Date.now();
-    if ( now - (event.interactionData.panTime || 0) <= 100 ) return;
-    event.interactionData.panTime = now;
+    if ( now - (event.data.panTime || 0) <= 100 ) return;
+    event.data.panTime = now;
 
     // Determine the amount of shifting required
     const pad = 50;
@@ -315,12 +355,12 @@ class WallsLayer extends PlaceablesLayer {
   /* -------------------------------------------- */
 
   /**
-   * Get the wall endpoint coordinates for a given point.
-   * @param {Point} point                    The candidate wall endpoint.
-   * @param {object} [options]
-   * @param {boolean} [options.snap=true]    Snap to the grid?
-   * @returns {[x: number, y: number]}       The wall endpoint coordinates.
-   * @internal
+   * Get the endpoint coordinates for a wall placement, snapping to grid at a specified precision
+   * Require snap-to-grid until a redesign of the wall chaining system can occur.
+   * @param {Object} point          The initial candidate point
+   * @param {boolean} [snap=true]   Whether to snap to grid
+   * @return {number[]}             The endpoint coordinates [x,y]
+   * @private
    */
   _getWallEndpointCoordinates(point, {snap=true}={}) {
     if ( snap ) point = canvas.grid.getSnappedPosition(point.x, point.y, this.gridPrecision);
@@ -360,11 +400,6 @@ class WallsLayer extends PlaceablesLayer {
         wallData.door = CONST.WALL_DOOR_TYPES.DOOR; break;
       case "secret":
         wallData.door = CONST.WALL_DOOR_TYPES.SECRET; break;
-      case "window":
-        const d = canvas.dimensions.distance;
-        wallData.sight = wallData.light = CONST.WALL_SENSE_TYPES.PROXIMITY;
-        wallData.threshold = {light: 2 * d, sight: 2 * d, attenuation: true};
-        break;
     }
     return wallData;
   }
@@ -375,14 +410,12 @@ class WallsLayer extends PlaceablesLayer {
 
   /** @inheritdoc */
   _onDragLeftStart(event) {
-    this.clearPreviewContainer();
-    const interaction = event.interactionData;
-    const origin = interaction.origin;
-    interaction.wallsState = WallsLayer.CREATION_STATES.NONE;
+    const { origin, originalEvent } = event.data;
+    event.data.createState = WallsLayer.CREATION_STATES.NONE;
 
     // Create a pending WallDocument
     const data = this._getWallDataFromActiveTool(game.activeTool);
-    const snap = this._forceSnap || !event.shiftKey;
+    const snap = this._forceSnap || !originalEvent.shiftKey;
     const isChain = this._chain || game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.CONTROL);
     const pt = (isChain && this.last.point) ? this.last.point : this._getWallEndpointCoordinates(origin, {snap});
     data.c = pt.concat(pt);
@@ -391,8 +424,8 @@ class WallsLayer extends PlaceablesLayer {
 
     // Create the preview Wall object
     const wall = new this.constructor.placeableClass(doc);
-    interaction.wallsState = WallsLayer.CREATION_STATES.POTENTIAL;
-    interaction.preview = wall;
+    event.data.createState = WallsLayer.CREATION_STATES.POTENTIAL;
+    event.data.preview = this.preview.addChild(wall);
     return wall.draw();
   }
 
@@ -400,66 +433,52 @@ class WallsLayer extends PlaceablesLayer {
 
   /** @inheritdoc */
   _onDragLeftMove(event) {
-    const interaction = event.interactionData;
-    const {preview, destination} = interaction;
+    const { destination, preview } = event.data;
     const states = WallsLayer.CREATION_STATES;
-    if ( !preview || preview._destroyed
-      || [states.NONE, states.COMPLETED].includes(interaction.wallsState) ) return;
-    if ( preview.parent === null ) this.preview.addChild(preview); // Should happen the first time it is moved
-    preview.document.updateSource({
-      c: preview.document.c.slice(0, 2).concat([destination.x, destination.y])
-    });
+    if ( !preview || preview._destroyed || [states.NONE, states.COMPLETED].includes(event.data.createState) ) return;
+    if ( preview.parent === null ) { // In theory this should never happen, but rarely does
+      this.preview.addChild(preview);
+    }
+    preview.document.c = preview.document.c.slice(0, 2).concat([destination.x, destination.y]);
     preview.refresh();
-    interaction.wallsState = WallsLayer.CREATION_STATES.CONFIRMED;
+    event.data.createState = WallsLayer.CREATION_STATES.CONFIRMED;
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
   async _onDragLeftDrop(event) {
-    const interaction = event.interactionData;
-    const {wallsState, destination, preview} = interaction;
-    const states = WallsLayer.CREATION_STATES;
-
-    // Check preview and state
-    if ( !preview || preview._destroyed || (interaction.wallsState === states.NONE) ) {
-      return this._onDragLeftCancel(event);
-    }
+    const { createState, destination, originalEvent, preview } = event.data;
 
     // Prevent default to allow chaining to continue
     if ( game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.CONTROL) ) {
-      event.preventDefault();
+      originalEvent.preventDefault();
       this._chain = true;
-      if ( wallsState < WallsLayer.CREATION_STATES.CONFIRMED ) return;
+      if ( createState < WallsLayer.CREATION_STATES.CONFIRMED ) return;
     } else this._chain = false;
 
     // Successful wall completion
-    if ( wallsState === WallsLayer.CREATION_STATES.CONFIRMED ) {
-      interaction.wallsState = WallsLayer.CREATION_STATES.COMPLETED;
+    if ( createState === WallsLayer.CREATION_STATES.CONFIRMED ) {
+      event.data.createState = WallsLayer.CREATION_STATES.COMPLETED;
 
       // Get final endpoint location
-      const snap = this._forceSnap || !event.shiftKey;
+      const snap = this._forceSnap || !originalEvent.shiftKey;
       let dest = this._getWallEndpointCoordinates(destination, {snap});
       const coords = preview.document.c.slice(0, 2).concat(dest);
-      preview.document.updateSource({c: coords});
+      preview.document.c = coords;
 
       // Ignore walls which are collapsed
-      if ( (coords[0] === coords[2]) && (coords[1] === coords[3]) ) return this._onDragLeftCancel(event);
-
-      event.interactionData.clearPreviewContainer = false;
+      if ( (coords[0] === coords[2]) && (coords[1] === coords[3]) ) return this._onDragLeftCancel(originalEvent);
 
       // Create the Wall
       this.last = {point: dest};
       const cls = getDocumentClass(this.constructor.documentName);
-      try {
-        await cls.create(preview.document.toObject(), {parent: canvas.scene});
-      } finally {
-        this.clearPreviewContainer();
-      }
+      await cls.create(preview.document.toObject(false), {parent: canvas.scene});
+      this.preview.removeChild(preview);
 
       // Maybe chain
       if ( this._chain ) {
-        interaction.origin = {x: dest[0], y: dest[1]};
+        event.data.origin = {x: dest[0], y: dest[1]};
         return this._onDragLeftStart(event);
       }
     }
@@ -474,7 +493,6 @@ class WallsLayer extends PlaceablesLayer {
   _onDragLeftCancel(event) {
     this._chain = false;
     this.last = {point: null};
-    event.interactionData.clearPreviewContainer = true;
     super._onDragLeftCancel(event);
   }
 
@@ -482,42 +500,17 @@ class WallsLayer extends PlaceablesLayer {
 
   /** @inheritdoc */
   _onClickRight(event) {
-    if ( event.interactionData.wallsState > WallsLayer.CREATION_STATES.NONE ) return this._onDragLeftCancel(event);
+    if ( event.data.createState > WallsLayer.CREATION_STATES.NONE ) return this._onDragLeftCancel(event);
   }
 
   /* -------------------------------------------- */
   /*  Deprecations and Compatibility              */
   /* -------------------------------------------- */
 
-  /**
-   * @deprecated since v10
-   * @ignore
-   */
   get boundaries() {
     const msg = "WallsLayer#boundaries is deprecated in favor of WallsLayer#outerBounds and WallsLayer#innerBounds";
     foundry.utils.logCompatibilityWarning(msg, {since: 10, until: 12});
     return new Set(this.outerBounds);
-  }
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  checkCollision(ray, options={}) {
-    const msg = "WallsLayer#checkCollision is obsolete."
-      + "Prefer calls to testCollision from CONFIG.Canvas.polygonBackends[type]";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return CONFIG.Canvas.losBackend.testCollision(ray.A, ray.B, options);
-  }
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  highlightControlledSegments() {
-    foundry.utils.logCompatibilityWarning("The WallsLayer#highlightControlledSegments function is deprecated in favor"
-      + "of calling wall.renderFlags.set(\"refreshHighlight\") on individual Wall objects", {since: 11, until: 13});
-    for ( const w of this.placeables ) w.renderFlags.set({refreshHighlight: true});
   }
 }
 

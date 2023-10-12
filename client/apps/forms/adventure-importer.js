@@ -1,5 +1,9 @@
 /**
  * An interface for importing an adventure from a compendium pack.
+ *
+ * ### Hook Events
+ * {@link hookEvents.preImportAdventure} emitted by AdventureImporter#_updateObject
+ * {@link hookEvents.importAdventure} emitted by AdventureImporter#_updateObject
  */
 class AdventureImporter extends DocumentSheet {
 
@@ -35,35 +39,8 @@ class AdventureImporter extends DocumentSheet {
   async getData(options={}) {
     return {
       adventure: this.adventure,
-      contents: this._getContentList(),
-      imported: !!game.settings.get("core", "adventureImports")?.[this.adventure.uuid]
+      contents: this._getContentList()
     };
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  activateListeners(html) {
-    super.activateListeners(html);
-    html.find('[value="all"]').on("change", this._onToggleImportAll.bind(this));
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle toggling the import all checkbox.
-   * @param {Event} event  The change event.
-   * @protected
-   */
-  _onToggleImportAll(event) {
-    const target = event.currentTarget;
-    const section = target.closest(".import-controls");
-    const checked = target.checked;
-    section.querySelectorAll("input").forEach(input => {
-      if ( input === target ) return;
-      if ( input.value !== "folders" ) input.disabled = checked;
-      if ( checked ) input.checked = true;
-    });
   }
 
   /* -------------------------------------------- */
@@ -80,7 +57,7 @@ class AdventureImporter extends DocumentSheet {
       arr.push({
         icon: CONFIG[cls.documentName].sidebarIcon,
         label: game.i18n.localize(count > 1 ? cls.metadata.labelPlural : cls.metadata.label),
-        count, field
+        count
       });
       return arr;
     }, []);
@@ -99,32 +76,6 @@ class AdventureImporter extends DocumentSheet {
 
   /** @override */
   async _updateObject(event, formData) {
-
-    // Backwards compatibility. If the AdventureImporter subclass defines _prepareImportData or _importContent
-    /** @deprecated since v11 */
-    const prepareImportDefined = foundry.utils.getDefiningClass(this, "_prepareImportData");
-    const importContentDefined = foundry.utils.getDefiningClass(this, "_importContent");
-    if ( (prepareImportDefined !== AdventureImporter) || (importContentDefined !== AdventureImporter) ) {
-      const warning = `The ${this.name} class overrides the AdventureImporter#_prepareImportData or 
-      AdventureImporter#_importContent methods. As such a legacy import workflow will be used, but this workflow is 
-      deprecated. Your importer should now call the new Adventure#import, Adventure#prepareImport, 
-      or Adventure#importContent methods.`;
-      foundry.utils.logCompatibilityWarning(warning, {since: 11, until: 13});
-      return this._importLegacy(formData);
-    }
-
-    // Perform the standard Adventure import workflow
-    return this.adventure.import(formData);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Mirror Adventure#import but call AdventureImporter#_importContent and AdventureImport#_prepareImportData
-   * @deprecated since v11
-   * @ignore
-   */
-  async _importLegacy(formData) {
 
     // Prepare the content for import
     const {toCreate, toUpdate, documentCount} = await this._prepareImportData(formData);
@@ -156,28 +107,70 @@ class AdventureImporter extends DocumentSheet {
   }
 
   /* -------------------------------------------- */
-  /*  Deprecations                                */
-  /* -------------------------------------------- */
 
   /**
-   * @deprecated since v11
-   * @ignore
+   * Categorize data which requires import as new document creations or updates to existing documents.
+   * @param {object} formData   Processed options from the importer form
+   * @returns {Promise<{toCreate: Object<object[]>, toUpdate: Object<object[]>, documentCount: number}>}
+   * @protected
    */
   async _prepareImportData(formData) {
-    foundry.utils.logCompatibilityWarning("AdventureImporter#_prepareImportData is deprecated. "
-      + "Please use Adventure#prepareImport instead.", {since: 11, until: 13});
-    return this.adventure.prepareImport(formData);
+    const adventureData = this.adventure.toObject();
+    const toCreate = {};
+    const toUpdate = {};
+    let documentCount = 0;
+    for ( const [field, cls] of Object.entries(Adventure.contentFields) ) {
+      const collection = game.collections.get(cls.documentName);
+      const [c, u] = adventureData[field].partition(d => collection.has(d._id));
+      if ( c.length ) {
+        toCreate[cls.documentName] = c;
+        documentCount += c.length;
+      }
+      if ( u.length ) {
+        toUpdate[cls.documentName] = u;
+        documentCount += u.length;
+      }
+    }
+    return {toCreate, toUpdate, documentCount};
   }
 
   /* -------------------------------------------- */
 
   /**
-   * @deprecated since v11
-   * @ignore
+   * Perform database operations to import content into the World.
+   * @param {Object<object[]>} toCreate     Adventure data to be created
+   * @param {Object<object[]>} toUpdate     Adventure data to be updated
+   * @param {number} documentCount          The total number of Documents being modified
+   * @returns {Promise<{created: Object<Document[]>, updated: Object<Document[]>}>} The created and updated Documents
+   * @protected
    */
   async _importContent(toCreate, toUpdate, documentCount) {
-    foundry.utils.logCompatibilityWarning("AdventureImporter#_importContent is deprecated. "
-      + "Please use Adventure#importContent instead.", {since: 11, until: 13});
-    return this.adventure.importContent({ toCreate, toUpdate, documentCount });
+    const created = {};
+    const updated = {};
+
+    // Display importer progress
+    const importMessage = game.i18n.localize("ADVENTURE.ImportProgress");
+    let nImported = 0;
+    SceneNavigation.displayProgressBar({label: importMessage, pct: 1});
+
+    // Create new documents
+    for ( const [documentName, createData] of Object.entries(toCreate) ) {
+      const cls = getDocumentClass(documentName);
+      const c = await cls.createDocuments(createData, {keepId: true, keepEmbeddedId: true, renderSheet: false});
+      created[documentName] = c;
+      nImported += c.length;
+      SceneNavigation.displayProgressBar({label: importMessage, pct: Math.floor(nImported * 100 / documentCount)});
+    }
+
+    // Update existing documents
+    for ( const [documentName, updateData] of Object.entries(toUpdate) ) {
+      const cls = getDocumentClass(documentName);
+      const u = await cls.updateDocuments(updateData, {diff: false, recursive: false, noHook: true});
+      updated[documentName] = u;
+      nImported += u.length;
+      SceneNavigation.displayProgressBar({label: importMessage, pct: Math.floor(nImported * 100 / documentCount)});
+    }
+    SceneNavigation.displayProgressBar({label: importMessage, pct: 100});
+    return {created, updated};
   }
 }

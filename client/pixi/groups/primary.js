@@ -9,7 +9,7 @@ class PrimaryCanvasGroup extends BaseCanvasMixin(CachedContainer) {
   constructor(sprite) {
     sprite ||= new SpriteMesh(undefined, BaseSamplerShader);
     super(sprite);
-    this.eventMode = "none";
+    this.interactive = this.interactiveChildren = false;
     this.tokensRenderTexture =
       this.createRenderTexture({renderFunction: this._renderTokens.bind(this), clearColor: [0, 0, 0, 0]});
   }
@@ -50,12 +50,6 @@ class PrimaryCanvasGroup extends BaseCanvasMixin(CachedContainer) {
    * @type {SpriteMesh}
    */
   foreground;
-
-  /**
-   * A Quadtree which partitions and organizes primary canvas objects.
-   * @type {CanvasQuadtree}
-   */
-  quadtree = new CanvasQuadtree();
 
   /**
    * The collection of PrimaryDrawingContainer objects which are rendered in the Scene.
@@ -131,7 +125,7 @@ class PrimaryCanvasGroup extends BaseCanvasMixin(CachedContainer) {
   refreshPrimarySpriteMesh() {
     const singleSource = canvas.effects.visibility.visionModeData.source;
     const vmOptions = singleSource?.visionMode.canvas;
-    const isBaseSampler = (this.sprite.shader.constructor === BaseSamplerShader);
+    const isBaseSampler = (this.sprite.shader.constructor.name === BaseSamplerShader.name);
 
     if ( !vmOptions && isBaseSampler ) return;
 
@@ -161,10 +155,13 @@ class PrimaryCanvasGroup extends BaseCanvasMixin(CachedContainer) {
    * @returns {Promise<void>}
    */
   async draw() {
+    // Initialize clear color for this cached container
     this.clearColor = [...canvas.colors.sceneBackground.rgb, 1];
-    this.quadtree.clear();
+
+    // Draw special meshes
     this.#drawBackground();
     this.#drawForeground();
+
     await super.draw();
   }
 
@@ -177,7 +174,7 @@ class PrimaryCanvasGroup extends BaseCanvasMixin(CachedContainer) {
     const bg = this.background = this.addChild(new SpriteMesh());
     bg.elevation = this.constructor.BACKGROUND_ELEVATION;
     bg.sort = -9999999999;
-    const tex = canvas.sceneTextures.background ?? getTexture(canvas.scene.background.src);
+    const tex = getTexture(canvas.scene.background.src);
     this.#drawSceneMesh(this.background, tex);
   }
 
@@ -188,16 +185,9 @@ class PrimaryCanvasGroup extends BaseCanvasMixin(CachedContainer) {
    */
   #drawForeground() {
     const fg = this.foreground = this.addChild(new SpriteMesh());
-    fg.visible = false;
-    const tex = canvas.sceneTextures.foreground ?? getTexture(canvas.scene.foreground);
-    if ( !tex ) return;
-
-    // Configure visibility and ordering
-    fg.visible = true;
     fg.elevation = canvas.scene.foregroundElevation;
     fg.sort = -9999999999;
-
-    // Compare dimensions with background texture and draw the mesh
+    const tex = getTexture(canvas.scene.foreground);
     const bg = this.background.texture;
     if ( tex && bg && ((tex.width !== bg.width) || (tex.height !== bg.height)) ) {
       ui.notifications.warn("WARNING.ForegroundDimensionsMismatch", {localize: true});
@@ -267,12 +257,12 @@ class PrimaryCanvasGroup extends BaseCanvasMixin(CachedContainer) {
    * @returns {TokenMesh}     The added TokenMesh
    */
   addToken(token) {
-    let mesh = this.tokens.get(token.objectId);
+    let mesh = this.tokens.get(token.sourceId);
     if ( !mesh ) mesh = this.addChild(new TokenMesh(token));
     else mesh.object = token;
-    mesh.anchor.set(0.5, 0.5);
     mesh.texture = token.texture ?? PIXI.Texture.EMPTY;
-    this.tokens.set(token.objectId, mesh);
+    mesh.anchor.set(0.5, 0.5);
+    this.tokens.set(token.sourceId, mesh);
     if ( mesh.isVideo ) this.videoMeshes.add(mesh);
     return mesh;
   }
@@ -284,10 +274,10 @@ class PrimaryCanvasGroup extends BaseCanvasMixin(CachedContainer) {
    * @param {Token} token     The Token being removed
    */
   removeToken(token) {
-    const mesh = this.tokens.get(token.objectId);
+    const mesh = this.tokens.get(token.sourceId);
     if ( mesh ) {
       this.removeChild(mesh);
-      this.tokens.delete(token.objectId);
+      this.tokens.delete(token.sourceId);
       this.videoMeshes.delete(mesh);
       if ( !mesh._destroyed ) mesh.destroy({children: true});
     }
@@ -304,9 +294,11 @@ class PrimaryCanvasGroup extends BaseCanvasMixin(CachedContainer) {
    */
   addTile(tile) {
     let mesh = this.tiles.get(tile.objectId);
-    mesh?.destroy();
-    const cls = tile.document.getFlag("core", "isTilingSprite") ? TileSprite : TileMesh;
-    mesh = this.addChild(new cls(tile));
+    if ( !mesh ) {
+      const cls = tile.document.getFlag("core", "isTilingSprite") ? TileSprite : TileMesh;
+      mesh = this.addChild(new cls(tile));
+    }
+    else mesh.object = tile;
     mesh.texture = tile.texture ?? PIXI.Texture.EMPTY;
     mesh.anchor.set(0.5, 0.5);
     this.tiles.set(tile.objectId, mesh);
@@ -366,17 +358,21 @@ class PrimaryCanvasGroup extends BaseCanvasMixin(CachedContainer) {
   /* -------------------------------------------- */
 
   /**
-   * Map an elevation value to a depth value with the right precision.
+   * Map a zIndex to an elevation ratio to draw as an intensity to the occlusion mask.
    * @param {number} elevation      A current elevation (or zIndex) in distance units.
-   * @returns {number}              The depth value for this elevation on the range [1/255, 1]
+   * @returns {number}              The color intensity for this elevation on the range [0.19, 1.0]
    */
-  mapElevationToDepth(elevation) {
+  mapElevationAlpha(elevation) {
     const {min, max} = this.#elevation;
-    if ( elevation < min ) return 1 / 255;
-    if ( elevation > max ) return 1;
-    const pct = (elevation - min) / (max - min) || 0;
-    const depth = (Math.round(pct * 252) + 2) / 255;
-    return depth;
+    if ( min === max ) {
+      if ( elevation < max ) return 0.19;
+      else if ( elevation > max ) return 1;
+      return 0.5;
+    }
+    if ( elevation < min ) return 0.19;
+    const pct = Math.clamped((elevation - min) / (max - min), 0, 1);
+    const alpha = 0.2 + (0.8 * pct);
+    return (alpha || 0).toNearest(1 / 255);
   }
 
   /* -------------------------------------------- */
@@ -388,35 +384,14 @@ class PrimaryCanvasGroup extends BaseCanvasMixin(CachedContainer) {
   sortChildren() {
     this.#elevation.min = Infinity;
     this.#elevation.max = -Infinity;
-
-    // Test objects that should render their depth
-    let minElevation = 0;
-    let maxElevation = 1;
     for ( let i=0; i<this.children.length; i++ ) {
       const child = this.children[i];
       child._lastSortedIndex = i;
       const elevation = child.elevation || 0;
-
-      // We do not take into account an infinite value
       if ( elevation === Infinity ) continue;
-
-      // Save min and max elevation of all placeable with finite values
-      minElevation = Math.min(minElevation, elevation);
-      maxElevation = Math.max(maxElevation, elevation);
-
-      // If the children is not rendering its depth, do not count it
-      if ( !child.shouldRenderDepth ) continue;
-
-      // Assign elevation to min/max
       if ( elevation < this.#elevation.min ) this.#elevation.min = elevation;
       if ( elevation > this.#elevation.max ) this.#elevation.max = elevation;
     }
-
-    // Handle Infinity/-Infinity special case for min/max
-    // If the above computation does not lead to finite values, we're using the finite "bounds" for min/max
-    if ( !Number.isFinite(this.#elevation.min) ) this.#elevation.min = minElevation;
-    if ( !Number.isFinite(this.#elevation.max) ) this.#elevation.max = maxElevation;
-
     this.children.sort(PrimaryCanvasGroup._sortObjects);
     this.sortDirty = false;
   }
@@ -426,7 +401,7 @@ class PrimaryCanvasGroup extends BaseCanvasMixin(CachedContainer) {
   /**
    * The sorting function used to order objects inside the Primary Canvas Group.
    * Overrides the default sorting function defined for the PIXI.Container.
-   * Sort TokenMesh above other objects except WeatherEffects, then DrawingShape, all else held equal.
+   * Sort TokenMesh above other objects, then DrawingShape, all else held equal.
    * @param {PrimaryCanvasObject|PIXI.DisplayObject} a     An object to display
    * @param {PrimaryCanvasObject|PIXI.DisplayObject} b     Some other object to display
    * @returns {number}
@@ -434,22 +409,9 @@ class PrimaryCanvasGroup extends BaseCanvasMixin(CachedContainer) {
    */
   static _sortObjects(a, b) {
     return ((a.elevation || 0) - (b.elevation || 0))
-      || (a.constructor.PRIMARY_SORT_ORDER || 0) - (b.constructor.PRIMARY_SORT_ORDER || 0)
+      || (a instanceof TokenMesh) - (b instanceof TokenMesh)
+      || (a instanceof DrawingShape) - (b instanceof DrawingShape)
       || ((a.sort || 0) - (b.sort || 0))
       || (a._lastSortedIndex || 0) - (b._lastSortedIndex || 0);
-  }
-
-  /* -------------------------------------------- */
-  /*  Deprecations and Compatibility              */
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  mapElevationAlpha(elevation) {
-    const msg = "PrimaryCanvasGroup#mapElevationAlpha is deprecated in favor of PrimaryCanvasGroup#mapElevationToDepth";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return this.mapElevationToDepth(elevation);
   }
 }

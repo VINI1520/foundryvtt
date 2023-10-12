@@ -4,8 +4,8 @@
 const startupMessages = [];
 const nodeVer = process.versions.node;
 startupMessages.push({level: "info", message: `Running on Node.js - Version ${nodeVer}`});
-if (nodeVer.split(".").shift() < 16) {
-  console.error(`Foundry Virtual Tabletop requires Node.js version 16.x or greater.`);
+if (nodeVer.split(".").shift() < 14) {
+  console.error(`Foundry Virtual Tabletop requires Node.js version 14.x or greater.`);
   process.exit(1);
 }
 

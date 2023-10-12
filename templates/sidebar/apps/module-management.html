@@ -24,14 +24,9 @@
                 <label class="package-title checkbox">
                     <input type="checkbox" class="active" name="{{this.id}}" data-dtype="Boolean" {{checked this.active}}
                            {{#if this.disabled}} disabled {{/if}}/>
-                    <div class="title-group">
-                        <div class="title">{{~this.title~}}</div>
-                        {{#if this.documents}}
-                            <div class="subtitle">{{{this.documents}}}</div>
-                        {{/if}}
-                    </div>
+                    {{~this.title~}}
                 </label>
-                {{> templates/setup/parts/package-tags.hbs versionLabel="PACKAGE.TagVersion" package=this }}
+                {{> templates/setup/parts/package-tags.html versionLabel="PACKAGE.TagVersion" package=this }}
             </div>
             <div class="package-description" >
                 {{{this.description}}}

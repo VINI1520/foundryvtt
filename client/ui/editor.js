@@ -111,7 +111,8 @@ class TextEditor {
    * @property {boolean} [rolls=true]         Replace inline dice rolls?
    * @property {object|Function} [rollData]   The data object providing context for inline rolls, or a function that
    *                                          produces it.
-   * @property {boolean} [async=true]         Perform the operation asynchronously returning a Promise
+   * @property {boolean} [async=false]        Perform the operation asynchronously, receiving a Promise as the returned
+   *                                          value. This will become the default behaviour in v11.
    * @property {ClientDocument} [relativeTo]  A document to resolve relative UUIDs against.
    */
 
@@ -122,15 +123,16 @@ class TextEditor {
    * @returns {string|Promise<string>}             The enriched HTML content
    */
   static enrichHTML(content, options={}) {
-    let {secrets=false, documents=true, links=true, rolls=true, async=true, rollData} = options;
+    let {secrets=false, documents=true, links=true, rolls=true, async, rollData} = options;
     /**
      * @deprecated since v10
      */
     if ( async === undefined ) {
-      foundry.utils.logCompatibilityWarning("TextEditor.enrichHTML is becoming asynchronous. You may pass async=false"
-        + " to temporarily preserve the prior behavior.", {since: 10, until: 12});
-      async = true;
+      foundry.utils.logCompatibilityWarning("TextEditor.enrichHTML is becoming asynchronous. In the short term you may "
+        + "pass async=true or async=false as an option to nominate your preferred behavior.", {since: 10, until: 12});
+      async = false;
     }
+
     if ( !content?.length ) return async ? Promise.resolve("") : "";
 
     // Create the HTML element
@@ -334,12 +336,7 @@ class TextEditor {
     for ( let t of text ) {
       const matches = t.textContent.matchAll(rgx);
       for ( let match of Array.from(matches).reverse() ) {
-        let result;
-        try {
-          result = func(match);
-        } catch ( err ) {
-          Hooks.onError("TextEditor.enrichHTML", err, { log: "error" });
-        }
+        let result = func(match);
         // TODO: This logic can be simplified/replaced entirely with await once enrichHTML becomes fully async.
         // We can't mix promises and non-promises.
         if ( promises.length && !(result instanceof Promise) ) result = Promise.resolve(result);
@@ -351,10 +348,8 @@ class TextEditor {
       }
     }
     if ( promises.length ) {
-      return Promise.allSettled(promises).then(results => results.reduce((replaced, settled) => {
-        if ( settled.status === "rejected" ) Hooks.onError("TextEditor.enrichHTML", settled.reason, { log: "error" });
-        if ( !settled.value ) return replaced;
-        const [text, match, result] = settled.value;
+      return Promise.all(promises).then(results => results.reduce((replaced, [text, match, result]) => {
+        if ( !result ) return replaced;
         this._replaceTextNode(text, match, result);
         return true;
       }, replaced));
@@ -414,10 +409,10 @@ class TextEditor {
     let broken = false;
     if ( type === "UUID" ) {
       data.dataset = {id: null, uuid: target};
-      if ( async ) doc = fromUuid(target, {relative: relativeTo});
+      if ( async ) doc = fromUuid(target, relativeTo);
       else {
         try {
-          doc = fromUuidSync(target, {relative: relativeTo});
+          doc = fromUuidSync(target, relativeTo);
         } catch(err) {
           [type, ...target] = target.split(".");
           broken = TextEditor._createLegacyContentLink(type, target.join("."), name, data);
@@ -486,7 +481,7 @@ class TextEditor {
       // Get the linked Document
       const config = CONFIG[type];
       const collection = game.collections.get(type);
-      const document = foundry.data.validators.isValidId(target) ? collection.get(target) : collection.getName(target);
+      const document = /^[a-zA-Z0-9]{16}$/.test(target) ? collection.get(target) : collection.getName(target);
       if ( !document ) broken = true;
 
       // Update link data
@@ -516,7 +511,7 @@ class TextEditor {
       let [scope, packName, id] = target.split(".");
       const pack = game.packs.get(`${scope}.${packName}`);
       if ( pack ) {
-        data.dataset = {pack: pack.collection, uuid: pack.getUuid(id)};
+        data.dataset = {pack: pack.collection, uuid: `Compendium.${pack.collection}.${id}`};
         data.icon = CONFIG[pack.documentName].sidebarIcon;
 
         // If the pack is indexed, retrieve the data
@@ -525,7 +520,7 @@ class TextEditor {
           if ( index ) {
             if ( !data.name ) data.name = index.name;
             data.dataset.id = index._id;
-            data.dataset.uuid = index.uuid;
+            data.dataset.uuid = `Compendium.${pack.collection}.${index._id}`;
           }
           else broken = true;
         }
@@ -709,8 +704,8 @@ class TextEditor {
         if ( entry ) id = entry._id;
       }
       if ( !a.dataset.uuid && !id ) return false;
-      const uuid = a.dataset.uuid || pack.getUuid(id);
-      dragData = { type: a.dataset.type || pack.documentName, uuid };
+      const uuid = a.dataset.uuid || `Compendium.${pack.collection}.${id}`;
+      dragData = { type: pack.documentName, uuid };
     }
 
     // Case 2 - World Document Link

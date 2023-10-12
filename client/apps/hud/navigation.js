@@ -70,25 +70,30 @@ class SceneNavigation extends Application {
 
   /** @inheritdoc */
   getData(options={}) {
+
+    // Modify Scene data
     const scenes = this.scenes.map(scene => {
-      return {
-        id: scene.id,
-        active: scene.active,
-        name: TextEditor.truncateText(scene.navName || scene.name, {maxLength: 32}),
-        tooltip: scene.navName && game.user.isGM ? scene.name : null,
-        users: game.users.reduce((arr, u) => {
-          if ( u.active && ( u.viewedScene === scene.id) ) arr.push({letter: u.name[0], color: u.color});
-          return arr;
-        }, []),
-        visible: game.user.isGM || scene.isOwner || scene.active,
-        css: [
-          scene.isView ? "view" : null,
-          scene.active ? "active" : null,
-          scene.ownership.default === 0 ? "gm" : null
-        ].filterJoin(" ")
-      };
+      let data = scene.toObject(false);
+      let users = game.users.filter(u => u.active && (u.viewedScene === scene.id));
+      data.name = TextEditor.truncateText(data.navName || data.name, {maxLength: 32});
+      data.tooltip = data.navName && game.user.isGM ? scene.name : null;
+      data.users = users.map(u => {
+        return {letter: u.name[0], color: u.color};
+      });
+      data.visible = (game.user.isGM || scene.isOwner || scene.active);
+      data.css = [
+        scene.isView ? "view" : null,
+        scene.active ? "active" : null,
+        data.ownership.default === 0 ? "gm" : null
+      ].filter(c => !!c).join(" ");
+      return data;
     });
-    return {collapsed: this._collapsed, scenes: scenes};
+
+    // Return data for rendering
+    return {
+      collapsed: this._collapsed,
+      scenes: scenes
+    };
   }
 
   /* -------------------------------------------- */
@@ -159,6 +164,14 @@ class SceneNavigation extends Application {
 
     // Activate Context Menu
     const contextOptions = this._getContextMenuOptions();
+    /**
+     * A hook event that fires when the context menu for a SceneNavigation
+     * entry is constructed.
+     * @function getSceneNavigationContext
+     * @memberof hookEvents
+     * @param {jQuery} html                     The HTML element to which the context options are attached
+     * @param {ContextMenuEntry[]} entryOptions The context menu entries
+     */
     Hooks.call("getSceneNavigationContext", html, contextOptions);
     if ( contextOptions ) new ContextMenu(html, ".scene", contextOptions);
   }

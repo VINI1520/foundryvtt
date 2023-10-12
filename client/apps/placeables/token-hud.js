@@ -84,9 +84,9 @@ class TokenHUD extends BasePlaceableHUD {
       visibilityClass: data.hidden ? "active" : "",
       effectsClass: this._statusEffects ? "active" : "",
       combatClass: this.object.inCombat ? "active" : "",
-      targetClass: this.object.targeted.has(game.user) ? "active" : ""
+      targetClass: this.object.targeted.has(game.user) ? "active" : "",
     });
-    data.statusEffects = this._getStatusEffectChoices(data);
+    data.statusEffects =this._getStatusEffectChoices(data);
     return data;
   }
 
@@ -102,9 +102,13 @@ class TokenHUD extends BasePlaceableHUD {
 
     // Get statuses which are active for the token actor
     const actor = token.actor || null;
-    const statuses = actor ? actor.effects.reduce((obj, effect) => {
-      for ( const id of effect.statuses ) {
-        obj[id] = {id, overlay: !!effect.getFlag("core", "overlay")};
+    const statuses = actor ? actor.effects.reduce((obj, e) => {
+      const id = e.getFlag("core", "statusId");
+      if ( id ) {
+        obj[id] = {
+          id: id,
+          overlay: !!e.getFlag("core", "overlay")
+        };
       }
       return obj;
     }, {}) : {};
@@ -118,11 +122,9 @@ class TokenHUD extends BasePlaceableHUD {
       const status = statuses[e.id] || {};
       const isActive = !!status.id || doc.effects.includes(src);
       const isOverlay = !!status.overlay || doc.overlayEffect === src;
-      /** @deprecated since v11 */
-      const label = e.name ?? e.label;
       obj[src] = {
         id: e.id ?? "",
-        title: label ? game.i18n.localize(label) : null,
+        title: e.label ? game.i18n.localize(e.label) : null,
         src,
         isActive,
         isOverlay,
@@ -245,7 +247,8 @@ class TokenHUD extends BasePlaceableHUD {
    */
   async _onToggleCombat(event) {
     event.preventDefault();
-    return this.object.toggleCombat();
+    await this.object.toggleCombat();
+    event.currentTarget.classList.toggle("active", this.object.inCombat);
   }
 
   /* -------------------------------------------- */
@@ -275,7 +278,6 @@ class TokenHUD extends BasePlaceableHUD {
 
   /**
    * Assign css selectors for the active state of the status effects selection palette
-   * @param {boolean} active      Should the effects menu be active?
    * @private
    */
   _toggleStatusEffects(active) {
@@ -290,9 +292,6 @@ class TokenHUD extends BasePlaceableHUD {
 
   /**
    * Handle toggling a token status effect icon
-   * @param {PointerEvent} event      The click event to toggle the effect
-   * @param {object} [options]        Options which modify the toggle
-   * @param {boolean} [options.overlay]   Toggle the overlay effect?
    * @private
    */
   _onToggleEffect(event, {overlay=false}={}) {
@@ -309,7 +308,6 @@ class TokenHUD extends BasePlaceableHUD {
 
   /**
    * Handle toggling the target state for this Token
-   * @param {PointerEvent} event      The click event to toggle the target
    * @private
    */
   _onToggleTarget(event) {

@@ -44,11 +44,10 @@ class BaseCards extends Document {
     name: "Cards",
     collection: "cards",
     indexed: true,
-    compendiumIndexFields: ["_id", "name", "description", "img", "type", "sort", "folder"],
+    compendiumIndexFields: ["_id", "name", "img", "type", "sort"],
     embedded: {Card: "cards"},
     label: "DOCUMENT.Cards",
     labelPlural: "DOCUMENT.CardsPlural",
-    permissions: {create: "CARDS_CREATE"},
     coreTypes: ["deck", "hand", "pile"]
   }, {inplace: false}), "types", {
     get: () => {
@@ -63,14 +62,14 @@ class BaseCards extends Document {
   static defineSchema() {
     return {
       _id: new fields.DocumentIdField(),
-      name: new fields.StringField({required: true, blank: false, label: "CARDS.Name", textSearch: true}),
+      name: new fields.StringField({required: true, blank: false, label: "CARDS.Name"}),
       type: new fields.StringField({required: true, label: "CARDS.Type", choices: () => this.TYPES,
         initial: () => this.TYPES[0],
         validationError: "The Cards type must be in the array of types supported by the game system"}),
-      description: new fields.HTMLField({label: "CARDS.Description", textSearch: true}),
+      description: new fields.HTMLField({label: "CARDS.Description"}),
       img: new fields.FilePathField({categories: ["IMAGE", "VIDEO"], initial: () => this.DEFAULT_ICON,
         label: "CARDS.Image"}),
-      system: new fields.TypeDataField(this),
+      system: new fields.SystemDataField(this),
       cards: new fields.EmbeddedCollectionField(documents.BaseCard),
       width: new fields.NumberField({integer: true, positive: true, label: "Width"}),
       height: new fields.NumberField({integer: true, positive: true, label: "Height"}),
@@ -95,7 +94,7 @@ class BaseCards extends Document {
    * @type {string[]}
    */
   static get TYPES() {
-    return game.documentTypes.Cards;
+    return game.documentTypes?.Cards || [];
   }
 
   /* -------------------------------------------- */

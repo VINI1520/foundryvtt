@@ -114,12 +114,7 @@ class BaseGrid extends PIXI.Container {
    * @private
    */
   _testShape(x, y, shape) {
-    for ( let dx = -0.5; dx <= 0.5; dx += 0.5 ) {
-      for ( let dy = -0.5; dy <= 0.5; dy += 0.5 ) {
-        if ( shape.contains(x + dx, y + dy) ) return true;
-      }
-    }
-    return false;
+    return shape.contains(x, y);
   }
 
   /* -------------------------------------------- */
@@ -178,7 +173,7 @@ class BaseGrid extends PIXI.Container {
    * Always round down to the nearest grid position so the pixels are within the grid space (from top-left).
    * @param {number} x    The x-coordinate pixel position
    * @param {number} y    The y-coordinate pixel position
-   * @returns {number[]}  An array representing the position in grid units
+   * @return {number[]}   An array representing the position in grid units
    */
   getGridPositionFromPixels(x, y) {
     return [x, y].map(Math.round);
@@ -191,7 +186,7 @@ class BaseGrid extends PIXI.Container {
    * Always round up to a whole pixel so the pixel is within the grid space (from top-left).
    * @param {number} x    The x-coordinate grid position
    * @param {number} y    The y-coordinate grid position
-   * @returns {number[]}  An array representing the position in pixels
+   * @return {number[]}   An array representing the position in pixels
    */
   getPixelsFromGridPosition(x, y) {
     return [x, y].map(Math.round);

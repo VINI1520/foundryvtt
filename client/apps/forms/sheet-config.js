@@ -31,10 +31,16 @@ class DocumentSheetConfig extends FormApplication {
 
   /** @inheritDoc */
   getData(options={}) {
-    const {sheetClasses, defaultClasses, defaultClass} = this.constructor.getSheetClassesForSubType(
-      this.object.documentName,
-      this.object.type || CONST.BASE_DOCUMENT_TYPE
-    );
+    const config = CONFIG[this.object.documentName];
+    const type = this.object.type || CONST.BASE_DOCUMENT_TYPE;
+    let defaultClass = null;
+
+    // Classes which can be chosen
+    const classes = Object.values(config.sheetClasses[type]).reduce((obj, c) => {
+      obj[c.id] = c.label;
+      if ( c.default && !defaultClass ) defaultClass = c.id;
+      return obj;
+    }, {});
 
     // Return data
     return {
@@ -42,8 +48,9 @@ class DocumentSheetConfig extends FormApplication {
       object: this.object.toObject(),
       options: this.options,
       sheetClass: this.object.getFlag("core", "sheetClass") ?? "",
-      blankLabel: game.i18n.localize("SHEETS.DefaultSheet"),
-      sheetClasses, defaultClass, defaultClasses
+      sheetClasses: classes,
+      defaultClass: defaultClass,
+      blankLabel: game.i18n.localize("SHEETS.DefaultSheet")
     };
   }
 
@@ -53,44 +60,31 @@ class DocumentSheetConfig extends FormApplication {
   async _updateObject(event, formData) {
     event.preventDefault();
     const original = this.getData({});
-    const defaultSheetChanged = formData.defaultClass !== original.defaultClass;
-    const documentSheetChanged = formData.sheetClass !== original.sheetClass;
+
+    // De-register the current sheet class
+    const sheet = this.object.sheet;
+    await sheet.close();
+    this.object._sheet = null;
+    delete this.object.apps?.[sheet.appId];
 
     // Update world settings
-    if ( game.user.isGM && defaultSheetChanged ) {
+    if ( game.user.isGM && (formData.defaultClass !== original.defaultClass) ) {
       const setting = game.settings.get("core", "sheetClasses") || {};
       const type = this.object.type || CONST.BASE_DOCUMENT_TYPE;
       foundry.utils.mergeObject(setting, {[`${this.object.documentName}.${type}`]: formData.defaultClass});
       await game.settings.set("core", "sheetClasses", setting);
-
-      // Trigger a sheet change manually if it wouldn't be triggered by the normal ClientDocument#_onUpdate workflow.
-      if ( !documentSheetChanged ) return this.object._onSheetChange({ sheetOpen: true });
     }
 
     // Update the document-specific override
-    if ( documentSheetChanged ) return this.object.setFlag("core", "sheetClass", formData.sheetClass);
-  }
+    if ( formData.sheetClass !== original.sheetClass ) {
+      await this.object.setFlag("core", "sheetClass", formData.sheetClass);
+    }
 
-  /* -------------------------------------------- */
+    // Re-draw the updated sheet
+    this.object.sheet.render(true);
 
-  /**
-   * Marshal information on the available sheet classes for a given document type and sub-type, and format it for
-   * display.
-   * @param {string} documentName  The Document type.
-   * @param {string} subType       The Document sub-type.
-   * @returns {{sheetClasses: object, defaultClasses: object, defaultClass: string}}
-   */
-  static getSheetClassesForSubType(documentName, subType) {
-    const config = CONFIG[documentName];
-    const defaultClasses = {};
-    let defaultClass = null;
-    const sheetClasses = Object.values(config.sheetClasses[subType]).reduce((obj, cfg) => {
-      if ( cfg.canConfigure ) obj[cfg.id] = cfg.label;
-      if ( cfg.default && !defaultClass ) defaultClass = cfg.id;
-      if ( cfg.canConfigure && cfg.canBeDefault ) defaultClasses[cfg.id] = cfg.label;
-      return obj;
-    }, {});
-    return {sheetClasses, defaultClasses, defaultClass};
+    // Re-draw the parent sheet in case of a dependency on the child sheet.
+    if ( this.object.parent?.sheet?.rendered ) this.object.parent.sheet.render(true);
   }
 
   /* -------------------------------------------- */
@@ -128,7 +122,8 @@ class DocumentSheetConfig extends FormApplication {
 
   static _getDocumentTypes(cls, types=[]) {
     if ( types.length ) return types;
-    return game.documentTypes[cls.documentName];
+    const systemTypes = game.documentTypes?.[cls.documentName];
+    return systemTypes?.length ? systemTypes : [CONST.BASE_DOCUMENT_TYPE];
   }
 
   /* -------------------------------------------- */
@@ -136,21 +131,16 @@ class DocumentSheetConfig extends FormApplication {
   /**
    * Register a sheet class as a candidate which can be used to display documents of a given type
    * @param {typeof ClientDocument} documentClass  The Document class for which to register a new Sheet option
-   * @param {string} scope                         Provide a unique namespace scope for this sheet
-   * @param {typeof DocumentSheet} sheetClass      A defined Application class used to render the sheet
-   * @param {object} [config]                      Additional options used for sheet registration
-   * @param {string|Function} [config.label]       A human-readable label for the sheet name, which will be localized
-   * @param {string[]} [config.types]              An array of document types for which this sheet should be used
-   * @param {boolean} [config.makeDefault=false]   Whether to make this sheet the default for provided types
-   * @param {boolean} [config.canBeDefault=true]   Whether this sheet is available to be selected as a default sheet for
-   *                                               all Documents of that type.
-   * @param {boolean} [config.canConfigure=true]   Whether this sheet appears in the sheet configuration UI for users.
+   * @param {string} scope                     Provide a unique namespace scope for this sheet
+   * @param {typeof DocumentSheet} sheetClass  A defined Application class used to render the sheet
+   * @param {object} options                   Additional options used for sheet registration
+   * @param {string|Function} [options.label]  A human-readable label for the sheet name, which will be localized
+   * @param {string[]} [options.types]         An array of document types for which this sheet should be used
+   * @param {boolean} [options.makeDefault]    Whether to make this sheet the default for provided types
    */
-  static registerSheet(documentClass, scope, sheetClass, {
-    label, types, makeDefault=false, canBeDefault=true, canConfigure=true
-  }={}) {
+  static registerSheet(documentClass, scope, sheetClass, {label, types, makeDefault=false}={}) {
     const id = `${scope}.${sheetClass.name}`;
-    const config = {documentClass, id, label, sheetClass, types, makeDefault, canBeDefault, canConfigure};
+    const config = {documentClass, id, label, sheetClass, types, makeDefault};
     if ( game.ready ) this.#registerSheet(config);
     else {
       config.action = "register";
@@ -160,19 +150,16 @@ class DocumentSheetConfig extends FormApplication {
 
   /**
    * Perform the sheet registration.
-   * @param {object} config                               Configuration for how the sheet should be registered
+   * @param {object} config       Configuration for how the sheet should be un-registered
    * @param {typeof ClientDocument} config.documentClass  The Document class being registered
    * @param {string} config.id                            The sheet ID being registered
    * @param {string} config.label                         The human-readable sheet label
    * @param {typeof DocumentSheet} config.sheetClass      The sheet class definition being registered
    * @param {object[]} config.types                       An array of types for which this sheet is added
    * @param {boolean} config.makeDefault                  Make this sheet the default for provided types?
-   * @param {boolean} config.canBeDefault                 Whether this sheet is available to be selected as a default
-   *                                                      sheet for all Documents of that type.
-   * @param {boolean} config.canConfigure                 Whether the sheet appears in the sheet configuration UI for
-   *                                                      users.
+   * @private
    */
-  static #registerSheet({documentClass, id, label, sheetClass, types, makeDefault, canBeDefault, canConfigure}={}) {
+  static #registerSheet({documentClass, id, label, sheetClass, types, makeDefault}={}) {
     types = this._getDocumentTypes(documentClass, types);
     const classes = CONFIG[documentClass.documentName]?.sheetClasses;
     const defaults = game.ready ? game.settings.get("core", "sheetClasses") : {};
@@ -186,7 +173,7 @@ class DocumentSheetConfig extends FormApplication {
       else if ( label ) label = game.i18n.localize(label);
       else label = id;
       classes[t][id] = {
-        id, label, canBeDefault, canConfigure,
+        id, label,
         cls: sheetClass,
         default: isDefault
       };
@@ -198,10 +185,9 @@ class DocumentSheetConfig extends FormApplication {
   /**
    * Unregister a sheet class, removing it from the list of available Applications to use for a Document type
    * @param {typeof ClientDocument} documentClass  The Document class for which to register a new Sheet option
-   * @param {string} scope                         Provide a unique namespace scope for this sheet
-   * @param {typeof DocumentSheet} sheetClass      A defined DocumentSheet subclass used to render the sheet
-   * @param {object} [config]
-   * @param {object[]} [config.types]              An Array of types for which this sheet should be removed
+   * @param {string} scope                Provide a unique namespace scope for this sheet
+   * @param {typeof DocumentSheet} sheetClass  A defined DocumentSheet subclass used to render the sheet
+   * @param {object[]} types             An Array of types for which this sheet should be removed
    */
   static unregisterSheet(documentClass, scope, sheetClass, {types}={}) {
     const id = `${scope}.${sheetClass.name}`;
@@ -215,10 +201,11 @@ class DocumentSheetConfig extends FormApplication {
 
   /**
    * Perform the sheet de-registration.
-   * @param {object} config                               Configuration for how the sheet should be un-registered
+   * @param {object} config       Configuration for how the sheet should be un-registered
    * @param {typeof ClientDocument} config.documentClass  The Document class being unregistered
    * @param {string} config.id                            The sheet ID being unregistered
    * @param {object[]} config.types                       An array of types for which this sheet is removed
+   * @private
    */
   static #unregisterSheet({documentClass, id, types}={}) {
     types = this._getDocumentTypes(documentClass, types);

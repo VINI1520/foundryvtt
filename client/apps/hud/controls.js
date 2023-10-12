@@ -8,7 +8,6 @@
  * @property {boolean} active
  * @property {boolean} button
  * @property {Function} onClick
- * @property {ToolclipConfiguration} toolclip  Configuration for rendering the tool's toolclip.
  */
 
 /**
@@ -20,21 +19,6 @@
  * @property {boolean} visible
  * @property {SceneControlTool[]} tools
  * @property {string} activeTool
- */
-
-/**
- * @typedef {object} ToolclipConfiguration
- * @property {string} src                         The filename of the toolclip video.
- * @property {string} heading                     The heading string.
- * @property {ToolclipConfigurationItem[]} items  The items in the toolclip body.
- */
-
-/**
- * @typedef {object} ToolclipConfigurationItem
- * @property {string} [paragraph]  A plain paragraph of content for this item.
- * @property {string} [heading]    A heading for the item.
- * @property {string} [content]    Content for the item.
- * @property {string} [reference]  If the item is a single key reference, use this instead of content.
  */
 
 /**
@@ -145,41 +129,36 @@ class SceneControls extends Application {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  async getData(options={}) {
-    const showToolclips = game.settings.get("core", "showToolclips");
+  getData(options={}) {
     const canvasActive = !!canvas.scene;
-    const controls = [];
-    for ( const c of this.controls ) {
-      if ( c.visible === false ) continue;
-      const control = foundry.utils.deepClone(c);
+    const controls = this.controls.filter(s => s.visible !== false).map(control => {
+
+      // Control data
+      control = foundry.utils.deepClone(control);
       control.isActive = canvasActive && (this.#control === control.name);
       control.css = control.isActive ? "active" : "";
-      control.tools = [];
 
-      for ( const t of c.tools ) {
-        if ( t.visible === false ) continue;
-        const tool = foundry.utils.deepClone(t);
+      // Tool data
+      control.tools = control.tools.filter(t => t.visible !== false).map(tool => {
+        tool = foundry.utils.deepClone(tool);
         tool.isActive = canvasActive && ((this.#tools[control.name] === tool.name) || (tool.toggle && tool.active));
         tool.css = [
           tool.toggle ? "toggle" : null,
           tool.isActive ? "active" : null
-        ].filterJoin(" ");
-        tool.tooltip = showToolclips && tool.toolclip
-          ? await renderTemplate("templates/hud/toolclip.html", tool.toolclip)
-          : tool.title;
-        control.tools.push(tool);
-      }
-
-      if ( control.tools.length ) controls.push(control);
-    }
+        ].filter(t => !!t).join(" ");
+        return tool;
+      });
+      return control;
+    });
 
     // Return data for rendering
     return {
-      controls,
       active: canvasActive,
-      cssClass: canvasActive ? "" : "disabled"
+      cssClass: canvasActive ? "" : "disabled",
+      controls: controls.filter(s => s.tools.length)
     };
   }
+
 
   /* -------------------------------------------- */
   /*  Event Listeners and Handlers                */
@@ -257,32 +236,6 @@ class SceneControls extends Application {
   _getControlButtons() {
     const controls = [];
     const isGM = game.user.isGM;
-    const clip = game.settings.get("core", "showToolclips") ? "Clip" : "";
-    const commonControls = {
-      create: { heading: "CONTROLS.CommonCreate", reference: "CONTROLS.ClickDrag" },
-      move: { heading: "CONTROLS.CommonMove", reference: "CONTROLS.Drag" },
-      edit: { heading: "CONTROLS.CommonEdit", reference: "CONTROLS.DoubleClick" },
-      editAlt: { heading: "CONTROLS.CommonEdit", reference: "CONTROLS.DoubleRightClick" },
-      sheet: { heading: "CONTROLS.CommonOpenSheet", reference: "CONTROLS.DoubleClick" },
-      hide: { heading: "CONTROLS.CommonHide", reference: "CONTROLS.RightClick" },
-      delete: { heading: "CONTROLS.CommonDelete", reference: "CONTROLS.Delete" },
-      rotate: { heading: "CONTROLS.CommonRotate", content: "CONTROLS.ShiftOrCtrlScroll" },
-      select: { heading: "CONTROLS.CommonSelect", reference: "CONTROLS.Click" },
-      selectAlt: { heading: "CONTROLS.CommonSelect", content: "CONTROLS.ClickOrClickDrag" },
-      selectMultiple: { heading: "CONTROLS.CommonSelectMultiple", reference: "CONTROLS.ShiftClick" },
-      hud: { heading: "CONTROLS.CommonToggleHUD", reference: "CONTROLS.RightClick" },
-      draw: { heading: "CONTROLS.CommonDraw", reference: "CONTROLS.ClickDrag" },
-      place: { heading: "CONTROLS.CommonPlace", reference: "CONTROLS.ClickDrag" },
-      chain: { heading: "CONTROLS.CommonChain", content: "CONTROLS.ChainCtrlClick" },
-      movePoint: { heading: "CONTROLS.CommonMovePoint", reference: "CONTROLS.ClickDrag" },
-      openClose: { heading: "CONTROLS.CommonOpenClose", reference: "CONTROLS.Click" },
-      openCloseSilently: { heading: "CONTROLS.CommonOpenCloseSilently", reference: "CONTROLS.AltClick" },
-      lock: { heading: "CONTROLS.CommonLock", reference: "CONTROLS.RightClick" },
-      lockSilently: { heading: "CONTROLS.CommonLockSilently", reference: "CONTROLS.AltRightClick" },
-      onOff: { heading: "CONTROLS.CommonOnOff", reference: "CONTROLS.RightClick" }
-    };
-
-    const buildItems = (...items) => items.map(item => commonControls[item]);
 
     // Token Controls
     controls.push({
@@ -294,46 +247,17 @@ class SceneControls extends Application {
         {
           name: "select",
           title: "CONTROLS.BasicSelect",
-          icon: "fas fa-expand",
-          toolclip: {
-            src: "toolclips/tools/token-select.webm",
-            heading: "CONTROLS.BasicSelect",
-            items: [
-              { paragraph: "CONTROLS.BasicSelectP" },
-              ...buildItems("selectAlt", "selectMultiple", "move", "rotate", "hud", "sheet"),
-              ...(game.user.isGM ? buildItems("editAlt", "delete") : []),
-              { heading: "CONTROLS.BasicMeasureStart", reference: "CONTROLS.CtrlClickDrag" },
-              { heading: "CONTROLS.BasicMeasureWaypoints", reference: "CONTROLS.CtrlClick" },
-              { heading: "CONTROLS.BasicMeasureFollow", reference: "CONTROLS.Spacebar" }
-            ]
-          }
+          icon: "fas fa-expand"
         },
         {
           name: "target",
           title: "CONTROLS.TargetSelect",
-          icon: "fas fa-bullseye",
-          toolclip: {
-            src: "toolclips/tools/token-target.webm",
-            heading: "CONTROLS.TargetSelect",
-            items: [
-              { paragraph: "CONTROLS.TargetSelectP" },
-              ...buildItems("selectAlt", "selectMultiple")
-            ]
-          }
+          icon: "fas fa-bullseye"
         },
         {
           name: "ruler",
           title: "CONTROLS.BasicMeasure",
-          icon: "fas fa-ruler",
-          toolclip: {
-            src: "toolclips/tools/token-measure.webm",
-            heading: "CONTROLS.BasicMeasure",
-            items: [
-              { heading: "CONTROLS.BasicMeasureStart", reference: "CONTROLS.ClickDrag" },
-              { heading: "CONTROLS.BasicMeasureWaypoints", reference: "CONTROLS.CtrlClick" },
-              { heading: "CONTROLS.BasicMeasureFollow", reference: "CONTROLS.Spacebar" }
-            ]
-          }
+          icon: "fas fa-ruler"
         }
       ],
       activeTool: "select"
@@ -350,42 +274,22 @@ class SceneControls extends Application {
         {
           name: "circle",
           title: "CONTROLS.MeasureCircle",
-          icon: "fa-regular fa-circle",
-          toolclip: {
-            src: "toolclips/tools/measure-circle.webm",
-            heading: "CONTROLS.MeasureCircle",
-            items: buildItems("create", "move", "edit", "hide", "delete")
-          }
+          icon: "fa-regular fa-circle"
         },
         {
           name: "cone",
           title: "CONTROLS.MeasureCone",
-          icon: "fa-solid fa-angle-left",
-          toolclip: {
-            src: "toolclips/tools/measure-cone.webm",
-            heading: "CONTROLS.MeasureCone",
-            items: buildItems("create", "move", "edit", "hide", "delete", "rotate")
-          }
+          icon: "fa-solid fa-angle-left"
         },
         {
           name: "rect",
           title: "CONTROLS.MeasureRect",
-          icon: "fa-regular fa-square",
-          toolclip: {
-            src: "toolclips/tools/measure-rect.webm",
-            heading: "CONTROLS.MeasureRect",
-            items: buildItems("create", "move", "edit", "hide", "delete", "rotate")
-          }
+          icon: "fa-regular fa-square"
         },
         {
           name: "ray",
           title: "CONTROLS.MeasureRay",
-          icon: "fa-solid fa-arrows-alt-v",
-          toolclip: {
-            src: "toolclips/tools/measure-ray.webm",
-            heading: "CONTROLS.MeasureRay",
-            items: buildItems("create", "move", "edit", "hide", "delete", "rotate")
-          }
+          icon: "fa-solid fa-arrows-alt-v"
         },
         {
           name: "clear",
@@ -410,22 +314,12 @@ class SceneControls extends Application {
         {
           name: "select",
           title: "CONTROLS.TileSelect",
-          icon: "fa-solid fa-expand",
-          toolclip: {
-            src: "toolclips/tools/tile-select.webm",
-            heading: "CONTROLS.TileSelect",
-            items: buildItems("selectAlt", "selectMultiple", "move", "rotate", "hud", "edit", "delete")
-          }
+          icon: "fa-solid fa-expand"
         },
         {
           name: "tile",
           title: "CONTROLS.TilePlace",
-          icon: "fa-solid fa-cube",
-          toolclip: {
-            src: "toolclips/tools/tile-place.webm",
-            heading: "CONTROLS.TilePlace",
-            items: buildItems("create", "move", "rotate", "hud", "edit", "delete")
-          }
+          icon: "fa-solid fa-cube"
         },
         {
           name: "browse",
@@ -438,11 +332,6 @@ class SceneControls extends Application {
               displayMode: "tiles",
               tileSize: true
             }).render(true);
-          },
-          toolclip: {
-            src: "toolclips/tools/tile-browser.webm",
-            heading: "CONTROLS.TileBrowser",
-            items: buildItems("place", "move", "rotate", "hud", "edit", "delete")
           }
         },
         {
@@ -454,7 +343,7 @@ class SceneControls extends Application {
           onClick: active => {
             this.control.foreground = active;
             canvas.tiles._activateSubLayer(active);
-            canvas.perception.update({refreshLighting: true, refreshTiles: true});
+            canvas.perception.update({refreshLighting: true, refreshTiles: true}, true);
           }
         }
       ],
@@ -472,69 +361,32 @@ class SceneControls extends Application {
         {
           name: "select",
           title: "CONTROLS.DrawingSelect",
-          icon: "fa-solid fa-expand",
-          toolclip: {
-            src: "toolclips/tools/drawing-select.webm",
-            heading: "CONTROLS.DrawingSelect",
-            items: buildItems("selectAlt", "selectMultiple", "move", "hud", "edit", "delete", "rotate")
-          }
+          icon: "fa-solid fa-expand"
         },
         {
           name: "rect",
           title: "CONTROLS.DrawingRect",
-          icon: "fa-solid fa-square",
-          toolclip: {
-            src: "toolclips/tools/drawing-rect.webm",
-            heading: "CONTROLS.DrawingRect",
-            items: buildItems("draw", "move", "hud", "edit", "delete", "rotate")
-          }
+          icon: "fa-solid fa-square"
         },
         {
           name: "ellipse",
           title: "CONTROLS.DrawingEllipse",
-          icon: "fa-solid fa-circle",
-          toolclip: {
-            src: "toolclips/tools/drawing-ellipse.webm",
-            heading: "CONTROLS.DrawingEllipse",
-            items: buildItems("draw", "move", "hud", "edit", "delete", "rotate")
-          }
+          icon: "fa-solid fa-circle"
         },
         {
           name: "polygon",
           title: "CONTROLS.DrawingPoly",
-          icon: "fa-solid fa-draw-polygon",
-          toolclip: {
-            src: "toolclips/tools/drawing-polygon.webm",
-            heading: "CONTROLS.DrawingPoly",
-            items: [
-              { heading: "CONTROLS.CommonDraw", content: "CONTROLS.DrawingPolyP" },
-              ...buildItems("move", "hud", "edit", "delete", "rotate")
-            ]
-          }
+          icon: "fa-solid fa-draw-polygon"
         },
         {
           name: "freehand",
           title: "CONTROLS.DrawingFree",
-          icon: "fa-solid fa-signature",
-          toolclip: {
-            src: "toolclips/tools/drawing-free.webm",
-            heading: "CONTROLS.DrawingFree",
-            items: buildItems("draw", "move", "hud", "edit", "delete", "rotate")
-          }
+          icon: "fa-solid fa-signature"
         },
         {
           name: "text",
           title: "CONTROLS.DrawingText",
-          icon: "fa-solid fa-font",
-          onClick: () => {
-            const controlled = canvas.drawings.controlled;
-            if ( controlled.length === 1 ) controlled[0].enableTextEditing();
-          },
-          toolclip: {
-            src: "toolclips/tools/drawing-text.webm",
-            heading: "CONTROLS.DrawingText",
-            items: buildItems("draw", "move", "hud", "edit", "delete", "rotate")
-          }
+          icon: "fa-solid fa-font"
         },
         {
           name: "configure",
@@ -560,115 +412,43 @@ class SceneControls extends Application {
       name: "walls",
       title: "CONTROLS.GroupWall",
       layer: "walls",
-      icon: "fa-solid fa-block-brick",
+      icon: "fa-solid fa-university",
       visible: isGM,
       tools: [
         {
           name: "select",
           title: "CONTROLS.WallSelect",
-          icon: "fa-solid fa-expand",
-          toolclip: {
-            src: "toolclips/tools/wall-select.webm",
-            heading: "CONTROLS.WallSelect",
-            items: [
-              ...buildItems("selectAlt", "selectMultiple", "move"),
-              { heading: "CONTROLS.CommonMoveWithoutSnapping", reference: "CONTROLS.ShiftDrag" },
-              { heading: "CONTROLS.CommonEdit", content: "CONTROLS.WallSelectEdit" },
-              ...buildItems("delete")
-            ]
-          }
+          icon: "fa-solid fa-expand"
         },
         {
           name: "walls",
           title: "CONTROLS.WallDraw",
-          icon: "fa-solid fa-bars",
-          toolclip: {
-            src: "toolclips/tools/wall-basic.webm",
-            heading: "CONTROLS.WallBasic",
-            items: [
-              { heading: "CONTROLS.CommonBlocks", content: "CONTROLS.WallBasicBlocks" },
-              ...buildItems("place", "chain", "movePoint", "edit", "delete")
-            ]
-          }
+          icon: "fa-solid fa-bars"
         },
         {
           name: "terrain",
           title: "CONTROLS.WallTerrain",
-          icon: "fa-solid fa-mountain",
-          toolclip: {
-            src: "toolclips/tools/wall-terrain.webm",
-            heading: "CONTROLS.WallTerrain",
-            items: [
-              { heading: "CONTROLS.CommonBlocks", content: "CONTROLS.WallTerrainBlocks" },
-              ...buildItems("place", "chain", "movePoint", "edit", "delete")
-            ]
-          }
+          icon: "fa-solid fa-mountain"
         },
         {
           name: "invisible",
           title: "CONTROLS.WallInvisible",
-          icon: "fa-solid fa-eye-slash",
-          toolclip: {
-            src: "toolclips/tools/wall-invisible.webm",
-            heading: "CONTROLS.WallInvisible",
-            items: [
-              { heading: "CONTROLS.CommonBlocks", content: "CONTROLS.WallInvisibleBlocks" },
-              ...buildItems("place", "chain", "movePoint", "edit", "delete")
-            ]
-          }
+          icon: "fa-solid fa-eye-slash"
         },
         {
           name: "ethereal",
           title: "CONTROLS.WallEthereal",
-          icon: "fa-solid fa-mask",
-          toolclip: {
-            src: "toolclips/tools/wall-ethereal.webm",
-            heading: "CONTROLS.WallEthereal",
-            items: [
-              { heading: "CONTROLS.CommonBlocks", content: "CONTROLS.WallEtherealBlocks" },
-              ...buildItems("place", "chain", "movePoint", "edit", "delete")
-            ]
-          }
+          icon: "fa-solid fa-mask"
         },
         {
           name: "doors",
           title: "CONTROLS.WallDoors",
-          icon: "fa-solid fa-door-open",
-          toolclip: {
-            src: "toolclips/tools/wall-door.webm",
-            heading: "CONTROLS.WallDoors",
-            items: [
-              { heading: "CONTROLS.CommonBlocks", content: "CONTROLS.DoorBlocks" },
-              ...buildItems("openClose", "openCloseSilently", "lock", "lockSilently", "place", "chain", "movePoint", "edit")
-            ]
-          }
+          icon: "fa-solid fa-door-open"
         },
         {
           name: "secret",
           title: "CONTROLS.WallSecret",
-          icon: "fa-solid fa-user-secret",
-          toolclip: {
-            src: "toolclips/tools/wall-secret-door.webm",
-            heading: "CONTROLS.WallSecret",
-            items: [
-              { heading: "CONTROLS.WallSecretHidden", content: "CONTROLS.WallSecretHiddenP" },
-              { heading: "CONTROLS.CommonBlocks", content: "CONTROLS.DoorBlocks" },
-              ...buildItems("openClose", "openCloseSilently", "lock", "lockSilently", "place", "chain", "movePoint", "edit")
-            ]
-          }
-        },
-        {
-          name: "window",
-          title: "CONTROLS.WallWindow",
-          icon: "fa-solid fa-window-frame",
-          toolclip: {
-            src: "toolclips/tools/wall-window.webm",
-            heading: "CONTROLS.WallWindow",
-            items: [
-              { heading: "CONTROLS.CommonBlocks", content: "CONTROLS.WallWindowBlocks" },
-              ...buildItems("place", "chain", "movePoint", "edit", "delete")
-            ]
-          }
+          icon: "fa-solid fa-user-secret"
         },
         {
           name: "clone",
@@ -681,28 +461,7 @@ class SceneControls extends Application {
           icon: "fa-solid fa-plus",
           toggle: true,
           active: canvas.walls?._forceSnap || false,
-          onClick: toggled => canvas.walls._forceSnap = toggled,
-          toolclip: {
-            src: "toolclips/tools/wall-snap.webm",
-            heading: "CONTROLS.WallSnap",
-            items: [{ heading: "CONTROLS.WallSnapH", content: "CONTROLS.WallSnapP" }]
-          }
-        },
-        {
-          name: "close-doors",
-          title: "CONTROLS.WallCloseDoors",
-          icon: "fa-regular fa-door-closed",
-          onClick: () => {
-            let updates = canvas.walls.placeables.reduce((arr, w) => {
-              if ( w.isDoor && (w.document.ds === CONST.WALL_DOOR_STATES.OPEN) ) {
-                arr.push({_id: w.id, ds: CONST.WALL_DOOR_STATES.CLOSED});
-              }
-              return arr;
-            }, []);
-            if ( !updates.length ) return;
-            canvas.scene.updateEmbeddedDocuments("Wall", updates, {sound: false});
-            ui.notifications.info(game.i18n.format("CONTROLS.WallDoorsClosed", {number: updates.length}));
-          }
+          onClick: toggled => canvas.walls._forceSnap = toggled
         },
         {
           name: "clear",
@@ -726,42 +485,21 @@ class SceneControls extends Application {
         {
           name: "light",
           title: "CONTROLS.LightDraw",
-          icon: "fa-solid fa-lightbulb",
-          toolclip: {
-            src: "toolclips/tools/light-draw.webm",
-            heading: "CONTROLS.LightDraw",
-            items: buildItems("create", "edit", "rotate", "onOff")
-          }
+          icon: "fa-solid fa-lightbulb"
         },
         {
           name: "day",
           title: "CONTROLS.LightDay",
           icon: "fa-solid fa-sun",
           onClick: () => canvas.scene.update({darkness: 0.0}, {animateDarkness: 10000}),
-          button: true,
-          toolclip: {
-            src: "toolclips/tools/light-day.webm",
-            heading: "CONTROLS.LightDay",
-            items: [
-              { heading: "CONTROLS.MakeDayH", content: "CONTROLS.MakeDayP" },
-              { heading: "CONTROLS.AutoLightToggleH", content: "CONTROLS.AutoLightToggleP" }
-            ]
-          }
+          button: true
         },
         {
           name: "night",
           title: "CONTROLS.LightNight",
           icon: "fa-solid fa-moon",
           onClick: () => canvas.scene.update({darkness: 1.0}, {animateDarkness: 10000}),
-          button: true,
-          toolclip: {
-            src: "toolclips/tools/light-night.webm",
-            heading: "CONTROLS.LightNight",
-            items: [
-              { heading: "CONTROLS.MakeNightH", content: "CONTROLS.MakeNightP" },
-              { heading: "CONTROLS.AutoLightToggleH", content: "CONTROLS.AutoLightToggleP" }
-            ]
-          }
+          button: true
         },
         {
           name: "reset",
@@ -784,12 +522,7 @@ class SceneControls extends Application {
               }
             }).render(true);
           },
-          button: true,
-          toolclip: {
-            src: "toolclips/tools/light-reset.webm",
-            heading: "CONTROLS.LightReset",
-            items: [{ paragraph: "CONTROLS.LightResetP" }]
-          }
+          button: true
         },
         {
           name: "clear",
@@ -813,27 +546,17 @@ class SceneControls extends Application {
         {
           name: "sound",
           title: "CONTROLS.SoundDraw",
-          icon: "fa-solid fa-volume-up",
-          toolclip: {
-            src: "toolclips/tools/sound-draw.webm",
-            heading: "CONTROLS.SoundDraw",
-            items: buildItems("create", "edit", "rotate", "onOff")
-          }
+          icon: "fa-solid fa-volume-up"
         },
         {
           name: "preview",
-          title: `CONTROLS.SoundPreview${clip}`,
+          title: "CONTROLS.SoundPreview",
           icon: "fa-solid fa-headphones",
           toggle: true,
           active: canvas.sounds?.livePreview ?? false,
           onClick: toggled => {
             canvas.sounds.livePreview = toggled;
             canvas.sounds.refresh();
-          },
-          toolclip: {
-            src: "toolclips/tools/sound-preview.webm",
-            heading: "CONTROLS.SoundPreview",
-            items: [{ paragraph: "CONTROLS.SoundPreviewP" }]
           }
         },
         {
@@ -886,6 +609,12 @@ class SceneControls extends Application {
     });
 
     // Pass the Scene Controls to a hook function to allow overrides or changes
+    /**
+     * A hook event that fires when the Scene controls are initialized.
+     * @function getSceneControlButtons
+     * @memberof hookEvents
+     * @param {SceneControl[]} controls The SceneControl configurations
+     */
     Hooks.callAll("getSceneControlButtons", controls);
     return controls;
   }

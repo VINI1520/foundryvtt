@@ -4,10 +4,6 @@ import {liftTarget} from "prosemirror-transform";
 import ProseMirrorPlugin from "./plugin.mjs";
 import {wrapInList} from "prosemirror-schema-list";
 import ProseMirrorDropDown from "./dropdown.mjs";
-import {
-  addColumnAfter, addColumnBefore, deleteColumn, addRowAfter, addRowBefore, deleteRow, mergeCells, splitCell,
-  deleteTable
-} from "prosemirror-tables";
 
 /**
  * A class responsible for building a menu for a ProseMirror instance.
@@ -203,8 +199,11 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
    * @protected
    */
   _createDropDowns() {
-    const dropdowns = Object.values(this._getDropDownMenus()).map(({title, cssClass, icon, entries}) => {
-      return new ProseMirrorDropDown(title, entries, { cssClass, icon, onAction: this._onAction.bind(this) });
+    const dropdowns = Object.values(this._getDropDownMenus()).map(({title, cssClass, entries}) => {
+      return new ProseMirrorDropDown(title, entries, {
+        cssClass,
+        onAction: this._onAction.bind(this)
+      });
     });
 
     /**
@@ -226,8 +225,6 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
    * @property {MarkType} [mark]           The mark to apply to the selected text.
    * @property {NodeType} [node]           The node to wrap the selected text in.
    * @property {object} [attrs]            An object of attributes for the node or mark.
-   * @property {number} [group]            Entries with the same group number will be grouped together in the drop-down.
-   *                                       Lower-numbered groups appear higher in the list.
    * @property {number} [priority]         A numeric priority which determines whether this item is displayed as the
    *                                       dropdown title. Lower priority takes precedence.
    * @property {ProseMirrorCommand} [cmd]  The command to run when the menu item is clicked.
@@ -243,7 +240,6 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
    * @typedef {object} ProseMirrorDropDownConfig
    * @property {string} title                        The default title of the drop-down.
    * @property {string} cssClass                     The menu CSS class.
-   * @property {string} [icon]                       An optional icon to use instead of a text label.
    * @property {ProseMirrorDropDownEntry[]} entries  The drop-down entries.
    */
 
@@ -419,63 +415,6 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
       };
     }
 
-    menus.table = {
-      title: "EDITOR.Table",
-      cssClass: "tables",
-      icon: '<i class="fas fa-table"></i>',
-      entries: [{
-        action: "insert-table",
-        title: "EDITOR.TableInsert",
-        group: 1,
-        cmd: this._insertTablePrompt.bind(this)
-      }, {
-        action: "delete-table",
-        title: "EDITOR.TableDelete",
-        group: 1,
-        cmd: deleteTable
-      }, {
-        action: "add-col-after",
-        title: "EDITOR.TableAddColumnAfter",
-        group: 2,
-        cmd: addColumnAfter
-      }, {
-        action: "add-col-before",
-        title: "EDITOR.TableAddColumnBefore",
-        group: 2,
-        cmd: addColumnBefore
-      }, {
-        action: "delete-col",
-        title: "EDITOR.TableDeleteColumn",
-        group: 2,
-        cmd: deleteColumn
-      }, {
-        action: "add-row-after",
-        title: "EDITOR.TableAddRowAfter",
-        group: 3,
-        cmd: addRowAfter
-      }, {
-        action: "add-row-before",
-        title: "EDITOR.TableAddRowBefore",
-        group: 3,
-        cmd: addRowBefore
-      }, {
-        action: "delete-row",
-        title: "EDITOR.TableDeleteRow",
-        group: 3,
-        cmd: deleteRow
-      }, {
-        action: "merge-cells",
-        title: "EDITOR.TableMergeCells",
-        group: 4,
-        cmd: mergeCells
-      }, {
-        action: "split-cell",
-        title: "EDITOR.TableSplitCell",
-        group: 4,
-        cmd: splitCell
-      }]
-    };
-
     Hooks.callAll("getProseMirrorMenuDropDowns", this, menus);
     return menus;
   }
@@ -518,7 +457,6 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
         title: "EDITOR.InsertImage",
         icon: '<i class="fa-solid fa-image"></i>',
         scope: scopes.TEXT,
-        node: this.schema.nodes.image,
         cmd: this._insertImagePrompt.bind(this)
       },
       {
@@ -526,7 +464,6 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
         title: "EDITOR.Link",
         icon: '<i class="fa-solid fa-link"></i>',
         scope: scopes.TEXT,
-        mark: this.schema.marks.link,
         cmd: this._insertLinkPrompt.bind(this)
       },
       {
@@ -544,18 +481,6 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
         cmd: this.#clearSourceTextarea.bind(this)
       }
     ];
-
-    if ( this.view.state.plugins.some(p => p.spec.isHighlightMatchesPlugin) ) {
-      items.push({
-        action: "toggle-matches",
-        title: "EDITOR.EnableHighlightDocumentMatches",
-        icon: '<i class="fa-solid fa-wand-magic-sparkles"></i>',
-        scope: scopes.TEXT,
-        cssClass: "toggle-matches",
-        cmd: this._toggleMatches.bind(this),
-        active: game.settings.get("core", "pmHighlightDocumentMatches")
-      });
-    }
 
     if ( this.options.onSave ) {
       items.push({
@@ -592,7 +517,6 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
    */
   _isItemActive(item) {
     if ( item.action === "source-code" ) return !!this.#editingSource;
-    if ( item.action === "toggle-matches" ) return game.settings.get("core", "pmHighlightDocumentMatches");
     if ( item.mark ) return this._isMarkActive(item);
     if ( item.node ) return this._isNodeActive(item);
     return false;
@@ -641,7 +565,7 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
     // If the selection spans multiple nodes, give up on detecting whether we're in a given block.
     // TODO: Add more complex logic for detecting if all selected nodes belong to the same parent.
     if ( !sameParent ) return false;
-    return (state.doc.nodeAt($from.pos)?.type === item.node) || $from.hasAncestor(item.node, item.attrs);
+    return $from.hasAncestor(item.node, item.attrs);
   }
 
   /* -------------------------------------------- */
@@ -760,15 +684,7 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
    * @protected
    */
   async _insertImagePrompt() {
-    const state = this.view.state;
-    const { $from, empty } = state.selection;
-    const image = this.schema.nodes.image;
-    const data = { src: "", alt: "", width: "", height: "" };
-    if ( !empty ) {
-      const selected = state.doc.nodeAt($from.pos);
-      Object.assign(data, selected?.attrs ?? {});
-    }
-    const dialog = await this._showDialog("image", "templates/journal/insert-image.html", { data });
+    const dialog = await this._showDialog("image", "templates/journal/insert-image.html");
     const form = dialog.querySelector("form");
     const src = form.elements.src;
     const filePicker = src.nextElementSibling;
@@ -777,6 +693,7 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
     });
     form.elements.save.addEventListener("click", () => {
       if ( !src.value ) return;
+      const image = this.schema.nodes.image;
       this.view.dispatch(this.view.state.tr.replaceSelectionWith(image.create({
         src: src.value,
         alt: form.elements.alt.value,
@@ -839,30 +756,6 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
   /* -------------------------------------------- */
 
   /**
-   * Display the insert table prompt.
-   * @protected
-   */
-  async _insertTablePrompt() {
-    const dialog = await this._showDialog("insert-table", "templates/journal/insert-table.html");
-    const form = dialog.querySelector("form");
-    form.elements.save.addEventListener("click", () => {
-      const rows = Number(form.elements.rows.value) || 1;
-      const cols = Number(form.elements.cols.value) || 1;
-      const html = `
-        <table>
-          ${Array.fromRange(rows).reduce(row => row + `
-            <tr>${Array.fromRange(cols).reduce(col => col + "<td></td>", "")}</tr>
-          `, "")}
-        </table>
-      `;
-      const table = ProseMirror.dom.parseString(html, this.schema);
-      this.view.dispatch(this.view.state.tr.replaceSelectionWith(table).scrollIntoView());
-    });
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * Create a dialog for a menu button.
    * @param {string} action                      The unique menu button action.
    * @param {string} template                    The dialog's template.
@@ -872,7 +765,7 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
    * @protected
    */
   async _showDialog(action, template, {data={}}={}) {
-    const button = this.view.dom.closest(".editor").querySelector(`[data-action="${action}"]`);
+    const button = this.view.dom.closest(".editor").querySelector(`button[data-action="${action}"]`);
     button.classList.add("active");
     const dialog = document.createElement("dialog");
     dialog.classList.add("menu-dialog", "prosemirror");
@@ -929,19 +822,6 @@ export default class ProseMirrorMenu extends ProseMirrorPlugin {
       tr.setNodeMarkup(pos, null, attrs);
     });
     this.view.dispatch(tr);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Toggle link recommendations
-   * @protected
-   */
-  async _toggleMatches() {
-    const enabled = game.settings.get("core", "pmHighlightDocumentMatches");
-    await game.settings.set("core", "pmHighlightDocumentMatches", !enabled);
-    this.items.find(i => i.action === "toggle-matches").active = !enabled;
-    this.render();
   }
 
   /* -------------------------------------------- */

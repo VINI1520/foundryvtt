@@ -10,7 +10,7 @@ class TokenConfig extends DocumentSheet {
 
     /**
      * The placed Token object in the Scene
-     * @type {TokenDocument}
+     * @type {Token}
      */
     this.token = this.object;
 
@@ -25,10 +25,10 @@ class TokenConfig extends DocumentSheet {
   }
 
   /**
-   * Maintain a copy of the original to show a real-time preview of changes.
-   * @type {TokenDocument|PrototypeToken}
+   * Preserve a copy of the original document before any changes are made.
+   * @type {object}
    */
-  preview;
+  original;
 
   /* -------------------------------------------- */
 
@@ -80,53 +80,12 @@ class TokenConfig extends DocumentSheet {
 
   /** @inheritdoc */
   render(force=false, options={}) {
-    if ( this.isPrototype ) this.object.actor.apps[this.appId] = this;
-    return super.render(force, options);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  async _render(force, options={}) {
-    await this._handleTokenPreview(force, options);
-    return super._render(force, options);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle preview with a token.
-   * @param {boolean} force
-   * @param {object} options
-   * @returns {Promise<void>}
-   * @protected
-   */
-  async _handleTokenPreview(force, options={}) {
-    const states = Application.RENDER_STATES;
-    if ( force && [states.CLOSED, states.NONE].includes(this._state) ) {
-      if ( this.isPrototype ) {
-        this.preview = this.object.clone();
-        return;
-      }
-      if ( !this.document.object ) {
-        this.preview = null;
-        return;
-      }
-      if ( !this.preview ) {
-        const clone = this.document.object.clone();
-        Object.defineProperty(clone, "sourceId", {
-          get() { return `${this.document.documentName}.${this.document.id}`; },
-          configurable: true,
-          enumerable: false
-        });
-        this.preview = clone.document;
-        clone.control({releaseOthers: true});
-      }
-      await this.preview.object.draw();
-      this.document.object.renderable = false;
-      this.preview.object.layer.preview.addChild(this.preview.object);
-      this._previewChanges();
+    if ( !this.rendered ) this.original = this.object.toObject();
+    if ( this.isPrototype ) {
+      this.options.editable = true;
+      return FormApplication.prototype.render.call(this, force, options);
     }
+    return super.render(force, options);
   }
 
   /* -------------------------------------------- */
@@ -142,18 +101,14 @@ class TokenConfig extends DocumentSheet {
   /** @inheritdoc */
   async getData(options={}) {
     const alternateImages = await this._getAlternateTokenImages();
-    const attributeSource = this.actor?.system instanceof foundry.abstract.DataModel
-      ? this.actor?.type
-      : this.actor?.system;
-    const attributes = TokenDocument.implementation.getTrackedAttributes(attributeSource);
+    const attributes = TokenDocument.implementation.getTrackedAttributes(this.actor?.system ?? {});
     const canBrowseFiles = game.user.hasPermission("FILES_BROWSE");
     const gridUnits = (this.isPrototype || !canvas.ready) ? game.system.gridUnits : canvas.scene.grid.units;
 
     // Prepare Token data
-    const doc = this.preview ?? this.document;
-    const token = doc.toObject();
+    const token = this.object.toObject();
     const basicDetection = token.detectionModes.find(m => m.id === DetectionMode.BASIC_MODE_ID) ? null
-      : doc.detectionModes.find(m => m.id === DetectionMode.BASIC_MODE_ID);
+      : this.object.detectionModes.find(m => m.id === DetectionMode.BASIC_MODE_ID);
 
     // Return rendering context
     return {
@@ -165,8 +120,8 @@ class TokenConfig extends DocumentSheet {
       options: this.options,
       gridUnits: gridUnits || game.i18n.localize("GridUnits"),
       barAttributes: TokenDocument.implementation.getTrackedAttributeChoices(attributes),
-      bar1: doc.getBarAttribute?.("bar1"),
-      bar2: doc.getBarAttribute?.("bar2"),
+      bar1: this.token.getBarAttribute?.("bar1"),
+      bar2: this.token.getBarAttribute?.("bar2"),
       colorationTechniques: AdaptiveLightingShader.SHADER_TECHNIQUES,
       visionModes: Object.values(CONFIG.Canvas.visionModes).filter(f => f.tokenConfig),
       detectionModes: Object.values(CONFIG.Canvas.detectionModes).filter(f => f.tokenConfig),
@@ -181,7 +136,7 @@ class TokenConfig extends DocumentSheet {
         return actors;
       }, []).sort((a, b) => a.name.localeCompare(b.name)),
       dispositions: Object.entries(CONST.TOKEN_DISPOSITIONS).reduce((obj, e) => {
-        obj[e[1]] = game.i18n.localize(`TOKEN.DISPOSITION.${e[0]}`);
+        obj[e[1]] = game.i18n.localize(`TOKEN.${e[0]}`);
         return obj;
       }, {}),
       lightAnimations: Object.entries(CONFIG.Canvas.lightAnimations).reduce((obj, e) => {
@@ -189,10 +144,10 @@ class TokenConfig extends DocumentSheet {
         return obj;
       }, {"": game.i18n.localize("None")}),
       isGM: game.user.isGM,
-      randomImgEnabled: this.isPrototype && (canBrowseFiles || doc.randomImg),
-      scale: Math.abs(doc.texture.scaleX),
-      mirrorX: doc.texture.scaleX < 0,
-      mirrorY: doc.texture.scaleY < 0
+      randomImgEnabled: this.isPrototype && (canBrowseFiles || this.object.randomImg),
+      scale: Math.abs(this.object.texture.scaleX),
+      mirrorX: this.object.texture.scaleX < 0,
+      mirrorY: this.object.texture.scaleY < 0
     };
   }
 
@@ -242,12 +197,8 @@ class TokenConfig extends DocumentSheet {
 
   /** @inheritdoc */
   async close(options={}) {
-    const states = Application.RENDER_STATES;
-    if ( options.force || [states.RENDERED, states.ERROR].includes(this._state) ) {
-      this._resetPreview();
-    }
+    if ( !options.force ) this._resetPreview();
     await super.close(options);
-    if ( this.isPrototype ) delete this.object.actor.apps?.[this.appId];
   }
 
   /* -------------------------------------------- */
@@ -304,22 +255,17 @@ class TokenConfig extends DocumentSheet {
 
   /**
    * Mimic changes to the Token document as if they were true document updates.
-   * @param {object} [change]  The change to preview.
+   * @param {object} change         Data which simulates a document update
+   * @param {boolean} [reset=false] To know if this preview change is a reset
    * @protected
    */
-  _previewChanges(change) {
-    if ( !this.preview ) return;
-    if ( change ) {
-      change = {...change};
-      delete change.actorId;
-      delete change.actorLink;
-      this.preview.updateSource(change);
-    }
-    if ( !this.isPrototype && (this.preview.object?.destroyed === false) ) {
-      this.preview.object.renderFlags.set({refresh: true});
-      this.preview.object.updateSource();
-      canvas.perception.update({initializeVision: true});
-    }
+  _previewChanges(change, reset=false) {
+    // Don't trigger updates for these values if we're just previewing or resetting after closing the form
+    delete change.actorId;
+    delete change.actorLink;
+    this.object.updateSource(foundry.utils.mergeObject(this.original, change, {inplace: false}), {recursive: false});
+    if ( this.isPrototype || reset ) return;
+    this.object._onUpdate(change, {animate: false, render: false, preview: true}, game.user.id);
   }
 
   /* -------------------------------------------- */
@@ -329,20 +275,7 @@ class TokenConfig extends DocumentSheet {
    * @protected
    */
   _resetPreview() {
-    if ( !this.preview ) return;
-    if ( this.isPrototype ) return this.preview = null;
-    if ( this.preview.object?.destroyed === false ) {
-      this.preview.object.destroy({children: true});
-    }
-    this.preview.baseActor?._unregisterDependentToken(this.preview);
-    this.preview = null;
-    if ( this.document.object?.destroyed === false ) {
-      this.document.object.renderable = true;
-      this.document.object.renderFlags.set({refresh: true});
-      this.document.object.control();
-      this.document.object.updateSource();
-    }
-    canvas.perception.update({initializeVision: true});
+    this._previewChanges(this.original, this._state === this.constructor.RENDER_STATES.CLOSING);
   }
 
   /* -------------------------------------------- */
@@ -371,12 +304,14 @@ class TokenConfig extends DocumentSheet {
     }
     const token = tokens.pop().document.toObject();
     token.tokenId = token.x = token.y = null;
-    token.randomImg = this.form.elements.randomImg.checked;
-    if ( token.randomImg ) delete token.texture.src;
 
     // Update the prototype token for the actor using the existing Token instance
     await this.actor.update({prototypeToken: token}, {diff: false, recursive: false, noHook: true});
     ui.notifications.info(game.i18n.format("TOKEN.AssignSuccess", {name: this.actor.name}));
+
+    // Update the source of truth data and re-render
+    this.original = this.object.toObject();
+    return this.render();
   }
 
   /* -------------------------------------------- */
@@ -388,8 +323,7 @@ class TokenConfig extends DocumentSheet {
    */
   async _onBarChange(event) {
     const form = event.target.form;
-    const doc = this.preview ?? this.document;
-    const attr = doc.getBarAttribute("", {alternative: event.target.value});
+    const attr = this.token.getBarAttribute("", {alternative: event.target.value});
     const bar = event.target.name.split(".").shift();
     form.querySelector(`input.${bar}-value`).value = attr !== null ? attr.value : "";
     form.querySelector(`input.${bar}-max`).value = ((attr !== null) && (attr.type === "bar")) ? attr.max : "";
@@ -414,39 +348,17 @@ class TokenConfig extends DocumentSheet {
     // Manipulate the array
     switch ( action ) {
       case "addDetectionMode":
-        this._onAddDetectionMode(modes);
+        modes.push({id: "", range: 0, enabled: true});
         break;
       case "removeDetectionMode":
-        const idx = button.closest(".detection-mode").dataset.index;
-        this._onRemoveDetectionMode(Number(idx), modes);
+        let idx = button.closest(".detection-mode").dataset.index;
+        modes.splice(idx, 1);
         break;
     }
 
+    // Preview the detection mode change
     this._previewChanges({detectionModes: modes});
     this.render();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle adding a detection mode.
-   * @param {object[]} modes  The existing detection modes.
-   * @protected
-   */
-  _onAddDetectionMode(modes) {
-    modes.push({id: "", range: 0, enabled: true});
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle removing a detection mode.
-   * @param {number} index    The index of the detection mode to remove.
-   * @param {object[]} modes  The existing detection modes.
-   * @protected
-   */
-  _onRemoveDetectionMode(index, modes) {
-    modes.splice(index, 1);
   }
 
   /* -------------------------------------------- */
@@ -572,20 +484,4 @@ class DefaultTokenConfig extends TokenConfig {
 
   /** @inheritdoc */
   async _onBarChange() {}
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  _onAddDetectionMode(modes) {
-    super._onAddDetectionMode(modes);
-    this.document.updateSource({ detectionModes: modes });
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  _onRemoveDetectionMode(index, modes) {
-    super._onRemoveDetectionMode(index, modes);
-    this.document.updateSource({ detectionModes: modes });
-  }
 }

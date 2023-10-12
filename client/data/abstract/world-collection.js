@@ -7,27 +7,15 @@
  *
  * @param {object[]} data      An array of data objects from which to create Document instances
  */
-class WorldCollection extends DirectoryCollectionMixin(DocumentCollection) {
+class WorldCollection extends DocumentCollection {
+
   /* -------------------------------------------- */
   /*  Collection Properties                       */
   /* -------------------------------------------- */
 
   /**
-   * Reference the set of Folders which contain documents in this collection
-   * @type {Collection<string, Folder>}
-   */
-  get folders() {
-    return game.folders.reduce((collection, folder) => {
-      if (folder.type === this.documentName) {
-        collection.set(folder.id, folder);
-      }
-      return collection;
-    }, new Collection());
-  }
-
-  /**
    * Return a reference to the SidebarDirectory application for this WorldCollection.
-   * @type {DocumentDirectory}
+   * @type {SidebarDirectory}
    */
   get directory() {
     const doc = getDocumentClass(this.constructor.documentName);
@@ -46,13 +34,6 @@ class WorldCollection extends DirectoryCollectionMixin(DocumentCollection) {
 
   /* -------------------------------------------- */
   /*  Collection Methods                          */
-  /* -------------------------------------------- */
-
-  /** @override */
-  _getVisibleTreeContents(entry) {
-    return this.contents.filter(c => c.visible);
-  }
-
   /* -------------------------------------------- */
 
   /**
@@ -88,26 +69,27 @@ class WorldCollection extends DirectoryCollectionMixin(DocumentCollection) {
    * Apply data transformations when importing a Document from a Compendium pack
    * @param {Document|object} document    The source Document, or a plain data object
    * @param {object} [options]            Additional options which modify how the document is imported
-   * @param {boolean} [options.addFlags=true]         Add flags which track the import source
-   * @param {boolean} [options.clearFolder=false]     Clear the currently assigned folder
+   * @param {boolean} [options.addFlags=false]        Add flags which track the import source
    * @param {boolean} [options.clearSort=true]        Clear the currently assigned folder and sort order
    * @param {boolean} [options.clearOwnership=true]   Clear document ownership
    * @param {boolean} [options.keepId=false]          Retain the Document id from the source Compendium
    * @returns {object}                    The processed data ready for world Document creation
    */
-  fromCompendium(document, {addFlags=true, clearFolder=false, clearSort=true, clearOwnership=true, keepId=false}={}) {
+  fromCompendium(document, {addFlags=true, clearSort=true, clearOwnership=true, keepId=false}={}) {
 
     // Prepare the data structure
     let data = document;
     if (document instanceof foundry.abstract.Document) {
       data = document.toObject();
-      if ( document.pack && addFlags ) foundry.utils.setProperty(data, "flags.core.sourceId", document.uuid);
+      if (!data.flags.core?.sourceId && addFlags) foundry.utils.setProperty(data, "flags.core.sourceId", document.uuid);
     }
 
     // Eliminate certain fields
-    if ( !keepId ) delete data._id;
-    if ( clearFolder ) delete data.folder;
-    if ( clearSort ) delete data.sort;
+    if (!keepId) delete data._id;
+    if (clearSort) {
+      delete data.folder;
+      delete data.sort;
+    }
     if ( clearOwnership && ("ownership" in data) ) {
       data.ownership = {
         default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE,

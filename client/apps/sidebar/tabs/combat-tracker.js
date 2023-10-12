@@ -66,26 +66,22 @@ class CombatTracker extends SidebarTab {
    * @param {boolean} [options.render=true]      Whether to re-render the sidebar after initialization
    */
   initialize({combat=null, render=true}={}) {
-
     // Retrieve a default encounter if none was provided
     if ( combat === null ) {
       const combats = this.combats;
       combat = combats.length ? combats.find(c => c.active) || combats[0] : null;
-      combat?.updateCombatantActors();
+      combat?.updateEffectDurations();
     }
-
-    // Prepare turn order
-    if ( combat && !combat.turns ) combat.turns = combat.setupTurns();
 
     // Set flags
     this.viewed = combat;
     this._highlighted = null;
 
+    // Trigger data computation
+    if ( combat && !combat.turns ) combat.turns = combat.setupTurns();
+
     // Also initialize the popout
-    if ( this._popout ) {
-      this._popout.viewed = combat;
-      this._popout._highlighted = null;
-    }
+    if ( this._popout ) this._popout.initialize({combat, render: false});
 
     // Render the tracker
     if ( render ) this.render();
@@ -176,9 +172,9 @@ class CombatTracker extends SidebarTab {
         if ( combatant.token.overlayEffect ) turn.effects.add(combatant.token.overlayEffect);
       }
       if ( combatant.actor ) {
-        for ( const effect of combatant.actor.temporaryEffects ) {
-          if ( effect.statuses.has(CONFIG.specialStatusEffects.DEFEATED) ) turn.defeated = true;
-          else if ( effect.icon ) turn.effects.add(effect.icon);
+        for ( const e of combatant.actor.temporaryEffects ) {
+          if ( e.getFlag("core", "statusId") === CONFIG.specialStatusEffects.DEFEATED ) turn.defeated = true;
+          else if ( e.icon ) turn.effects.add(e.icon);
         }
       }
       turns.push(turn);
@@ -417,7 +413,7 @@ class CombatTracker extends SidebarTab {
     const combatant = this.viewed.combatants.get(li.dataset.combatantId);
     const token = combatant.token?.object;
     if ( token?.isVisible ) {
-      if ( !token.controlled ) token._onHoverIn(event, {hoverOutOthers: true});
+      if ( !token.controlled ) token._onHoverIn(event);
       this._highlighted = token;
     }
   }

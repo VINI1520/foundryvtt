@@ -16,8 +16,8 @@ class WorldConfig extends FormApplication {
   static get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
       id: "world-config",
-      template: "templates/setup/world-config.hbs",
-      width: 620,
+      template: "templates/sidebar/apps/world-config.html",
+      width: 600,
       height: "auto",
       create: false
     });
@@ -67,15 +67,14 @@ class WorldConfig extends FormApplication {
       nextDate: nextDate.isValid() ? nextDate.toDateInputString() : "",
       nextTime: nextDate.isValid() ? nextDate.toTimeInputString() : "",
       worldKbUrl: WorldConfig.#WORLD_KB_URL,
-      inWorld: !!game.world,
-      themes: CONST.WORLD_JOIN_THEMES
+      inWorld: options.inWorld ?? false
     };
     context.showEditFields = !context.isCreate && !context.inWorld;
     if ( game.systems ) {
       context.systems = game.systems.filter(system => {
         if ( this.world.system === system.id ) return true;
-        return ( system.availability <= ac.UNVERIFIED_GENERATION );
-      }).sort((a, b) => a.title.localeCompare(b.title));
+        return system.availability < ac.REQUIRES_DEPENDENCY;
+      });
     }
     return context;
   }
@@ -107,8 +106,6 @@ class WorldConfig extends FormApplication {
       data.nextSession = isNaN(Number(date)) ? null : date.toISOString();
     }
     else data.nextSession = null;
-
-    if ( data.joinTheme === CONST.WORLD_JOIN_THEMES.default ) delete data.joinTheme;
     return data;
   }
 
@@ -116,7 +113,6 @@ class WorldConfig extends FormApplication {
 
   /** @override */
   async _updateObject(event, formData) {
-    formData = foundry.utils.expandObject(formData);
     const form = event.target || this.form;
     form.disable = true;
 
@@ -152,8 +148,7 @@ class WorldConfig extends FormApplication {
       game.worlds.set(world.id, world);
     }
     else this.world.updateSource(response);
-    if ( ui.setup ) ui.setup.refresh(); // TODO old V10
-    if ( ui.setupPackages ) ui.setupPackages.render(); // New v11
+    if ( ui.setup ) ui.setup.refresh();
   }
 
   /* -------------------------------------------- */

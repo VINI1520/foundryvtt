@@ -85,7 +85,7 @@ class Sidebar extends Application {
         icon: CONFIG.Item.sidebarIcon
       },
       journal: {
-        tooltip: "SIDEBAR.TabJournal",
+        tooltip: JournalEntry.metadata.labelPlural,
         icon: CONFIG.JournalEntry.sidebarIcon
       },
       tables: {
@@ -142,6 +142,7 @@ class Sidebar extends Application {
   }
 
   /* -------------------------------------------- */
+
   /*  Methods
   /* -------------------------------------------- */
 
@@ -170,6 +171,13 @@ class Sidebar extends Application {
       });
       icon.removeClass("fa-caret-left").addClass("fa-caret-right");
       this._collapsed = false;
+      /**
+       * A hook event that fires when the Sidebar is collapsed or expanded.
+       * @function collapseSidebar
+       * @memberof hookEvents
+       * @param {Sidebar} sidebar   The Sidebar application
+       * @param {boolean} collapsed Whether the Sidebar is now collapsed or not
+       */
       Hooks.callAll("collapseSidebar", this, this._collapsed);
     });
   }
@@ -228,6 +236,13 @@ class Sidebar extends Application {
   _onChangeTab(event, tabs, active) {
     const app = ui[active];
     if ( (active === "chat") && app ) app.scrollBottom();
+
+    /**
+     * A hook event that fires when the Sidebar tab is changed.
+     * @function changeSidebarTab
+     * @memberof hookEvents
+     * @param {SidebarTab} app    The SidebarTab application which is now active
+     */
     Hooks.callAll("changeSidebarTab", app);
   }
 

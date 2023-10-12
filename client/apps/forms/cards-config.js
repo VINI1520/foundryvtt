@@ -97,7 +97,7 @@ class CardsConfig extends DocumentSheet {
     // Handle the control action
     switch ( button.dataset.action ) {
       case "create":
-        return cls.createDialog({ faces: [{}], face: 0 }, {parent: this.object, pack: this.object.pack});
+        return cls.createDialog({}, {parent: this.object, pack: this.object.pack});
       case "edit":
         return card.sheet.render(true);
       case "delete":

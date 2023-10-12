@@ -145,13 +145,13 @@ export function lineSegmentIntersection(a, b, c, d, epsilon=1e-8) {
  */
 
 /**
- * Determine the intersection between a line segment and a circle.
+ * Determine the intersection between a candidate wall and the circular radius of the polygon.
  * @memberof helpers
  *
- * @param {Point} a                   The first vertex of the segment
- * @param {Point} b                   The second vertex of the segment
- * @param {Point} center              The center of the circle
- * @param {number} radius             The radius of the circle
+ * @param {Point} a                   The initial vertex of the candidate edge
+ * @param {Point} b                   The second vertex of the candidate edge
+ * @param {Point} center              The center of the bounding circle
+ * @param {number} radius             The radius of the bounding circle
  * @param {number} epsilon            A small tolerance for floating point precision
  *
  * @returns {LineCircleIntersection}  The intersection of the segment AB with the circle
@@ -162,15 +162,17 @@ export function lineCircleIntersection(a, b, center, radius, epsilon=1e-8) {
 
   // Test whether endpoint A is contained
   const ar2 = Math.pow(a.x - center.x, 2) + Math.pow(a.y - center.y, 2);
-  const aInside = ar2 < r2 - epsilon;
+  const aInside = ar2 <= r2 + epsilon;
 
   // Test whether endpoint B is contained
   const br2 = Math.pow(b.x - center.x, 2) + Math.pow(b.y - center.y, 2);
-  const bInside = br2 < r2 - epsilon;
+  const bInside = br2 <= r2 + epsilon;
 
   // Find quadratic intersection points
   const contained = aInside && bInside;
-  if ( !contained ) intersections = quadraticIntersection(a, b, center, radius, epsilon);
+  if ( !contained ) {
+    intersections = quadraticIntersection(a, b, center, radius, epsilon);
+  }
 
   // Return the intersection data
   return {
@@ -236,13 +238,13 @@ export function quadraticIntersection(p0, p1, center, radius, epsilon=0) {
   const c = Math.pow(p0.x - center.x, 2) + Math.pow(p0.y - center.y, 2) - Math.pow(radius, 2);
 
   // Discriminant
-  let disc2 = Math.pow(b, 2) - (4 * a * c);
-  if ( disc2.almostEqual(0) ) disc2 = 0; // segment endpoint touches the circle; 1 intersection
-  else if ( disc2 < 0 ) return []; // no intersections
+  const disc2 = Math.pow(b, 2) - (4 * a * c);
+  if ( disc2 <= 0 ) return []; // no intersections
 
   // Roots
   const disc = Math.sqrt(disc2);
   const t1 = (-b - disc) / (2 * a);
+  const t2 = (-b + disc) / (2 * a);
 
   // If t1 hits (between 0 and 1) it indicates an "entry"
   const intersections = [];
@@ -252,10 +254,8 @@ export function quadraticIntersection(p0, p1, center, radius, epsilon=0) {
       y: p0.y + (dy * t1)
     });
   }
-  if ( !disc2 ) return intersections; // 1 intersection
 
   // If t2 hits (between 0 and 1) it indicates an "exit"
-  const t2 = (-b + disc) / (2 * a);
   if ( t2.between(0-epsilon, 1+epsilon) ) {
     intersections.push({
       x: p0.x + (dx * t2),

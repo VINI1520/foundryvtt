@@ -223,7 +223,7 @@ class DocumentIndex {
       if ( doc.isEmbedded ) return; // Only index primary documents inside compendium packs
       const pack = game.packs.get(doc.pack);
       const index = pack.index.get(doc.id);
-      if ( index ) this._addLeaf(index, {pack});
+      this._addLeaf(index, {pack});
     }
     else this._addLeaf(doc);
   }

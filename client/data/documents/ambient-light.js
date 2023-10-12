@@ -14,13 +14,9 @@ class AmbientLightDocument extends CanvasDocumentMixin(foundry.documents.BaseAmb
 
   /** @inheritdoc */
   _onUpdate(data, options, userId) {
-    const configs = Object.values(this.apps).filter(app => app instanceof AmbientLightConfig);
-    configs.forEach(app => {
-      if ( app.preview ) options.animate = false;
-      app._previewChanges(data);
-    });
-    super._onUpdate(data, options, userId);
-    configs.forEach(app => app._previewChanges());
+    // Update references to original state so that resetting the preview does not clobber these updates in-memory.
+    if ( !options.preview ) Object.values(this.apps).forEach(app => app.original = this.toObject());
+    return super._onUpdate(data, options, userId);
   }
 
   /* -------------------------------------------- */

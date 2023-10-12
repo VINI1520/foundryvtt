@@ -6,16 +6,10 @@
 class FogExplorations extends WorldCollection {
   static documentName = "FogExploration";
 
-  /**
-   * Activate Socket event listeners to handle for fog resets
-   * @param {Socket} socket     The active web socket connection
-   * @internal
-   */
-  static _activateSocketListeners(socket) {
-    socket.on("resetFog", ({sceneId}) => {
-      if ( sceneId === canvas.id ) {
-        canvas.fog._handleReset();
-      }
-    });
+  /** @inheritDoc */
+  _onDeleteDocuments(documents, result, options, userId) {
+    if ( result.includes(canvas.fog.exploration?.id) || (options.sceneId === canvas.id) ) {
+      canvas.fog._handleReset();
+    }
   }
 }

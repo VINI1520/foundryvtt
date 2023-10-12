@@ -7,6 +7,7 @@
 import {DataModel} from "../abstract/module.mjs";
 import * as fields from "./fields.mjs";
 import * as documents from "../documents/module.mjs";
+import {getProperty, mergeObject} from "../utils/helpers.mjs";
 
 /**
  * @typedef {Object} LightAnimationData
@@ -156,7 +157,7 @@ class TextureData extends fields.SchemaField {
    * @param {DataFieldOptions} options          Options which are forwarded to the SchemaField constructor
    * @param {FilePathFieldOptions} srcOptions   Additional options for the src field
    */
-  constructor(options={}, {categories=["IMAGE", "VIDEO"], initial=null, wildcard=false, label=""}={}) {
+  constructor(options={}, {categories=["IMAGE", "VIDEO"], initial=null, wildcard=false, label}={}) {
     super({
       src: new fields.FilePathField({categories, initial, label, wildcard}),
       scaleX: new fields.NumberField({nullable: false, initial: 1}),
@@ -178,16 +179,9 @@ class TextureData extends fields.SchemaField {
  * @property {boolean} randomImg      Does the prototype token use a random wildcard image?
  */
 class PrototypeToken extends DataModel {
-  constructor(data={}, options={}) {
-    super(data, options);
-    Object.defineProperty(this, "apps", {value: {}});
-  }
-
-  /* -------------------------------------------- */
-
   static defineSchema() {
     const schema = documents.BaseToken.defineSchema();
-    const excluded = ["_id", "actorId", "delta", "x", "y", "elevation", "effects", "overlayEffect", "hidden"];
+    const excluded = ["_id", "actorId", "actorData", "x", "y", "elevation", "effects", "overlayEffect", "hidden"];
     for ( let x of excluded ) {
       delete schema[x];
     }
@@ -295,29 +289,6 @@ class PrototypeToken extends DataModel {
 /* -------------------------------------------- */
 
 /**
- * A minimal data model used to represent a tombstone entry inside an {@link EmbeddedCollectionDelta}.
- * @see {EmbeddedCollectionDelta}
- * @extends DataModel
- * @memberof data
- *
- * @property {string} _id              The _id of the base Document that this tombstone represents.
- * @property {boolean} _tombstone      A property that identifies this entry as a tombstone.
- * @property {DocumentStats} [_stats]  An object of creation and access information.
- */
-class TombstoneData extends DataModel {
-  /** @override */
-  static defineSchema() {
-    return {
-      _id: new fields.DocumentIdField(),
-      _tombstone: new fields.BooleanField({initial: true, validate: v => v === true, validationError: "must be true"}),
-      _stats: new fields.DocumentStatsField()
-    };
-  }
-}
-
-/* -------------------------------------------- */
-
-/**
  * @deprecated since v10
  * @see PrototypeToken
  * @ignore
@@ -336,6 +307,5 @@ export {
   PrototypeToken,
   PrototypeTokenData,
   ShapeData,
-  TextureData,
-  TombstoneData
+  TextureData
 }

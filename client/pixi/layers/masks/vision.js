@@ -14,12 +14,6 @@
 class CanvasVisionMask extends CachedContainer {
 
   /** @override */
-  static textureConfiguration = {
-    scaleMode: PIXI.SCALE_MODES.NEAREST,
-    format: PIXI.FORMATS.RED
-  };
-
-  /** @override */
   clearColor = [0, 0, 0, 0];
 
   /**
@@ -33,7 +27,23 @@ class CanvasVisionMask extends CachedContainer {
    * This filter applies a NORMAL blend mode to the container.
    * @type {AlphaBlurFilter}
    */
-  blurFilter;
+  filter;
+
+  /**
+   * Current LOS polygons
+   * @type {PIXI.Graphics}
+   */
+  get los() {
+    return this.vision?.los;
+  }
+
+  /**
+   * Current FOV polygons
+   * @type {PIXI.Graphics}
+   */
+  get fov() {
+    return this.vision?.fov;
+  }
 
   /* -------------------------------------------- */
 
@@ -42,21 +52,45 @@ class CanvasVisionMask extends CachedContainer {
    * @returns {AlphaBlurFilter}
    */
   #createBlurFilter() {
-    // Initialize filters properties
-    this.filters ??= [];
-    this.filterArea = null;
-
-    // Check if the canvas blur is disabled and return without doing anything if necessary
     const b = canvas.blur;
-    this.filters.findSplice(f => f === this.blurFilter);
     if ( !b.enabled ) return;
+    if ( !this.filter ) {
+      const f = this.filter = new AlphaBlurFilter(b.strength, b.passes, PIXI.settings.FILTER_RESOLUTION, b.kernels);
+      f.blendMode = PIXI.BLEND_MODES.NORMAL;
+      this.filterArea = canvas.app.renderer.screen;
+      this.filters = [f];
+    }
+    return canvas.addBlurFilter(this.filter);
+  }
 
-    // Create the new filter
-    const f = this.blurFilter = new b.blurClass(b.strength, b.passes, PIXI.Filter.defaultResolution, b.kernels);
-    f.blendMode = PIXI.BLEND_MODES.NORMAL;
-    this.filterArea = canvas.app.renderer.screen;
-    this.filters.push(f);
-    return canvas.addBlurFilter(this.blurFilter);
+  /* -------------------------------------------- */
+
+  /**
+   * Initialize the vision mask with the los and the fov graphics objects.
+   * @returns {CanvasVisionContainer}
+   */
+  createVision() {
+    const vision = new PIXI.Container();
+    vision.base = vision.addChild(new PIXI.LegacyGraphics());
+    vision.fov = vision.addChild(new PIXI.LegacyGraphics());
+    vision.los = vision.addChild(new PIXI.LegacyGraphics());
+    vision.mask = vision.los;
+    vision._explored = false;
+    return this.vision = this.addChild(vision);
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Detach the current vision container and return it
+   * @returns {CanvasVisionContainer}
+   */
+  detachVision() {
+    this.removeChildren();
+    const vision = this.vision;
+    vision.base.clear();
+    this.vision = undefined;
+    return vision;
   }
 
   /* -------------------------------------------- */
@@ -65,49 +99,11 @@ class CanvasVisionMask extends CachedContainer {
     this.#createBlurFilter();
   }
 
-  /* -------------------------------------------- */
-
   /**
-   * Initialize the vision mask with the los and the fov graphics objects.
-   * @param {PIXI.Container} vision         The vision container to attach
-   * @returns {CanvasVisionContainer}
+   * Clear the vision mask
    */
-  attachVision(vision) {
-    return this.vision = this.addChild(vision);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Detach the vision mask from the cached container.
-   * @returns {CanvasVisionContainer} The detached vision container.
-   */
-  detachVision() {
-    const vision = this.vision;
-    this.removeChild(vision);
+  clear() {
+    Canvas.clearContainer(this, false);
     this.vision = undefined;
-    return vision;
-  }
-
-  /* -------------------------------------------- */
-  /*  Deprecations and Compatibility              */
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  get filter() {
-    foundry.utils.logCompatibilityWarning("CanvasVisionMask#filter has been renamed to blurFilter.", {since: 11, until: 13});
-    return this.blurFilter;
-  }
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  set filter(f) {
-    foundry.utils.logCompatibilityWarning("CanvasVisionMask#filter has been renamed to blurFilter.", {since: 11, until: 13});
-    this.blurFilter = f;
   }
 }

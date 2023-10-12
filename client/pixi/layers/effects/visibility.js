@@ -5,7 +5,11 @@
  * @see {@link PointSource}
  * @category - Canvas
  *
+ * @property {PIXI.Graphics} unexplored       The unexplored background which spans the entire canvas
  * @property {PIXI.Container} explored        The exploration container which tracks exploration progress
+ * @property {PIXI.Container} revealed        A container of regions which have previously been revealed
+ * @property {PIXI.Sprite} saved              The saved fog exploration texture
+ * @property {PIXI.Container} pending         Pending exploration which has not yet been committed to the texture
  * @property {CanvasVisionContainer} vision   The container of current vision exploration
  */
 class CanvasVisibility extends CanvasLayer {
@@ -23,29 +27,16 @@ class CanvasVisibility extends CanvasLayer {
   los;
 
   /**
-   * The optional visibility overlay sprite that should be drawn instead of the unexplored color in the fog of war.
+   * The optional fog overlay sprite that should be drawn instead of the unexplored color in the fog of war.
    * @type {PIXI.Sprite}
    */
-  visibilityOverlay;
+  fogOverlay;
 
   /**
-   * Matrix used for visibility rendering transformation.
-   * @type {PIXI.Matrix}
-   */
-  #renderTransform = new PIXI.Matrix();
-
-  /**
-   * Dimensions of the visibility overlay texture and base texture used for tiling texture into the visibility filter.
+   * Dimensions of the fog overlay texture and base texture used for tiling texture into the visibility filter.
    * @type {number[]}
    */
-  #visibilityOverlayDimensions;
-
-  /**
-   * The SpriteMesh which holds a cached texture of lights field of vision.
-   * These elements are less likely to change during the course of a game.
-   * @type {SpriteMesh}
-   */
-  #lightsSprite;
+  #fogOverlayDimensions;
 
   /**
    * The active vision source data object
@@ -68,22 +59,6 @@ class CanvasVisibility extends CanvasLayer {
     any: true
   };
 
-  /**
-   * Map of the point sources active and updateId states
-   * - The wasActive
-   * - The updateId
-   * @type {Map<number, object<boolean, number>>}
-   */
-  #pointSourcesStates = new Map();
-
-  /**
-   * The maximum allowable visibility texture size.
-   * @type {number}
-   */
-  static #MAXIMUM_VISIBILITY_TEXTURE_SIZE = 4096;
-
-  /* -------------------------------------------- */
-  /*  Canvas Visibility Properties                */
   /* -------------------------------------------- */
 
   /**
@@ -107,19 +82,6 @@ class CanvasVisibility extends CanvasLayer {
   }
 
   /* -------------------------------------------- */
-
-  /**
-   * The configured options used for the saved fog-of-war texture.
-   * @type {FogTextureConfiguration}
-   */
-  get textureConfiguration() {
-    return this.#textureConfiguration;
-  }
-
-  /** @private */
-  #textureConfiguration;
-
-  /* -------------------------------------------- */
   /*  Layer Initialization                        */
   /* -------------------------------------------- */
 
@@ -133,18 +95,17 @@ class CanvasVisibility extends CanvasLayer {
 
     // Get an array of tokens from the vision source collection
     const sources = canvas.effects.visionSources;
+    const priorSources = new Set(sources.values());
 
     // Update vision sources
     sources.clear();
     for ( const token of canvas.tokens.placeables ) {
       token.updateVisionSource({defer: true});
     }
-    for ( const token of canvas.tokens.preview.children ) {
-      token.updateVisionSource({defer: true});
-    }
 
     // Initialize vision modes
-    this.visionModeData.source = this.#getSingleVisionSource();
+    this.visionModeData.source = this.#getSingleVisionSource(sources);
+    this.#callActivationHandlers(sources, priorSources);
     this.#configureLightingVisibility();
     this.#updateLightingPostProcessing();
     this.#updateTintPostProcessing();
@@ -157,17 +118,33 @@ class CanvasVisibility extends CanvasLayer {
 
   /**
    * Identify whether there is one singular vision source active (excluding previews).
+   * @param {Collection<string,VisionSource>} sources     The current sources
    * @returns {VisionSource|null}                         A singular source, or null
    */
-  #getSingleVisionSource() {
+  #getSingleVisionSource(sources) {
     let singleVisionSource = null;
-    for ( const visionSource of canvas.effects.visionSources ) {
-      if ( !visionSource.active ) continue;
-      if ( singleVisionSource && visionSource.isPreview ) continue;
-      singleVisionSource = visionSource;
-      if ( !singleVisionSource.isPreview ) return singleVisionSource;
+    for ( const [key, source] of canvas.effects.visionSources.entries() ) {
+      if ( key.includes(".preview") ) continue;
+      if ( singleVisionSource ) return null;
+      singleVisionSource = source;
     }
     return singleVisionSource;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Call activation and deactivation handlers for the vision modes whose state has changed.
+   * @param {Collection<string,VisionSource>} sources     The new collection of active sources
+   * @param {Set<VisionSource>} priorSources              The set of previously active sources
+   */
+  #callActivationHandlers(sources, priorSources) {
+    for ( const prior of priorSources ) {
+      if ( !sources.has(prior.object.sourceId) ) prior.visionMode.deactivate(prior);
+    }
+    for ( const source of sources.values() ) {
+      if ( !priorSources.has(source) ) source.visionMode.activate(source);
+    }
   }
 
   /* -------------------------------------------- */
@@ -181,8 +158,10 @@ class CanvasVisibility extends CanvasLayer {
     const lvs = VisionMode.LIGHTING_VISIBILITY;
     foundry.utils.mergeObject(lv, {
       background: CanvasVisibility.#requireBackgroundShader(vm),
-      illumination: vm?.lighting.illumination.visibility ?? lvs.ENABLED,
-      coloration: vm?.lighting.coloration.visibility ?? lvs.ENABLED
+      illumination: (!vm || vm.lighting.illumination.visibility)
+        ? (vm?.lighting.illumination.visibility ?? lvs.ENABLED) : lvs.DISABLED,
+      coloration: (!vm || vm.lighting.coloration.visibility)
+        ? (vm?.lighting.coloration.visibility ?? lvs.ENABLED) : lvs.DISABLED
     });
     lv.any = (lv.background + lv.illumination + lv.coloration) > VisionMode.LIGHTING_VISIBILITY.DISABLED;
   }
@@ -235,21 +214,80 @@ class CanvasVisibility extends CanvasLayer {
    * @returns {VisionMode.LIGHTING_VISIBILITY}
    */
   static #requireBackgroundShader(visionMode) {
+    if ( visionMode ) return visionMode.lighting.background.visibility;
+
     // Do we need to force lighting background shader? Force when :
     // - Multiple vision modes are active with a mix of preferred and non preferred visions
     // - Or when some have background shader required
     const lvs = VisionMode.LIGHTING_VISIBILITY;
-    let preferred = false;
-    let nonPreferred = false;
+    let forceBackground = false;
+    let pCount = 0;
+    let npCount = 0;
     for ( const vs of canvas.effects.visionSources ) {
-      if ( !vs.active ) continue;
-      const vm = vs.visionMode;
-      if ( vm.lighting.background.visibility === lvs.REQUIRED ) return lvs.REQUIRED;
-      if ( vm.vision.preferred ) preferred = true;
-      else nonPreferred = true;
+      const p = vs.visionMode.vision.preferred;
+      const v = vs.visionMode.lighting.background.visibility;
+      if ( p ) pCount++;
+      else npCount++;
+      if ( (pCount && npCount) || v === lvs.REQUIRED ) {
+        forceBackground = true;
+        break;
+      }
     }
-    if ( preferred && nonPreferred ) return lvs.REQUIRED;
-    return visionMode?.lighting.background.visibility ?? lvs.ENABLED;
+    return forceBackground ? lvs.REQUIRED : lvs.ENABLED;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Load the scene fog overlay if provided and attach the fog overlay sprite to this layer.
+   */
+  async #drawFogOverlay() {
+    this.fogOverlay = undefined;
+    this.#fogOverlayDimensions = [];
+
+    // Checking fog overlay source
+    const fogOverlaySrc = canvas.scene.fogOverlay;
+    if ( !fogOverlaySrc ) return;
+
+    // Checking fog texture (no fallback)
+    const fogTex = await loadTexture(fogOverlaySrc);
+    if ( !(fogTex && fogTex.valid) ) return;
+
+    // Creating the sprite and updating its base texture with repeating wrap mode
+    const fo = this.fogOverlay = new PIXI.Sprite();
+    fo.texture = fogTex;
+
+    // Set dimensions and position according to fog overlay <-> scene foreground dimensions
+    const bkg = canvas.primary.background;
+    const baseTex = fogTex.baseTexture;
+    if ( bkg && ((fo.width !== bkg.width) || (fo.height !== bkg.height)) ) {
+      // Set to the size of the scene dimensions
+      fo.width = canvas.scene.dimensions.width;
+      fo.height = canvas.scene.dimensions.height;
+      fo.position.set(0, 0);
+      // Activate repeat wrap mode for this base texture (to allow tiling)
+      baseTex.wrapMode = PIXI.WRAP_MODES.REPEAT;
+    }
+    else {
+      // Set the same position and size as the scene primary background
+      fo.width = bkg.width;
+      fo.height = bkg.height;
+      fo.position.set(bkg.x, bkg.y);
+    }
+
+    // The fog overlay is added to this canvas container to update its transforms only
+    fo.renderable = false;
+    this.addChild(this.fogOverlay);
+
+    // Manage video playback
+    const video = game.video.getVideoSource(fogTex);
+    if ( video ) {
+      const playOptions = {volume: 0};
+      game.video.play(video, playOptions);
+    }
+
+    // Passing overlay and base texture width and height for shader tiling calculations
+    this.#fogOverlayDimensions = [fo.width, fo.height, baseTex.width, baseTex.height];
   }
 
   /* -------------------------------------------- */
@@ -258,98 +296,48 @@ class CanvasVisibility extends CanvasLayer {
 
   /** @override */
   async _draw(options) {
-    this.#configureVisibilityTexture();
 
-    // Initialize fog
-    await canvas.fog.initialize();
-
-    // Create the vision container and attach it to the CanvasVisionMask cached container
-    this.vision = this.#createVision();
-    canvas.masks.vision.attachVision(this.vision);
+    // Create initial vision mask
+    canvas.masks.vision.createVision();
 
     // Exploration container
-    this.explored = this.addChild(this.#createExploration());
+    const dims = canvas.dimensions;
+    this.explored = this.addChild(new PIXI.Container());
+
+    // Past exploration updates
+    this.revealed = this.explored.addChild(canvas.fog.revealed);
+    this.saved = this.revealed.addChild(canvas.fog.sprite);
+    this.saved.position.set(dims.sceneX, dims.sceneY);
+    this.saved.width = canvas.fog.resolution.width;
+    this.saved.height = canvas.fog.resolution.height;
+
+    // Pending vision containers
+    this.pending = this.revealed.addChild(canvas.fog.pending);
 
     // Loading the fog overlay
-    await this.#drawVisibilityOverlay();
+    await this.#drawFogOverlay();
 
     // Apply the visibility filter with a normal blend
-    this.filter = CONFIG.Canvas.visibilityFilter.create({
+    this.filter = VisibilityFilter.create({
       unexploredColor: canvas.colors.fogUnexplored.rgb,
       exploredColor: canvas.colors.fogExplored.rgb,
       backgroundColor: canvas.colors.background.rgb,
       visionTexture: canvas.masks.vision.renderTexture,
       primaryTexture: canvas.primary.renderTexture,
-      overlayTexture: this.visibilityOverlay?.texture ?? null,
-      dimensions: this.#visibilityOverlayDimensions,
-      hasOverlayTexture: !!this.visibilityOverlay?.texture.valid
-    }, canvas.visibilityOptions);
+      fogTexture: this.fogOverlay?.texture ?? null,
+      dimensions: this.#fogOverlayDimensions,
+      hasFogTexture: !!this.fogOverlay?.texture.valid
+    });
     this.filter.blendMode = PIXI.BLEND_MODES.NORMAL;
     this.filters = [this.filter];
     this.filterArea = canvas.app.screen;
 
     // Add the visibility filter to the canvas blur filter list
     canvas.addBlurFilter(this.filter);
+
+    // Return the layer
     this.visible = false;
     this.#initialized = true;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Create the exploration container with its exploration sprite.
-   * @returns {PIXI.Container}   The newly created exploration container.
-   */
-  #createExploration() {
-    const dims = canvas.dimensions;
-    const explored = new PIXI.Container();
-    const explorationSprite = explored.addChild(canvas.fog.sprite);
-    explorationSprite.position.set(dims.sceneX, dims.sceneY);
-    explorationSprite.width = this.#textureConfiguration.width;
-    explorationSprite.height = this.#textureConfiguration.height;
-    return explored;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Create the vision container and all its children.
-   * @returns {PIXI.Container} The created vision container.
-   */
-  #createVision() {
-    const dims = canvas.dimensions;
-    const vision = new PIXI.Container();
-
-    // Base vision to provide minimum sight
-    vision.base = vision.addChild(new PIXI.LegacyGraphics());
-    vision.base.blendMode = PIXI.BLEND_MODES.MAX_COLOR;
-
-    // The field of vision container
-    vision.fov = vision.addChild(new PIXI.Container());
-
-    // SpriteMesh that holds the cached elements that provides contribution to the field of vision
-    vision.fov.lightsSprite = this.#lightsSprite = vision.fov.addChild(new SpriteMesh(Canvas.getRenderTexture({
-      textureConfiguration: this.textureConfiguration
-    })));
-    vision.fov.lightsSprite.position.set(dims.sceneX, dims.sceneY);
-    vision.fov.lightsSprite.blendMode = PIXI.BLEND_MODES.MAX_COLOR;
-
-    // Graphic that holds elements which are not changing often during the course of a game (light sources)
-    // This graphics is cached in the lightsSprite SpriteMesh
-    vision.fov.lights = vision.fov.addChild(new PIXI.LegacyGraphics());
-    vision.fov.lights.cullable = false;
-    vision.fov.lights.blendMode = PIXI.BLEND_MODES.MAX_COLOR;
-    vision.fov.lights.renderable = false;
-
-    // Graphic that holds elements which are changing often (token vision and light sources)
-    vision.fov.tokens = vision.fov.addChild(new PIXI.LegacyGraphics());
-    vision.fov.tokens.blendMode = PIXI.BLEND_MODES.MAX_COLOR;
-
-    // Handling of the line of sight
-    vision.los = vision.addChild(new PIXI.LegacyGraphics());
-    vision.los.preview = vision.los.addChild(new PIXI.LegacyGraphics());
-    vision.mask = vision.los;
-    return vision;
   }
 
   /* -------------------------------------------- */
@@ -357,14 +345,7 @@ class CanvasVisibility extends CanvasLayer {
   /** @override */
   async _tearDown(options) {
     if ( this.#initialized ) {
-      canvas.masks.vision.detachVision();
-      this.#pointSourcesStates.clear();
       await canvas.fog.clear();
-
-      // Performs deep cleaning of the detached vision container
-      this.vision.destroy({children: true, texture: true, baseTexture: true});
-      this.vision = undefined;
-
       canvas.effects.visionSources.clear();
       this.#initialized = false;
     }
@@ -376,167 +357,69 @@ class CanvasVisibility extends CanvasLayer {
   /**
    * Update the display of the sight layer.
    * Organize sources into rendering queues and draw lighting containers for each source
+   *
+   * @param {object} [options]        Options which affect how visibility is refreshed
+   * @param {boolean} [options.forceUpdateFog=false]  Always update the Fog exploration progress for this update
    */
-  refresh() {
+  refresh({forceUpdateFog=false}={}) {
     if ( !this.initialized ) return;
-
-    // Refresh visibility
-    if ( this.tokenVision ) {
-      this.refreshVisibility();
-      this.visible = canvas.effects.visionSources.some(s => s.active) || !game.user.isGM;
+    if ( !this.tokenVision ) {
+      this.visible = false;
+      return this.restrictVisibility();
     }
-    else this.visible = false;
 
-    // Update visibility of objects
-    this.restrictVisibility();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Update vision (and fog if necessary)
-   */
-  refreshVisibility() {
-    if ( !this.vision?.children.length ) return;
-    const fillColor = 0xFF0000;
-    const vision = this.vision;
-
-    // A flag to know if the lights cache render texture need to be refreshed
-    let refreshCache = false;
-
-    // A flag to know if fog need to be refreshed.
+    // Stage the priorVision vision container to be saved to the FOW texture
     let commitFog = false;
-
-    // Checking if the lights cache need a full redraw
-    let lightsFullRedraw = this.#checkLights();
-    if ( lightsFullRedraw ) {
-      this.#pointSourcesStates.clear();
-      vision.fov.lights.clear();
+    const priorVision = canvas.masks.vision.detachVision();
+    if ( priorVision._explored ) {
+      this.pending.addChild(priorVision);
+      commitFog = this.pending.children.length >= FogManager.COMMIT_THRESHOLD;
     }
-    vision.base.clear();
-    vision.base.beginFill(fillColor, 1.0);
-    vision.fov.lights.beginFill(fillColor, 1.0);
-    vision.fov.tokens.clear();
-    vision.fov.tokens.beginFill(fillColor, 1.0);
+    else priorVision.destroy({children: true});
 
-    vision.los.clear();
+    // Create a new vision for this frame
+    const vision = canvas.masks.vision.createVision();
+    const fillColor = 0xFF0000;
+    vision.fov.beginFill(fillColor, 1.0);
     vision.los.beginFill(fillColor, 1.0);
-    vision.los.preview.clear();
-    vision.los.preview.beginFill(fillColor, 1.0);
 
-    // Iterating over each light source
-    for ( const lightSource of canvas.effects.lightSources ) {
-      // The light source is providing vision and has an active layer?
-      if ( lightSource.active && lightSource.data.vision ) {
-        if ( !lightSource.isPreview ) vision.los.drawShape(lightSource.shape);
-        else vision.los.preview.drawShape(lightSource.shape);
-      }
-
-      // The light source is emanating from a token?
-      if ( lightSource.object instanceof Token ) {
-        if ( !lightSource.active ) continue;
-        if ( !lightSource.isPreview ) vision.fov.tokens.drawShape(lightSource.shape);
-        else vision.base.drawShape(lightSource.shape);
-        continue;
-      }
-
-      // Determine whether this light source needs to be drawn to the texture
-      let draw = lightsFullRedraw;
-      if ( !lightsFullRedraw ) {
-        const priorState = this.#pointSourcesStates.get(lightSource);
-        if ( !priorState || priorState.wasActive === false ) draw = lightSource.active;
-      }
-
-      // Save the state of this light source
-      this.#pointSourcesStates.set(lightSource,
-        {wasActive: lightSource.active, updateId: lightSource.updateId});
-
-      if ( !lightSource.active ) continue;
-      refreshCache = true;
-      if ( draw ) vision.fov.lights.drawShape(lightSource.shape);
+    // Draw field-of-vision for lighting sources
+    for ( let lightSource of canvas.effects.lightSources ) {
+      if ( !canvas.effects.visionSources.size || !lightSource.active || lightSource.disabled ) continue;
+      vision.fov.drawShape(lightSource.los);
+      if ( lightSource.data.vision ) vision.los.drawShape(lightSource.los);
     }
 
-    // Do we need to cache the lights into the lightsSprite render texture?
-    // Note: With a full redraw, we need to refresh the texture cache, even if no elements are present
-    if ( refreshCache || lightsFullRedraw ) this.#cacheLights(lightsFullRedraw);
+    // Draw sight-based visibility for each vision source
+    for ( let visionSource of canvas.effects.visionSources ) {
+      visionSource.active = true;
 
-    // Iterating over each vision source
-    for ( const visionSource of canvas.effects.visionSources ) {
-      if ( !visionSource.active ) continue;
       // Draw FOV polygon or provide some baseline visibility of the token's space
-      if ( (visionSource.radius > 0) && !visionSource.data.blinded && !visionSource.isPreview ) {
-        vision.fov.tokens.drawShape(visionSource.fov);
-      } else vision.base.drawShape(visionSource.fov);
+      if ( visionSource.radius > 0 ) vision.fov.drawShape(visionSource.fov);
+      else {
+        const baseR = canvas.dimensions.size / 2;
+        vision.base.beginFill(fillColor, 1.0).drawCircle(visionSource.x, visionSource.y, baseR).endFill();
+      }
+
       // Draw LOS mask (with exception for blinded tokens)
-      if ( !visionSource.data.blinded && !visionSource.isPreview ) {
-        vision.los.drawShape(visionSource.los);
-        commitFog = true;
-      } else vision.los.preview.drawShape(visionSource.data.blinded ? visionSource.fov : visionSource.los);
+      vision.los.drawShape(visionSource.data.blinded ? visionSource.fov : visionSource.los);
+
+      // Record Fog of war exploration
+      if ( canvas.fog.update(visionSource, forceUpdateFog) ) vision._explored = true;
     }
 
-    // Fill operations are finished for LOS and FOV lights and tokens
-    vision.base.endFill();
-    vision.fov.lights.endFill();
-    vision.fov.tokens.endFill();
+    // Conclude fill for vision graphics
+    vision.fov.endFill();
     vision.los.endFill();
-    vision.los.preview.endFill();
 
-    // Update fog of war texture (if fow is activated)
+    // Commit updates to the Fog of War texture
     if ( commitFog ) canvas.fog.commit();
-  }
 
-  /* -------------------------------------------- */
+    // Alter visibility of the vision layer
+    this.visible = !!(canvas.effects.visionSources.size || !game.user.isGM);
 
-  /**
-   * Reset the exploration container with the fog sprite
-   */
-  resetExploration() {
-    if ( !this.explored ) return;
-    this.explored.destroy();
-    this.explored = this.addChild(this.#createExploration());
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Check if the lightsSprite render texture cache needs to be fully redrawn.
-   * @returns {boolean}              return true if the lights need to be redrawn.
-   */
-  #checkLights() {
-    // Counter to detect deleted light source
-    let lightCount = 0;
-    // First checking states changes for the current effects lightsources
-    for ( const lightSource of canvas.effects.lightSources ) {
-      if ( lightSource.object instanceof Token ) continue;
-      const state = this.#pointSourcesStates.get(lightSource);
-      if ( !state ) continue;
-      if ( (state.updateId !== lightSource.updateId) || (state.wasActive && !lightSource.active) ) return true;
-      lightCount++;
-    }
-    // Then checking if some lightsources were deleted
-    return this.#pointSourcesStates.size > lightCount;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Cache into the lightsSprite render texture elements contained into vision.fov.lights
-   * Note: A full cache redraw needs the texture to be cleared.
-   * @param {boolean} clearTexture       If the texture need to be cleared before rendering.
-   */
-  #cacheLights(clearTexture) {
-    this.vision.fov.lights.renderable = true;
-    const dims = canvas.dimensions;
-    this.#renderTransform.tx = -dims.sceneX;
-    this.#renderTransform.ty = -dims.sceneY;
-
-    // Render the currently revealed vision to the texture
-    canvas.app.renderer.render(this.vision.fov.lights, {
-      renderTexture: this.#lightsSprite.texture,
-      clear: clearTexture,
-      transform: this.#renderTransform
-    });
-    this.vision.fov.lights.renderable = false;
+    // Restrict the visibility of other canvas objects
+    this.restrictVisibility();
   }
 
   /* -------------------------------------------- */
@@ -553,19 +436,21 @@ class CanvasVisibility extends CanvasLayer {
 
     // Tokens
     for ( let t of canvas.tokens.placeables ) {
-      t._refreshVisibility(); // TODO: set render flag instead in the future
+      t.detectionFilter = undefined;
+      t.visible = ( !this.tokenVision && !t.document.hidden ) || t.isVisible;
+      if ( canvas.tokens._highlight ) t.refreshHUD();
     }
 
     // Door Icons
     for ( let d of canvas.controls.doors.children ) {
-      d.visible = d.isVisible;
+      d.visible = !this.tokenVision || d.isVisible;
     }
 
     // Map Notes
     for ( let n of canvas.notes.placeables ) {
-      n._refreshVisibility(); // TODO: set render flag instead in the future
+      n.visible = n.isVisible;
     }
-
+    canvas.notes.hintMapNotes();
     Hooks.callAll("sightRefresh", this);
   }
 
@@ -585,18 +470,18 @@ class CanvasVisibility extends CanvasLayer {
 
   /**
    * Test whether a target point on the Canvas is visible based on the current vision and LOS polygons.
-   * @param {Point} point                               The point in space to test, an object with coordinates x and y.
-   * @param {object} [options]                          Additional options which modify visibility testing.
-   * @param {number} [options.tolerance=2]              A numeric radial offset which allows for a non-exact match.
-   *                                                    For example, if tolerance is 2 then the test will pass if the point
-   *                                                    is within 2px of a vision polygon.
-   * @param {PlaceableObject|object|null} [options.object] An optional reference to the object whose visibility is being tested
-   * @returns {boolean}                                 Whether the point is currently visible.
+   * @param {Point} point                         The point in space to test, an object with coordinates x and y.
+   * @param {object} [options]                    Additional options which modify visibility testing.
+   * @param {number} [options.tolerance=2]        A numeric radial offset which allows for a non-exact match.
+   *                                              For example, if tolerance is 2 then the test will pass if the point
+   *                                              is within 2px of a vision polygon.
+   * @param {PIXI.DisplayObject} [options.object] An optional reference to the object whose visibility is being tested
+   * @returns {boolean}                           Whether the point is currently visible.
    */
   testVisibility(point, {tolerance=2, object=null}={}) {
 
     // If no vision sources are present, the visibility is dependant of the type of user
-    if ( !canvas.effects.visionSources.some(s => s.active) ) return game.user.isGM;
+    if ( !canvas.effects.visionSources.size ) return game.user.isGM;
 
     // Get scene rect to test that some points are not detected into the padding
     const sr = canvas.dimensions.sceneRect;
@@ -616,7 +501,7 @@ class CanvasVisibility extends CanvasLayer {
 
     // First test basic detection for light sources which specifically provide vision
     for ( const lightSource of canvas.effects.lightSources.values() ) {
-      if ( !lightSource.data.vision || !lightSource.active ) continue;
+      if ( !lightSource.data.vision || !lightSource.active || lightSource.disabled ) continue;
       const result = lightSource.testVisibility(config);
       if ( result === true ) return true;
     }
@@ -651,117 +536,5 @@ class CanvasVisibility extends CanvasLayer {
       }
     }
     return false;
-  }
-
-  /* -------------------------------------------- */
-  /*  Visibility Overlay and Texture management   */
-  /* -------------------------------------------- */
-
-  /**
-   * Load the scene fog overlay if provided and attach the fog overlay sprite to this layer.
-   */
-  async #drawVisibilityOverlay() {
-    this.visibilityOverlay = undefined;
-    this.#visibilityOverlayDimensions = [];
-    const overlayTexture = canvas.sceneTextures.fogOverlay ?? getTexture(canvas.scene.fogOverlay);
-    if ( !overlayTexture ) return;
-
-    // Creating the sprite and updating its base texture with repeating wrap mode
-    const fo = this.visibilityOverlay = new PIXI.Sprite(overlayTexture);
-
-    // Set dimensions and position according to overlay <-> scene foreground dimensions
-    const bkg = canvas.primary.background;
-    const baseTex = overlayTexture.baseTexture;
-    if ( bkg && ((fo.width !== bkg.width) || (fo.height !== bkg.height)) ) {
-      // Set to the size of the scene dimensions
-      fo.width = canvas.scene.dimensions.width;
-      fo.height = canvas.scene.dimensions.height;
-      fo.position.set(0, 0);
-      // Activate repeat wrap mode for this base texture (to allow tiling)
-      baseTex.wrapMode = PIXI.WRAP_MODES.REPEAT;
-    }
-    else {
-      // Set the same position and size as the scene primary background
-      fo.width = bkg.width;
-      fo.height = bkg.height;
-      fo.position.set(bkg.x, bkg.y);
-    }
-
-    // The overlay is added to this canvas container to update its transforms only
-    fo.renderable = false;
-    this.addChild(this.visibilityOverlay);
-
-    // Manage video playback
-    const video = game.video.getVideoSource(overlayTexture);
-    if ( video ) {
-      const playOptions = {volume: 0};
-      game.video.play(video, playOptions);
-    }
-
-    // Passing overlay and base texture width and height for shader tiling calculations
-    this.#visibilityOverlayDimensions = [fo.width, fo.height, baseTex.width, baseTex.height];
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @typedef {object} VisibilityTextureConfiguration
-   * @property {number} resolution
-   * @property {number} width
-   * @property {number} height
-   * @property {number} mipmap
-   * @property {number} scaleMode
-   * @property {number} multisample
-   */
-
-  /**
-   * Configure the fog texture will all required options.
-   * Choose an adaptive fog rendering resolution which downscales the saved fog textures for larger dimension Scenes.
-   * It is important that the width and height of the fog texture is evenly divisible by the downscaling resolution.
-   * @returns {VisibilityTextureConfiguration}
-   * @private
-   */
-  #configureVisibilityTexture() {
-    const dims = canvas.dimensions;
-    let width = dims.sceneWidth;
-    let height = dims.sceneHeight;
-    const maxSize = CanvasVisibility.#MAXIMUM_VISIBILITY_TEXTURE_SIZE;
-
-    // Adapt the fog texture resolution relative to some maximum size, and ensure that multiplying the scene dimensions
-    // by the resolution results in an integer number in order to avoid fog drift.
-    let resolution = 1.0;
-    if ( (width >= height) && (width > maxSize) ) {
-      resolution = maxSize / width;
-      height = Math.ceil(height * resolution) / resolution;
-    } else if ( height > maxSize ) {
-      resolution = maxSize / height;
-      width = Math.ceil(width * resolution) / resolution;
-    }
-
-    // Determine the fog texture options
-    return this.#textureConfiguration = {
-      resolution,
-      width,
-      height,
-      mipmap: PIXI.MIPMAP_MODES.OFF,
-      multisample: PIXI.MSAA_QUALITY.NONE,
-      scaleMode: PIXI.SCALE_MODES.LINEAR,
-      alphaMode: PIXI.ALPHA_MODES.NPM,
-      format: PIXI.FORMATS.RED
-    };
-  }
-
-  /* -------------------------------------------- */
-  /*  Deprecations and Compatibility              */
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  get fogOverlay() {
-    const msg = "fogOverlay is deprecated in favor of visibilityOverlay";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return this.visibilityOverlay;
   }
 }

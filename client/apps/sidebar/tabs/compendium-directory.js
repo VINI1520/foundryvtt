@@ -1,292 +1,98 @@
 /**
  * A compendium of knowledge arcane and mystical!
- * Renders the sidebar directory of compendium packs
- * @extends {SidebarTab}
- * @mixes {DirectoryApplication}
  */
-class CompendiumDirectory extends DirectoryApplicationMixin(SidebarTab) {
+class CompendiumDirectory extends SidebarTab {
 
-  /** @inheritdoc */
+  /** @override */
   static get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
       id: "compendium",
       template: "templates/sidebar/compendium-directory.html",
-      title: "COMPENDIUM.SidebarTitle",
-      contextMenuSelector: ".directory-item.compendium",
-      entryClickSelector: ".compendium"
+      title: "COMPENDIUM.SidebarTitle"
     });
-  }
-
-  /**
-   * A reference to the currently active compendium types. If empty, all types are shown.
-   * @type {string[]}
-   */
-  #activeFilters = [];
-
-  get activeFilters() {
-    return this.#activeFilters;
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  entryType = "Compendium";
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  static entryPartial = "templates/sidebar/partials/pack-partial.html";
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  _entryAlreadyExists(entry) {
-    return this.collection.has(entry.collection);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  _getEntryDragData(entryId) {
-    const pack = this.collection.get(entryId);
-    return {
-      type: "Compendium",
-      id: pack.collection
-    };
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  _entryIsSelf(entry, otherEntry) {
-    return entry.metadata.id === otherEntry.metadata.id;
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  async _sortRelative(entry, sortData) {
-    // We build up a single update object for all compendiums to prevent multiple re-renders
-    const packConfig = game.settings.get("core", "compendiumConfiguration");
-    const targetFolderId = sortData.updateData.folder;
-    if ( targetFolderId ) {
-      packConfig[entry.collection] = foundry.utils.mergeObject(packConfig[entry.collection] || {}, {
-        folder: targetFolderId
-      });
-    }
-
-    // Update sorting
-    const sorting = SortingHelpers.performIntegerSort(entry, sortData);
-    for ( const s of sorting ) {
-      const pack = s.target;
-      const existingConfig = packConfig[pack.collection] || {};
-      existingConfig.sort = s.update.sort;
-    }
-    await game.settings.set("core", "compendiumConfiguration", packConfig);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  activateListeners(html) {
-    super.activateListeners(html);
-    html.find(".filter").click(this._displayFilterCompendiumMenu.bind(this));
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Display a menu of compendium types to filter by
-   * @param {PointerEvent} event    The originating pointer event
-   * @returns {Promise<void>}
-   * @protected
-   */
-  async _displayFilterCompendiumMenu(event) {
-    // If there is a current dropdown menu, remove it
-    const dropdown = document.getElementsByClassName("dropdown-menu")[0];
-    if ( dropdown ) {
-      dropdown.remove();
-      return;
-    }
-    const button = event.currentTarget;
-
-    // Display a menu of compendium types to filter by
-    const choices = CONST.COMPENDIUM_DOCUMENT_TYPES.map(t => {
-      const config = CONFIG[t];
-      return {
-        name: game.i18n.localize(config.documentClass.metadata.label),
-        icon: config.sidebarIcon,
-        type: t,
-        callback: (event) => this._onToggleCompendiumFilterType(event, t)
-      };
-    });
-
-    // If there are active filters, add a "Clear Filters" option
-    if ( this.#activeFilters.length ) {
-      choices.unshift({
-        name: game.i18n.localize("COMPENDIUM.ClearFilters"),
-        icon: "fas fa-times",
-        type: null,
-        callback: (event) => this._onToggleCompendiumFilterType(event, null)
-      });
-    }
-
-    // Create a vertical list of buttons contained in a div
-    const menu = document.createElement("div");
-    menu.classList.add("dropdown-menu");
-    const list = document.createElement("div");
-    list.classList.add("dropdown-list", "flexcol");
-    menu.appendChild(list);
-    for ( let c of choices ) {
-      const dropdownItem = document.createElement("a");
-      dropdownItem.classList.add("dropdown-item");
-      if ( this.#activeFilters.includes(c.type) ) dropdownItem.classList.add("active");
-      dropdownItem.innerHTML = `<i class="${c.icon}"></i> ${c.name}`;
-      dropdownItem.addEventListener("click", c.callback);
-      list.appendChild(dropdownItem);
-    }
-
-    // Position the menu
-    const pos = {
-      top: button.offsetTop + 10,
-      left: button.offsetLeft + 10
-    };
-    menu.style.top = `${pos.top}px`;
-    menu.style.left = `${pos.left}px`;
-    button.parentElement.appendChild(menu);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle toggling a compendium type filter
-   * @param {PointerEvent} event    The originating pointer event
-   * @param {string|null} type      The compendium type to filter by. If null, clear all filters.
-   * @protected
-   */
-  _onToggleCompendiumFilterType(event, type) {
-    if ( type === null ) this.#activeFilters = [];
-    else this.#activeFilters = this.#activeFilters.includes(type) ?
-      this.#activeFilters.filter(t => t !== type) : this.#activeFilters.concat(type);
-    this.render();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * The collection of Compendium Packs which are displayed in this Directory
-   * @returns {CompendiumPacks<string, CompendiumCollection>}
-   */
-  get collection() {
-    return game.packs;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Get the dropped Entry from the drop data
-   * @param {object} data         The data being dropped
-   * @returns {Promise<object>}   The dropped Entry
-   * @protected
-   */
-  async _getDroppedEntryFromData(data) {
-    return game.packs.get(data.id);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  async _createDroppedEntry(document, folder) {
-    throw new Error("The _createDroppedEntry shouldn't be called for CompendiumDirectory");
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  _getEntryName(entry) {
-    return entry.metadata.label;
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  _getEntryId(entry) {
-    return entry.metadata.id;
   }
 
   /* -------------------------------------------- */
 
   /** @override */
   async getData(options={}) {
-    let context = await super.getData(options);
+    const context = await super.getData(options);
 
-    // For each document, assign a default image if one is not already present, and calculate the style string
-    const packageTypeIcons = {
-      "world": World.icon,
-      "system": System.icon,
-      "module": Module.icon
-    };
-    const packContext = {};
-    for ( const pack of this.collection ) {
-      packContext[pack.collection] = {
-        locked: pack.locked,
-        customOwnership: "ownership" in pack.config,
-        collection: pack.collection,
-        name: pack.metadata.packageName,
-        label: pack.metadata.label,
-        icon: CONFIG[pack.metadata.type].sidebarIcon,
-        hidden: this.#activeFilters?.length ? !this.#activeFilters.includes(pack.metadata.type) : false,
-        banner: pack.banner,
-        sourceIcon: packageTypeIcons[pack.metadata.packageType]
+    // Filter packs for visibility
+    let packs = game.packs.filter(p => game.user.isGM || !p.private);
+
+    // Sort packs by Document type
+    const packData = packs.sort((a, b) => a.documentName.localeCompare(b.documentName)).reduce((obj, pack) => {
+      const documentName = pack.documentName;
+      if ( !obj.hasOwnProperty(documentName) ) obj[documentName] = {
+        label: documentName,
+        packs: []
       };
+      obj[documentName].packs.push(pack);
+      return obj;
+    }, {});
+
+    // Sort packs within type
+    for ( let p of Object.values(packData) ) {
+      p.packs = p.packs.sort((a, b) => a.title.localeCompare(b.title));
     }
 
     // Return data to the sidebar
-    context = foundry.utils.mergeObject(context, {
-      folderIcon: CONFIG.Folder.sidebarIcon,
-      label: game.i18n.localize("PACKAGE.TagCompendium"),
-      labelPlural: game.i18n.localize("SIDEBAR.TabCompendium"),
-      sidebarIcon: "fas fa-atlas",
-      filtersActive: !!this.#activeFilters.length
+    return foundry.utils.mergeObject(context, {packs: packData});
+  }
+
+  /* -------------------------------------------- */
+
+  /** @override */
+  activateListeners(html) {
+
+    // Click to open
+    html.find(".compendium-pack").click(ev => {
+      const li = ev.currentTarget;
+      const pack = game.packs.get(li.dataset.pack);
+      if ( li.dataset.open === "1" ) pack.apps.forEach(app => app.close());
+      else {
+        this._toggleOpenState(li.dataset.pack);
+        pack.render(true);
+      }
     });
-    context.packContext = packContext;
-    return context;
+
+    // Options below are GM only
+    if ( !game.user.isGM ) return;
+
+    // Create Compendium
+    html.find(".create-compendium").click(this._onCreateCompendium.bind(this));
+
+    // Compendium context menu
+    this._contextMenu(html);
   }
 
   /* -------------------------------------------- */
 
-  /** @override */
-  async render(force=false, options={}) {
-    game.packs.initializeTree();
-    return super.render(force, options);
+  /**
+   * Compendium sidebar Context Menu creation
+   * @param {jQuery} html     The HTML being rendered for the compendium directory
+   * @protected
+   */
+  _contextMenu(html) {
+    ContextMenu.create(this, html, ".compendium-pack", this._getEntryContextOptions());
   }
 
   /* -------------------------------------------- */
 
-  /** @override */
+  /**
+   * Get the sidebar directory entry context options
+   * @returns {Object}   The sidebar entry context options
+   * @private
+   */
   _getEntryContextOptions() {
-    if ( !game.user.isGM ) return [];
     return [
       {
-        name: "OWNERSHIP.Configure",
-        icon: '<i class="fa-solid fa-user-lock"></i>',
+        name: "COMPENDIUM.ToggleVisibility",
+        icon: '<i class="fas fa-eye"></i>',
         callback: li => {
-          const pack = game.packs.get(li.data("pack"));
-          return pack.configureOwnershipDialog();
-        }
-      },
-      {
-        name: "FOLDER.Clear",
-        icon: '<i class="fas fa-folder"></i>',
-        condition: header => {
-          const li = header.closest(".directory-item");
-          const entry = this.collection.get(li.data("entryId"));
-          return !!entry.folder;
-        },
-        callback: header => {
-          const li = header.closest(".directory-item");
-          const entry = this.collection.get(li.data("entryId"));
-          entry.setFolder(null);
+          let pack = game.packs.get(li.data("pack"));
+          return pack.configure({private: !pack.private});
         }
       },
       {
@@ -318,12 +124,12 @@ class CompendiumDirectory extends DirectoryApplicationMixin(SidebarTab) {
           const html = `<form>
             <div class="form-group">
                 <label>${game.i18n.localize("COMPENDIUM.DuplicateTitle")}</label>
-                <input type="text" name="label" value="${game.i18n.format("DOCUMENT.CopyOf", {name: pack.title})}"/>
+                <input type="text" name="label" value="${pack.title}"/>
                 <p class="notes">${game.i18n.localize("COMPENDIUM.DuplicateHint")}</p>
             </div>
           </form>`;
           return Dialog.confirm({
-            title: `${game.i18n.localize("COMPENDIUM.Duplicate")}: ${pack.title}`,
+            title: `${game.i18n.localize("COMPENDIUM.ToggleLocked")}: ${pack.title}`,
             content: html,
             yes: html => {
               const label = html.querySelector('input[name="label"]').value;
@@ -368,48 +174,33 @@ class CompendiumDirectory extends DirectoryApplicationMixin(SidebarTab) {
 
   /* -------------------------------------------- */
 
-  /** @override */
-  async _onClickEntryName(event) {
+  /**
+   * Handle a Compendium Pack creation request
+   * @param {PointerEvent} event      The originating click event
+   * @private
+   */
+  async _onCreateCompendium(event) {
     event.preventDefault();
-    const element = event.currentTarget;
-    const packId = element.closest("[data-pack]").dataset.pack;
-    const pack = game.packs.get(packId);
-    pack.render(true);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  async _onCreateEntry(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    const li = event.currentTarget.closest(".directory-item");
-    const targetFolderId = li ? li.dataset.folderId : null;
-    const types = CONST.COMPENDIUM_DOCUMENT_TYPES.map(documentName => {
-      return { value: documentName, label: game.i18n.localize(getDocumentClass(documentName).metadata.label) };
-    });
-    game.i18n.sortObjects(types, "label");
-    const folders = this.collection._formatFolderSelectOptions();
-    const html = await renderTemplate("templates/sidebar/compendium-create.html",
-      {types, folders, folder: targetFolderId, hasFolders: folders.length >= 1});
+    const types = CONST.COMPENDIUM_DOCUMENT_TYPES.reduce((types, documentName) => {
+      types[documentName] = game.i18n.localize(getDocumentClass(documentName).metadata.label);
+      return types;
+    }, {});
+    const html = await renderTemplate("templates/sidebar/compendium-create.html", {types});
     return Dialog.prompt({
       title: game.i18n.localize("COMPENDIUM.Create"),
       content: html,
       label: game.i18n.localize("COMPENDIUM.Create"),
-      callback: async html => {
+      callback: html => {
         const form = html.querySelector("#compendium-create");
         const fd = new FormDataExtended(form);
         const metadata = fd.object;
-        let targetFolderId = metadata.folder;
-        if ( metadata.folder ) delete metadata.folder;
         if ( !metadata.label ) {
           let defaultName = game.i18n.format("DOCUMENT.New", {type: game.i18n.localize("PACKAGE.TagCompendium")});
           const count = game.packs.size;
           if ( count > 0 ) defaultName += ` (${count + 1})`;
           metadata.label = defaultName;
         }
-        const pack = await CompendiumCollection.createCompendium(metadata);
-        if ( targetFolderId ) await pack.setFolder(targetFolderId);
+        CompendiumCollection.createCompendium(metadata).then(() => this.render());
       },
       rejectClose: false,
       options: { jQuery: false }
@@ -429,6 +220,23 @@ class CompendiumDirectory extends DirectoryApplicationMixin(SidebarTab) {
       content: `<h4>${game.i18n.localize("AreYouSure")}</h4><p>${game.i18n.localize("COMPENDIUM.DeleteWarning")}</p>`,
       yes: () => pack.deleteCompendium(),
       defaultYes: false
+    });
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Toggle the compendium entry open/closed state in the sidebar.
+   * @param {string} pack  The name of the compendium pack.
+   * @internal
+   */
+  _toggleOpenState(pack) {
+    document.querySelectorAll(`.compendium-pack[data-pack="${pack}"]`).forEach(li => {
+      const isOpen = li.dataset.open === "1";
+      li.dataset.open = isOpen ? "0" : "1";
+      const icon = li.querySelector("i.folder");
+      icon.classList.remove("fa-folder", "fa-folder-open");
+      icon.classList.add(isOpen ? "fa-folder" : "fa-folder-open");
     });
   }
 }

@@ -1,37 +1,4 @@
 /**
- * Bit code labels splitting a rectangle into zones, based on the Cohen-Sutherland algorithm.
- * See https://en.wikipedia.org/wiki/Cohen%E2%80%93Sutherland_algorithm
- *          left    central   right
- * top      1001    1000      1010
- * central  0001    0000      0010
- * bottom   0101    0100      0110
- * @enum {number}
- */
-PIXI.Rectangle.CS_ZONES = {
-  INSIDE: 0x0000,
-  LEFT: 0x0001,
-  RIGHT: 0x0010,
-  TOP: 0x1000,
-  BOTTOM: 0x0100,
-  TOPLEFT: 0x1001,
-  TOPRIGHT: 0x1010,
-  BOTTOMRIGHT: 0x0110,
-  BOTTOMLEFT: 0x0101
-};
-
-/* -------------------------------------------- */
-
-/**
- * Calculate center of this rectangle.
- * @type {Point}
- */
-Object.defineProperty(PIXI.Rectangle.prototype, "center", { get: function() {
-  return { x: this.x + (this.width * 0.5), y: this.y + (this.height * 0.5) };
-}});
-
-/* -------------------------------------------- */
-
-/**
  * Return the bounding box for a PIXI.Rectangle.
  * The bounding rectangle is normalized such that the width and height are non-negative.
  * @returns {PIXI.Rectangle}
@@ -46,171 +13,9 @@ PIXI.Rectangle.prototype.getBounds = function() {
 /* -------------------------------------------- */
 
 /**
- * Determine if a point is on or nearly on this rectangle.
- * @param {Point} p           Point to test
- * @returns {boolean}         Is the point on the rectangle boundary?
- */
-PIXI.Rectangle.prototype.pointIsOn = function(p) {
-  const CSZ = PIXI.Rectangle.CS_ZONES;
-  return this._getZone(p) === CSZ.INSIDE && this._getEdgeZone(p) !== CSZ.INSIDE;
-};
-
-/* -------------------------------------------- */
-
-/**
- * Calculate the rectangle Zone for a given point located around, on, or in the rectangle.
- * See https://en.wikipedia.org/wiki/Cohen%E2%80%93Sutherland_algorithm
- * This differs from _getZone in how points on the edge are treated: they are not considered inside.
- * @param {Point} point                   A point to test for location relative to the rectangle
- * @returns {PIXI.Rectangle.CS_ZONES}     Which edge zone does the point belong to?
- */
-PIXI.Rectangle.prototype._getEdgeZone = function(point) {
-  const CSZ = PIXI.Rectangle.CS_ZONES;
-  let code = CSZ.INSIDE;
-  if ( point.x < this.x || point.x.almostEqual(this.x) ) code |= CSZ.LEFT;
-  else if ( point.x > this.right || point.x.almostEqual(this.right) ) code |= CSZ.RIGHT;
-  if ( point.y < this.y || point.y.almostEqual(this.y) ) code |= CSZ.TOP;
-  else if ( point.y > this.bottom || point.y.almostEqual(this.bottom) ) code |= CSZ.BOTTOM;
-  return code;
-};
-
-/* -------------------------------------------- */
-
-/**
- * Get all the points (corners) for a polygon approximation of a rectangle between two points on the rectangle.
- * The two points can be anywhere in 2d space on or outside the rectangle.
- * The starting and ending side are based on the zone of the corresponding a and b points.
- * (See PIXI.Rectangle.CS_ZONES.)
- * This is the rectangular version of PIXI.Circle.prototype.pointsBetween, and is similarly used
- * to draw the portion of the shape between two intersection points on that shape.
- * @param { Point } a   A point on or outside the rectangle, representing the starting position.
- * @param { Point } b   A point on or outside the rectangle, representing the starting position.
- * @returns { Point[]}  Points returned are clockwise from start to end.
- */
-PIXI.Rectangle.prototype.pointsBetween = function(a, b) {
-  const CSZ = PIXI.Rectangle.CS_ZONES;
-
-  // Assume the point could be outside the rectangle but not inside (which would be undefined).
-  const zoneA = this._getEdgeZone(a);
-  if ( !zoneA ) return [];
-  const zoneB = this._getEdgeZone(b);
-  if ( !zoneB ) return [];
-
-  // If on the same wall, return none if end is counterclockwise to start.
-  if ( zoneA === zoneB && foundry.utils.orient2dFast(this.center, a, b) <= 0 ) return [];
-  let z = zoneA;
-  const pts = [];
-  for ( let i = 0; i < 4; i += 1) {
-    if ( (z & CSZ.LEFT) ) {
-      if ( z !== CSZ.TOPLEFT ) pts.push({ x: this.left, y: this.top });
-      z = CSZ.TOP;
-    } else if ( (z & CSZ.TOP) ) {
-      if ( z !== CSZ.TOPRIGHT ) pts.push({ x: this.right, y: this.top });
-      z = CSZ.RIGHT;
-    } else if ( (z & CSZ.RIGHT) ) {
-      if ( z !== CSZ.BOTTOMRIGHT ) pts.push({ x: this.right, y: this.bottom });
-      z = CSZ.BOTTOM;
-    } else if ( (z & CSZ.BOTTOM) ) {
-      if ( z !== CSZ.BOTTOMLEFT ) pts.push({ x: this.left, y: this.bottom });
-      z = CSZ.LEFT;
-    }
-    if ( z & zoneB ) break;
-  }
-  return pts;
-};
-
-/* -------------------------------------------- */
-
-/**
- * Get all intersection points for a segment A|B
- * Intersections are sorted from A to B.
- * @param {Point} a   Endpoint A of the segment
- * @param {Point} b   Endpoint B of the segment
- * @returns {Point[]} Array of intersections or empty if no intersection.
- *  If A|B is parallel to an edge of this rectangle, returns the two furthest points on
- *  the segment A|B that are on the edge.
- */
-PIXI.Rectangle.prototype.segmentIntersections = function(a, b) {
-
-  // The segment is collinear with a vertical edge
-  if ( a.x.almostEqual(b.x) && (a.x.almostEqual(this.left) || a.x.almostEqual(this.right)) ) {
-    const minY1 = Math.min(a.y, b.y);
-    const minY2 = Math.min(this.top, this.bottom);
-    const maxY1 = Math.max(a.y, b.y);
-    const maxY2 = Math.max(this.top, this.bottom);
-    const minIxY = Math.max(minY1, minY2);
-    const maxIxY = Math.min(maxY1, maxY2);
-
-    // Test whether the two segments intersect
-    if ( minIxY.almostEqual(maxIxY) ) return [{x: a.x, y: minIxY}];
-
-    // Return in order nearest a, nearest b
-    else if ( minIxY < maxIxY ) return Math.abs(minIxY - a.y) < Math.abs(maxIxY - a.y)
-      ? [{x: a.x, y: minIxY}, {x: a.x, y: maxIxY}]
-      : [{x: a.x, y: maxIxY}, {x: a.x, y: minIxY}];
-
-  }
-
-  // The segment is collinear with a horizontal edge
-  else if ( a.y.almostEqual(b.y) && (a.y.almostEqual(this.top) || a.y.almostEqual(this.bottom))) {
-    const minX1 = Math.min(a.x, b.x);
-    const minX2 = Math.min(this.right, this.left);
-    const maxX1 = Math.max(a.x, b.x);
-    const maxX2 = Math.max(this.right, this.left);
-    const minIxX = Math.max(minX1, minX2);
-    const maxIxX = Math.min(maxX1, maxX2);
-
-    // Test whether the two segments intersect
-    if ( minIxX.almostEqual(maxIxX) ) return [{x: minIxX, y: a.y}];
-
-    // Return in order nearest a, nearest b
-    else if ( minIxX < maxIxX ) return Math.abs(minIxX - a.x) < Math.abs(maxIxX - a.x)
-      ? [{x: minIxX, y: a.y}, {x: maxIxX, y: a.y}]
-      : [{x: maxIxX, y: a.y}, {x: minIxX, y: a.y}];
-  }
-
-  // Follows structure of lineSegmentIntersects
-  const zoneA = this._getZone(a);
-  const zoneB = this._getZone(b);
-  if ( !(zoneA | zoneB) ) return []; // Bitwise OR is 0: both points inside rectangle.
-
-  // Regular AND: one point inside, one outside
-  // Otherwise, both points outside
-  const zones = !(zoneA && zoneB) ? [zoneA || zoneB] : [zoneA, zoneB];
-
-  // If 2 zones, line likely intersects two edges.
-  // It is possible to have a line that starts, for example, at center left and moves to center top.
-  // In this case it may not cross the rectangle.
-  if ( zones.length === 2 && !this.lineSegmentIntersects(a, b) ) return [];
-  const CSZ = PIXI.Rectangle.CS_ZONES;
-  const lsi = foundry.utils.lineSegmentIntersects;
-  const lli = foundry.utils.lineLineIntersection;
-  const { leftEdge, rightEdge, bottomEdge, topEdge } = this;
-  const ixs = [];
-  for ( const z of zones ) {
-    let ix;
-    if ( (z & CSZ.LEFT)
-      && lsi(leftEdge.A, leftEdge.B, a, b)) ix = lli(leftEdge.A, leftEdge.B, a, b);
-    if ( !ix && (z & CSZ.RIGHT)
-      && lsi(rightEdge.A, rightEdge.B, a, b)) ix = lli(rightEdge.A, rightEdge.B, a, b);
-    if ( !ix && (z & CSZ.TOP)
-      && lsi(topEdge.A, topEdge.B, a, b)) ix = lli(topEdge.A, topEdge.B, a, b);
-    if ( !ix && (z & CSZ.BOTTOM)
-      && lsi(bottomEdge.A, bottomEdge.B, a, b)) ix = lli(bottomEdge.A, bottomEdge.B, a, b);
-
-    // The ix should always be a point by now
-    if ( !ix ) throw new Error("PIXI.Rectangle.prototype.segmentIntersections returned an unexpected null point.");
-    ixs.push(ix);
-  }
-  return ixs;
-};
-
-/* -------------------------------------------- */
-
-/**
  * Compute the intersection of this Rectangle with some other Rectangle.
  * @param {PIXI.Rectangle} other      Some other rectangle which intersects this one
- * @returns {PIXI.Rectangle}          The intersected rectangle
+ * @returns {PIXI.Rectangle}
  */
 PIXI.Rectangle.prototype.intersection = function(other) {
   const x0 = this.x < other.x ? other.x : this.x;
@@ -242,8 +47,6 @@ Object.defineProperty(PIXI.Rectangle.prototype, "leftEdge", { get: function() {
   return { A: { x: this.left, y: this.bottom }, B: { x: this.left, y: this.top }};
 }});
 
-/* -------------------------------------------- */
-
 /**
  * Get the right edge of this rectangle.
  * The returned edge endpoints are oriented clockwise around the rectangle.
@@ -253,8 +56,6 @@ Object.defineProperty(PIXI.Rectangle.prototype, "rightEdge", { get: function() {
   return { A: { x: this.right, y: this.top }, B: { x: this.right, y: this.bottom }};
 }});
 
-/* -------------------------------------------- */
-
 /**
  * Get the top edge of this rectangle.
  * The returned edge endpoints are oriented clockwise around the rectangle.
@@ -263,8 +64,6 @@ Object.defineProperty(PIXI.Rectangle.prototype, "rightEdge", { get: function() {
 Object.defineProperty(PIXI.Rectangle.prototype, "topEdge", { get: function() {
   return { A: { x: this.left, y: this.top }, B: { x: this.right, y: this.top }};
 }});
-
-/* -------------------------------------------- */
 
 /**
  * Get the bottom edge of this rectangle.
@@ -278,11 +77,32 @@ Object.defineProperty(PIXI.Rectangle.prototype, "bottomEdge", { get: function() 
 /* -------------------------------------------- */
 
 /**
+ * Bit code labels splitting a rectangle into zones, based on the Cohen-Sutherland algorithm.
+ * See https://en.wikipedia.org/wiki/Cohen%E2%80%93Sutherland_algorithm
+ *          left    central   right
+ * top      1001    1000      1010
+ * central  0001    0000      0010
+ * bottom   0101    0100      0110
+ * @enum {number}
+ */
+PIXI.Rectangle.CS_ZONES = {
+  INSIDE: 0x0000,
+  LEFT: 0x0001,
+  RIGHT: 0x0010,
+  TOP: 0x1000,
+  BOTTOM: 0x0100,
+  TOPLEFT: 0x1001,
+  TOPRIGHT: 0x1010,
+  BOTTOMRIGHT: 0x0110,
+  BOTTOMLEFT: 0x0101
+};
+
+/**
  * Calculate the rectangle Zone for a given point located around or in the rectangle.
  * https://en.wikipedia.org/wiki/Cohen%E2%80%93Sutherland_algorithm
  *
  * @param {Point} p     Point to test for location relative to the rectangle
- * @returns {PIXI.Rectangle.CS_ZONES}
+ * @returns {integer}
  */
 PIXI.Rectangle.prototype._getZone = function(p) {
   const CSZ = PIXI.Rectangle.CS_ZONES;
@@ -344,40 +164,13 @@ PIXI.Rectangle.prototype.lineSegmentIntersects = function(a, b, { inside = false
  * In the future we may replace this with more specialized logic which uses the line-line intersection formula.
  * @param {PIXI.Polygon} polygon      A PIXI.Polygon
  * @param {object} [options]          Options which configure how the intersection is computed
- * @param {number} [options.clipType]             The clipper clip type
- * @param {number} [options.scalingFactor]        A scaling factor passed to Polygon#toClipperPoints for precision
- * @param {string} [options.weilerAtherton=true]  Use the Weiler-Atherton algorithm. Otherwise, use Clipper.
- * @returns {PIXI.Polygon|null}       The intersected polygon or null if no solution was present
- */
-PIXI.Rectangle.prototype.intersectPolygon = function(polygon, {clipType, scalingFactor, canMutate, weilerAtherton=true}={}) {
-  if ( !this.width || !this.height ) return new PIXI.Polygon([]);
-  clipType ??= ClipperLib.ClipType.ctIntersection;
-
-  // Use Weiler-Atherton for efficient intersection or union
-  if ( weilerAtherton ) {
-    const res = WeilerAthertonClipper.combine(polygon, this, {clipType, canMutate, scalingFactor});
-    if ( !res.length ) return new PIXI.Polygon([]);
-    return res[0];
-  }
-
-  // Use Clipper polygon intersection
-  return polygon.intersectPolygon(this.toPolygon(), {clipType, canMutate, scalingFactor});
-};
-
-/* -------------------------------------------- */
-
-/**
- * Intersect this PIXI.Rectangle with an array of ClipperPoints. Currently, uses the clipper library.
- * In the future we may replace this with more specialized logic which uses the line-line intersection formula.
- * @param {ClipperPoint[]} clipperPoints An array of ClipperPoints generated by PIXI.Polygon.toClipperPoints()
- * @param {object} [options]            Options which configure how the intersection is computed
  * @param {number} [options.clipType]       The clipper clip type
  * @param {number} [options.scalingFactor]  A scaling factor passed to Polygon#toClipperPoints to preserve precision
- * @returns {PIXI.Polygon|null}         The intersected polygon or null if no solution was present
+ * @returns {PIXI.Polygon|null}       The intersected polygon or null if no solution was present
  */
-PIXI.Rectangle.prototype.intersectClipper = function(clipperPoints, {clipType, scalingFactor}={}) {
-  if ( !this.width || !this.height ) return [];
-  return this.toPolygon().intersectPolygon(clipperPoints, {clipType, scalingFactor});
+PIXI.Rectangle.prototype.intersectPolygon = function(polygon, {clipType, scalingFactor}={}) {
+  if ( !this.width || !this.height ) return new PIXI.Polygon([]);
+  return polygon.intersectPolygon(this.toPolygon(), {clipType, scalingFactor});
 };
 
 /* -------------------------------------------- */
@@ -420,7 +213,7 @@ PIXI.Rectangle.prototype.normalize = function() {
  * @param {number} radians        The angle of rotation
  * @returns {PIXI.Rectangle}      A new rotated rectangle
  */
-PIXI.Rectangle.prototype.rotate = function(radians) {
+PIXI.Rectangle.prototyperotate = function(radians) {
   return this.constructor.fromRotation(this.x, this.y, this.width, this.height, radians);
 };
 

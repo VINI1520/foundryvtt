@@ -1,0 +1,17 @@
+<li class="player flexrow" data-user-id="{{user._id}}">
+    <div class="form-group">
+        <input type="text" name="users.{{user._id}}.name" value="{{user.name}}" autocomplete="off"/>
+    </div>
+    <div class="form-group">
+        <input class="password" type="password" name="users.{{user._id}}.password" value="{{@root.passwordString}}" autocomplete="off"/>
+        <label class="checkbox show" title="{{ localize "USERS.KeyShow" }}">
+            <i class="fa fa-eye"></i>
+        </label>
+    </div>
+    <div class="form-group">
+        <select name="users.{{user._id}}.role" data-dtype="Number">
+            {{selectOptions roles selected=user.role}}
+        </select>
+    </div>
+    <a class="user-delete" title="{{ localize 'USERS.Delete' }}"><i class="fas fa-trash"></i></a>
+</li>

@@ -168,8 +168,7 @@ class AdventureExporter extends DocumentSheet {
 
       // Add leftover documents to the section root
       for ( const d of documents ) {
-        const state = this.#getDocumentState(d);
-        section.documents.push({document: d, id: d.id, name: d.name, state: state, stateLabel: `ADVENTURE.Document${state.titleCase()}`});
+        section.documents.push({document: d, id: d.id, name: d.name, state: this.#getDocumentState(d)});
       }
     }
     return content;
@@ -190,16 +189,14 @@ class AdventureExporter extends DocumentSheet {
     let documents;
     [remainingDocuments, documents] = remainingDocuments.partition(d => d._source.folder === node.id );
     for ( const d of documents ) {
-      const state = this.#getDocumentState(d);
-      node.documents.push({document: d, id: d.id, name: d.name, state: state, stateLabel: `ADVENTURE.Document${state.titleCase()}`});
+      node.documents.push({document: d, id: d.id, name: d.name, state: this.#getDocumentState(d)});
     }
 
     // Allocate Folders to this node
     let folders;
     [remainingFolders, folders] = remainingFolders.partition(f => f._source.folder === node.id);
     for ( const folder of folders ) {
-      const state = this.#getDocumentState(folder);
-      const child = {folder, id: folder.id, name: folder.name, state: state, stateLabel: `ADVENTURE.Document${state.titleCase()}`,
+      const child = {folder, id: folder.id, name: folder.name, state: this.#getDocumentState(folder),
         children: [], documents: []};
       [remainingFolders, remainingDocuments] = this.#populateNode(child, remainingFolders, remainingDocuments);
       node.children.push(child);
@@ -269,8 +266,7 @@ class AdventureExporter extends DocumentSheet {
 
     // Create or update the document
     if ( this.adventure.id ) {
-      const updated = await this.adventure.update(adventureData, {diff: false, recursive: false});
-      pack.indexDocument(updated);
+      await this.adventure.update(adventureData, {diff: false, recursive: false});
       ui.notifications.info(game.i18n.format("ADVENTURE.UpdateSuccess", {name: this.adventure.name}));
     } else {
       await this.adventure.constructor.createDocuments([adventureData], {

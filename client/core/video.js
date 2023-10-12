@@ -66,7 +66,6 @@ class VideoHelper {
    * @returns {HTMLVideoElement|null}                           The source video element or null
    */
   getVideoSource(object) {
-    if ( !object ) return null;
     const texture = object.texture || object;
     if ( !texture.valid ) return null;
     const source = texture.baseTexture.resource.source;
@@ -81,22 +80,13 @@ class VideoHelper {
    * @returns {Promise<PIXI.Texture>}     An unlinked PIXI.Texture which can be played independently
    */
   async cloneTexture(source) {
-    const clone = source.cloneNode(true);
-    const resource = new PIXI.VideoResource(clone, {autoPlay: false});
-    resource.internal = true;
-    await resource.load();
-    return new PIXI.Texture(new PIXI.BaseTexture(resource, {
-      alphaMode: await PIXI.utils.detectVideoAlphaMode()
-    }));
+    const clone = source.cloneNode();
+    await new Promise(resolve => clone.oncanplay = resolve);
+    return PIXI.Texture.from(clone, {resourceOptions: {autoPlay: false}});
   }
 
   /* -------------------------------------------- */
 
-  /**
-   * Check if a source has a video extension.
-   * @param {string} src          The source.
-   * @returns {boolean}           If the source has a video extension or not.
-   */
   static hasVideoExtension(src) {
     let rgx = new RegExp(`(\\.${Object.keys(CONST.VIDEO_FILE_EXTENSIONS).join("|\\.")})(\\?.*)?`, "i");
     return rgx.test(src);
@@ -121,7 +111,10 @@ class VideoHelper {
     offset ??= video.currentTime;
 
     // Playback volume and muted state
-    if ( volume !== undefined ) video.volume = volume;
+    if ( volume !== undefined ) {
+      video.volume = volume;
+      video.muted = video.volume === 0;
+    }
 
     // Pause playback
     if ( !playing ) return video.pause();
@@ -154,7 +147,7 @@ class VideoHelper {
    */
   awaitFirstGesture() {
     if ( !this.locked ) return;
-    const interactions = ["contextmenu", "auxclick", "pointerdown", "pointerup", "keydown"];
+    const interactions = ["contextmenu", "auxclick", "mousedown", "mouseup", "keydown"];
     interactions.forEach(event => document.addEventListener(event, this._onFirstGesture.bind(this), {once: true}));
   }
 

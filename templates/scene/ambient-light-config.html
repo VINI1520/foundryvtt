@@ -30,10 +30,11 @@
             <p class="hint">{{ localize 'LIGHT.RadiusHint' }}</p>
         </div>
 
-        <div class="form-group">
+        <div class="form-group slim">
             <label>{{localize "LIGHT.Angle" }} <span class="units">({{localize "Degrees"}})</span></label>
             <div class="form-fields">
-                {{rangePicker name="config.angle" value=data.config.angle min="0" max="360"}}
+                <label>{{localize "Degrees"}}</label>
+                <input type="number" name="config.angle" value="{{data.config.angle}}" placeholder="{{localize "Degrees"}}"/>
             </div>
         </div>
 

@@ -185,7 +185,7 @@ class AudioContainer {
 
     // For short sounds create and cache the audio buffer and use an AudioBufferSourceNode
     if ( isShort ) {
-      const buffer = await this.createAudioBuffer(this.src);
+      const buffer = await this._createAudioBuffer();
       console.debug(`${vtt} | Constructing audio buffer source node - ${this.src}`);
       return this._createAudioBufferSourceNode(buffer);
     }
@@ -199,12 +199,12 @@ class AudioContainer {
 
   /**
    * Create an Audio source node using a buffered array.
-   * @param {string} src                The source URL from which to create the buffer
-   * @returns {Promise<AudioBuffer>}    The created and decoded buffer
+   * @returns {Promise<AudioBuffer>}
+   * @private
    */
-  async createAudioBuffer(src) {
-    console.debug(`${vtt} | Loading audio buffer - ${src}`);
-    const response = await foundry.utils.fetchWithTimeout(src);
+  async _createAudioBuffer() {
+    console.debug(`${vtt} | Loading audio buffer - ${this.src}`);
+    const response = await foundry.utils.fetchWithTimeout(this.src);
     const arrayBuffer = await response.arrayBuffer();
     return this.context.decodeAudioData(arrayBuffer);
   }
@@ -258,10 +258,10 @@ class AudioContainer {
 
   /**
    * Begin playback for the source node.
-   * @param {number} [offset]       The desired start time
-   * @param {Function} [onended]    A callback function for when playback concludes naturally
+   * @param {number} offset         The desired start time
+   * @param {Function} onended      A callback function for when playback concludes naturally
    */
-  play(offset=0, onended=undefined) {
+  play(offset=0, onended) {
     if ( this.isBuffer ) {
       this.sourceNode.onended = () => this._onEnd(onended);
       this.sourceNode.start(0, offset);

@@ -7,7 +7,15 @@ class RenderedCanvasGroup extends BaseCanvasMixin(PIXI.Container) {
   /** @override */
   static groupName = "rendered";
 
+  /* -------------------------------------------- */
+  /*  Tear-Down                                   */
+  /* -------------------------------------------- */
+
   /** @override */
-  static tearDownChildren = false;
+  async tearDown(options={}) {
+    // We don't want to destroy non-layers children (and destroying children is evil!)
+    options.preserveChildren = true;
+    await super.tearDown(options);
+  }
 }
 

@@ -116,7 +116,7 @@ class BaseDrawing extends Document {
   /* ---------------------------------------- */
 
   /** @inheritdoc */
-  static validateJoint(data) {
+  _validateModel(data) {
     if ( !BaseDrawing.#validateVisibleContent(data) ) {
       throw new Error("Drawings must have visible text, a visible fill, or a visible line");
     }

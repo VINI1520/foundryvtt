@@ -7,41 +7,30 @@
  * @see {@link TokenConfig}               The Token configuration application
  */
 class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
+  constructor(data, context={}) {
+    super(data, context);
+
+    /**
+     * A cached reference to the Actor document that this Token modifies.
+     * This may be a "synthetic" unlinked Token Actor which does not exist in the World.
+     * @type {Actor|null}
+     */
+    this._actor = context.actor || null;
+  }
 
   /* -------------------------------------------- */
   /*  Properties                                  */
   /* -------------------------------------------- */
 
   /**
-   * A singleton collection which holds a reference to the synthetic token actor by its base actor's ID.
-   * @type {Collection<Actor>}
-   */
-  actors = (function() {
-    const collection = new foundry.utils.Collection();
-    collection.documentClass = Actor.implementation;
-    return collection;
-  })();
-
-  /* -------------------------------------------- */
-
-  /**
-   * A reference to the Actor this Token modifies.
+   * A lazily evaluated reference to the Actor this Token modifies.
    * If actorLink is true, then the document is the primary Actor document.
-   * Otherwise, the Actor document is a synthetic (ephemeral) document constructed using the Token's ActorDelta.
+   * Otherwise, the Actor document is a synthetic (ephemeral) document constructed using the Token's actorData.
    * @returns {Actor|null}
    */
   get actor() {
-    return (this.isLinked ? this.baseActor : this.delta?.syntheticActor) ?? null;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * A reference to the base, World-level Actor this token represents.
-   * @returns {Actor}
-   */
-  get baseActor() {
-    return game.actors.get(this.actorId);
+    if ( !this._actor ) this._actor = this.getActor();
+    return this._actor;
   }
 
   /* -------------------------------------------- */
@@ -102,9 +91,8 @@ class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
     if ( !Number.isFinite(value) ) throw new Error("TokenDocument sort must be a finite Number");
     this.#sort = value;
     if ( this.rendered ) {
-      canvas.tokens.objects.sortDirty = true;
-      canvas.primary.sortDirty = true;
-      canvas.perception.update({refreshTiles: true});
+      canvas.primary.sortChildren();
+      canvas.tokens.objects.sortChildren();
     }
   }
 
@@ -115,25 +103,10 @@ class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _initialize(options = {}) {
-    super._initialize(options);
-    this.baseActor?._registerDependentToken(this);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
   prepareBaseData() {
     this.name ||= this.actor?.name || "Unknown";
-    if ( this.hidden ) this.alpha = Math.min(this.alpha, game.user.isGM ? 0.5 : 0);
+    if ( this.hidden ) this.alpha = Math.min(this.alpha, 0.5);
     this._prepareDetectionModes();
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  prepareEmbeddedDocuments() {
-    if ( game.ready && !this.delta ) this.updateSource({ delta: { _id: this.id } });
   }
 
   /* -------------------------------------------- */
@@ -152,42 +125,75 @@ class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
 
   /* -------------------------------------------- */
 
+  /** @inheritdoc */
+  clone(data={}, options={}) {
+    const cloned = super.clone(data, options);
+    cloned._actor = this._actor;
+    return cloned;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Create a synthetic Actor using a provided Token instance
+   * If the Token data is linked, return the true Actor document
+   * If the Token data is not linked, create a synthetic Actor using the Token's actorData override
+   * @returns {Actor}
+   */
+  getActor() {
+    const baseActor = game.actors.get(this.actorId);
+    if ( !baseActor ) return null;
+    if ( !this.id || this.isLinked ) return baseActor;
+
+    // Get base actor data
+    const cls = getDocumentClass("Actor");
+    const actorData = baseActor.toObject();
+
+    // Clean and validate the override data
+    const overrides = cls.schema.clean(this.actorData, {partial: true});
+    const error = cls.schema.validate(this.actorData, {partial: true});
+    if ( !error ) foundry.utils.mergeObject(actorData, overrides);
+
+    // Create a synthetic token Actor
+    const actor = new cls(actorData, {parent: this});
+    actor.reset();  // FIXME why is this necessary?
+    return actor;
+  }
+
+  /* -------------------------------------------- */
+
   /**
    * A helper method to retrieve the underlying data behind one of the Token's attribute bars
-   * @param {string} barName                The named bar to retrieve the attribute for
-   * @param {object} [options]
-   * @param {string} [options.alternative]  An alternative attribute path to get instead of the default one
-   * @returns {object|null}                 The attribute displayed on the Token bar, if any
+   * @param {string} barName        The named bar to retrieve the attribute for
+   * @param {string} alternative    An alternative attribute path to get instead of the default one
+   * @returns {object|null}         The attribute displayed on the Token bar, if any
    */
   getBarAttribute(barName, {alternative}={}) {
-    const attribute = alternative || this[barName]?.attribute;
-    if ( !attribute || !this.actor ) return null;
-    const system = this.actor.system;
-    const isSystemDataModel = system instanceof foundry.abstract.DataModel;
-    const templateModel = game.model.Actor[this.actor.type];
-
-    // Get the current attribute value
-    const data = foundry.utils.getProperty(system, attribute);
+    const attr = alternative || this[barName]?.attribute;
+    if ( !attr || !this.actor ) return null;
+    let data = foundry.utils.getProperty(this.actor.system, attr);
     if ( (data === null) || (data === undefined) ) return null;
+    const model = game.model.Actor[this.actor.type];
 
     // Single values
     if ( Number.isNumeric(data) ) {
-      let editable = foundry.utils.hasProperty(templateModel, attribute);
-      if ( isSystemDataModel ) {
-        const field = system.schema.getField(attribute);
-        if ( field ) editable = field instanceof foundry.data.fields.NumberField;
-      }
-      return {type: "value", attribute, value: Number(data), editable};
+      return {
+        type: "value",
+        attribute: attr,
+        value: Number(data),
+        editable: foundry.utils.hasProperty(model, attr)
+      };
     }
 
     // Attribute objects
     else if ( ("value" in data) && ("max" in data) ) {
-      let editable = foundry.utils.hasProperty(templateModel, `${attribute}.value`);
-      if ( isSystemDataModel ) {
-        const field = system.schema.getField(`${attribute}.value`);
-        if ( field ) editable = field instanceof foundry.data.fields.NumberField;
-      }
-      return {type: "bar", attribute, value: parseInt(data.value || 0), max: parseInt(data.max || 0), editable};
+      return {
+        type: "bar",
+        attribute: attr,
+        value: parseInt(data.value || 0),
+        max: parseInt(data.max || 0),
+        editable: foundry.utils.hasProperty(model, `${attr}.value`)
+      };
     }
 
     // Otherwise null
@@ -198,7 +204,7 @@ class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
 
   /**
    * A helper function to toggle a status effect which includes an Active Effect template
-   * @param {{id: string, label: string, icon: string}} effectData The Active Effect data
+   * @param {{id: string, label: string, icon: string}} effectData The Active Effect data, including statusId
    * @param {object} [options]                                     Options to configure application of the Active Effect
    * @param {boolean} [options.overlay=false]                      Should the Active Effect icon be displayed as an
    *                                                               overlay on the token?
@@ -208,24 +214,19 @@ class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
   async toggleActiveEffect(effectData, {overlay=false, active}={}) {
     if ( !this.actor || !effectData.id ) return false;
 
-    // Remove existing single-status effects.
-    const existing = this.actor.effects.reduce((arr, e) => {
-      if ( (e.statuses.size === 1) && e.statuses.has(effectData.id) ) arr.push(e.id);
-      return arr;
-    }, []);
-    const state = active ?? !existing.length;
-    if ( !state && existing.length ) await this.actor.deleteEmbeddedDocuments("ActiveEffect", existing);
+    // Remove an existing effect
+    const existing = this.actor.effects.find(e => e.getFlag("core", "statusId") === effectData.id);
+    const state = active ?? !existing;
+    if ( !state && existing ) await existing.delete();
 
     // Add a new effect
     else if ( state ) {
-      const cls = getDocumentClass("ActiveEffect");
       const createData = foundry.utils.deepClone(effectData);
-      createData.statuses = [effectData.id];
-      delete createData.id;
-      cls.migrateDataSafe(createData);
-      cls.cleanData(createData);
-      createData.name = game.i18n.localize(createData.name);
+      createData.label = game.i18n.localize(effectData.label);
+      createData["flags.core.statusId"] = effectData.id;
       if ( overlay ) createData["flags.core.overlay"] = true;
+      delete createData.id;
+      const cls = getDocumentClass("ActiveEffect");
       await cls.create(createData, {parent: this.actor});
     }
     return state;
@@ -243,11 +244,15 @@ class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
     // Case 1 - No Actor
     if ( !this.actor ) {
       const icon = CONFIG.statusEffects.find(e => e.id === statusId)?.icon;
-      return this.effects.includes(icon);
+      if ( this.effects.includes(icon) ) return true;
     }
 
     // Case 2 - Actor Active Effects
-    return this.actor.statuses.has(statusId);
+    else {
+      const activeEffect = this.actor.effects.find(effect => effect.getFlag("core", "statusId") === statusId);
+      if ( activeEffect && !activeEffect.disabled ) return true;
+    }
+    return false;
   }
 
   /* -------------------------------------------- */
@@ -271,19 +276,148 @@ class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
 
   /* -------------------------------------------- */
 
+  /**
+   * Redirect updates to a synthetic Token Actor to instead update the tokenData override object.
+   * Once an attribute in the Token has been overridden, it must always remain overridden.
+   *
+   * @param {object} update       The provided differential update data which should update the Token Actor
+   * @param {object} options      Provided options which modify the update request
+   * @returns {Promise<Actor[]>}  The updated un-linked Actor instance
+   */
+  async modifyActorDocument(update, options) {
+    delete update._id;
+    update = this.actor.constructor.migrateData(foundry.utils.expandObject(update));
+    const delta = foundry.utils.diffObject(this.actor.toObject(), update);
+    await this.update({actorData: delta}, options);
+    return [this.actor];
+  }
+
+  /* -------------------------------------------- */
+
   /** @inheritdoc */
   getEmbeddedCollection(embeddedName) {
     if ( this.isLinked ) return super.getEmbeddedCollection(embeddedName);
     switch ( embeddedName ) {
-      case "Actor":
-        this.actors.set(this.actorId, this.actor);
-        return this.actors;
       case "Item":
         return this.actor.items;
       case "ActiveEffect":
         return this.actor.effects;
     }
-    return super.getEmbeddedCollection(embeddedName);
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Redirect creation of Documents within a synthetic Token Actor to instead update the tokenData override object.
+   * @param {string} embeddedName   The named embedded Document type being modified
+   * @param {object[]} data         The provided initial data with which to create the embedded Documents
+   * @param {object} options        Provided options which modify the creation request
+   * @returns {Promise<Document[]>} The created Embedded Document instances
+   */
+  async createActorEmbeddedDocuments(embeddedName, data, options) {
+
+    // Get the current embedded collection data
+    const cls = getDocumentClass(embeddedName);
+    const collection = this.actor.getEmbeddedCollection(embeddedName);
+    const collectionData = collection.toObject();
+
+    // Apply proposed creations to the collection data
+    const hookData = []; // An array of created data
+    for ( let d of data ) {
+      if ( d instanceof foundry.abstract.DataModel ) d = d.toObject();
+      d = foundry.utils.expandObject(d);
+      if ( !d._id || !options.keepId ) d._id = foundry.utils.randomID(16);
+      collectionData.push(d);
+      hookData.push(d);
+    }
+
+    // Perform a TokenDocument update, replacing the entire embedded collection in actorData
+    options.action = "create";
+    options.embedded = {embeddedName, hookData};
+    await this.update({
+      actorData: {
+        [cls.metadata.collection]: collectionData
+      }
+    }, options);
+    return hookData.map(d => this.actor.getEmbeddedDocument(embeddedName, d._id));
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Redirect updating of Documents within a synthetic Token Actor to instead update the tokenData override object.
+   * @param {string} embeddedName   The named embedded Document type being modified
+   * @param {object[]} updates      The provided differential data with which to update the embedded Documents
+   * @param {object} options        Provided options which modify the update request
+   * @returns {Promise<Document[]>} The updated Embedded Document instances
+   */
+  async updateActorEmbeddedDocuments(embeddedName, updates, options) {
+
+    // Get the current embedded collection data
+    const cls = getDocumentClass(embeddedName);
+    const collection = this.actor.getEmbeddedCollection(embeddedName);
+    const collectionData = collection.toObject();
+
+    // Apply proposed updates to the collection data
+    const hookData = {}; // A mapping of changes
+    for ( let update of updates ) {
+      const current = collectionData.find(x => x._id === update._id);
+      if ( !current ) continue;
+      if ( options.diff ) {
+        update = foundry.utils.diffObject(current, foundry.utils.expandObject(update), {deletionKeys: true});
+        if ( foundry.utils.isEmpty(update) ) continue;
+        update._id = current._id;
+      }
+      hookData[update._id] = update;
+      foundry.utils.mergeObject(current, update, {performDeletions: true});
+    }
+
+    // Perform a TokenDocument update, replacing the entire embedded collection in actorData
+    if ( !Object.values(hookData).length ) return [];
+    options.action = "update";
+    options.embedded = {embeddedName, hookData};
+    await this.update({
+      actorData: {
+        [cls.metadata.collection]: collectionData
+      }
+    }, options);
+    return Object.keys(hookData).map(id => this.actor.getEmbeddedDocument(embeddedName, id));
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Redirect deletion of Documents within a synthetic Token Actor to instead update the tokenData override object.
+   * @param {string} embeddedName   The named embedded Document type being deleted
+   * @param {string[]} ids          The IDs of Documents to delete
+   * @param {object} options        Provided options which modify the deletion request
+   * @returns {Promise<Document[]>} The deleted Embedded Document instances
+   */
+  async deleteActorEmbeddedDocuments(embeddedName, ids, options) {
+    const cls = getDocumentClass(embeddedName);
+    const collection = this.actor.getEmbeddedCollection(embeddedName);
+
+    // Remove proposed deletions from the collection
+    const collectionData = collection.toObject();
+    const deleted = [];
+    const hookData = []; // An array of deleted ids
+    for ( let id of ids ) {
+      const doc = collection.get(id);
+      if ( !doc ) continue;
+      deleted.push(doc);
+      hookData.push(id);
+      collectionData.findSplice(d => d._id === id);
+    }
+
+    // Perform a TokenDocument update, replacing the entire embedded collection in actorData
+    options.action = "delete";
+    options.embedded = {embeddedName, hookData};
+    await this.update({
+      actorData: {
+        [cls.metadata.collection]: collectionData
+      }
+    }, options);
+    return deleted;
   }
 
   /* -------------------------------------------- */
@@ -295,11 +429,97 @@ class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
     await super._preUpdate(data, options, user);
     if ( "width" in data ) data.width = Math.max((data.width || 1).toNearest(0.5), 0.5);
     if ( "height" in data ) data.height = Math.max((data.height || 1).toNearest(0.5), 0.5);
-    if ( "actorId" in data ) options.previousActorId = this.actorId;
-    if ( ("actorData" in data) ) {
-      foundry.utils.logCompatibilityWarning("This update operation includes an update to the Token's actorData "
-        + "property, which is deprecated. Please perform updates via the synthetic Actor instead, accessible via the "
-        + "'actor' getter.", {since: 11, until: 13});
+    if ( ("actorData" in data) && !this.isLinked ) {
+      if ( !("type" in data.actorData) && this._actor?.type ) data.actorData.type = this._actor?.type;
+      await this._preUpdateTokenActor(data.actorData, options, user);
+    }
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * When the Actor data overrides change for an un-linked Token Actor, simulate the pre-update process.
+   * @param {object} data
+   * @param {object} options
+   * @param {User} user
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _preUpdateTokenActor(data, options, user) {
+    const embeddedKeys = new Set(["_id"]);
+
+    // Simulate modification of embedded documents
+    if ( options.embedded ) {
+      const {embeddedName, hookData} = options.embedded;
+      const cls = getDocumentClass(embeddedName);
+      const documents = data[cls.metadata.collection];
+      embeddedKeys.add(cls.metadata.collection);
+      const result = [];
+
+      // Handle different embedded operations
+      switch (options.action) {
+        case "create":
+          for ( const createData of hookData ) {
+            const original = foundry.utils.deepClone(createData);
+            const doc = new cls(createData, {parent: this.actor});
+            await doc._preCreate(original, options, user);
+            const allowed = options.noHook || Hooks.call(`preCreate${embeddedName}`, doc, original, options, user.id);
+            if ( allowed === false ) {
+              documents.findSplice(toCreate => toCreate._id === createData._id);
+              hookData.findSplice(toCreate => toCreate._id === createData._id);
+              console.debug(`${vtt} | ${embeddedName} creation prevented by preCreate hook`);
+            } else {
+              const d = data[doc.collectionName].find(d => d._id === doc.id);
+              foundry.utils.mergeObject(d, createData, {performDeletions: true});
+              result.push(d);
+            }
+          }
+          this.actor._preCreateEmbeddedDocuments(embeddedName, result, options, user.id);
+          break;
+
+        case "update":
+          for ( const [i, d] of documents.entries() ) {
+            const update = hookData[d._id];
+            if ( !update ) continue;
+            const doc = this.actor.getEmbeddedDocument(embeddedName, d._id);
+            await doc._preUpdate(update, options, user);
+            const allowed = options.noHook || Hooks.call(`preUpdate${embeddedName}`, doc, update, options, user.id);
+            if ( allowed === false ) {
+              documents[i] = doc.toObject();
+              delete hookData[doc.id];
+              console.debug(`${vtt} | ${embeddedName} update prevented by preUpdate hook`);
+            }
+            else {
+              const d = data[doc.collectionName].find(d => d._id === doc.id);
+              // Re-apply update data which may have changed in a preUpdate hook
+              foundry.utils.mergeObject(d, update, {performDeletions: true});
+              result.push(update);
+            }
+          }
+          this.actor._preUpdateEmbeddedDocuments(embeddedName, result, options, user.id);
+          break;
+
+        case "delete":
+          for ( const id of hookData ) {
+            const doc = this.actor.getEmbeddedDocument(embeddedName, id);
+            await doc._preDelete(options, user);
+            const allowed = options.noHook || Hooks.call(`preDelete${embeddedName}`, doc, options, user.id);
+            if ( allowed === false ) {
+              documents.push(doc.toObject());
+              hookData.findSplice(toDelete => toDelete === doc.id);
+              console.debug(`${vtt} | ${embeddedName} deletion prevented by preDelete hook`);
+            }
+            else result.push(id);
+          }
+          this.actor._preDeleteEmbeddedDocuments(embeddedName, result, options, user.id);
+          break;
+      }
+    }
+
+    // Simulate updates to the Actor itself
+    if ( Object.keys(data).some(k => !embeddedKeys.has(k)) ) {
+      await this.actor._preUpdate(data, options, user);
+      Hooks.callAll("preUpdateActor", this.actor, data, options, user.id);
     }
   }
 
@@ -307,83 +527,22 @@ class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
 
   /** @inheritdoc */
   _onUpdate(data, options, userId) {
-    const configs = Object.values(this.apps).filter(app => app instanceof TokenConfig);
-    configs.forEach(app => {
-      if ( app.preview ) options.animate = false;
-      app._previewChanges(data);
-    });
+    // Update references to original state so that resetting the preview does not clobber these updates in-memory.
+    if ( !options.preview ) Object.values(this.apps).forEach(app => app.original = this.toObject());
 
     // If the Actor association has changed, expire the cached Token actor
     if ( ("actorId" in data) || ("actorLink" in data) ) {
-      const previousActor = game.actors.get(options.previousActorId);
-      if ( previousActor ) {
-        Object.values(previousActor.apps).forEach(app => app.close({submit: false}));
-        previousActor._unregisterDependentToken(this);
-      }
-      this.delta._createSyntheticActor({ reinitializeCollections: true });
+      if ( this._actor ) Object.values(this._actor.apps).forEach(app => app.close({submit: false}));
+      this._actor = null;
+    }
+
+    // If the Actor data override changed, simulate updating the synthetic Actor
+    if ( ("actorData" in data) && !this.isLinked ) {
+      this._onUpdateTokenActor(data.actorData, options, userId);
     }
 
     // Post-update the Token itself
-    super._onUpdate(data, options, userId);
-    configs.forEach(app => app._previewChanges());
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  _onDelete(options, userId) {
-    super._onDelete(options, userId);
-    this.baseActor?._unregisterDependentToken(this);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Support the special case descendant document changes within an ActorDelta.
-   * The descendant documents themselves are configured to have a synthetic Actor as their parent.
-   * We need this to ensure that the ActorDelta receives these events which do not bubble up.
-   * @inheritdoc
-   */
-  _preCreateDescendantDocuments(parent, collection, data, options, userId) {
-    if ( parent !== this.delta ) this.delta?._handleDeltaCollectionUpdates(parent);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  _preUpdateDescendantDocuments(parent, collection, changes, options, userId) {
-    if ( parent !== this.delta ) this.delta?._handleDeltaCollectionUpdates(parent);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  _preDeleteDescendantDocuments(parent, collection, ids, options, userId) {
-    if ( parent !== this.delta ) this.delta?._handleDeltaCollectionUpdates(parent);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  _onCreateDescendantDocuments(parent, collection, documents, data, options, userId) {
-    super._onCreateDescendantDocuments(parent, collection, documents, data, options, userId);
-    this._onRelatedUpdate(data, options);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  _onUpdateDescendantDocuments(parent, collection, documents, changes, options, userId) {
-    super._onUpdateDescendantDocuments(parent, collection, documents, changes, options, userId);
-    this._onRelatedUpdate(changes, options);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  _onDeleteDescendantDocuments(parent, collection, documents, ids, options, userId) {
-    super._onDeleteDescendantDocuments(parent, collection, documents, ids, options, userId);
-    this._onRelatedUpdate({}, options);
+    return super._onUpdate(data, options, userId);
   }
 
   /* -------------------------------------------- */
@@ -392,40 +551,133 @@ class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
    * When the base Actor for a TokenDocument changes, we may need to update its Actor instance
    * @param {object} update
    * @param {object} options
-   * @internal
+   * @private
    */
   _onUpdateBaseActor(update={}, options={}) {
 
     // Update synthetic Actor data
-    if ( !this.isLinked && this.delta ) {
-      this.delta.updateSyntheticActor();
-      for ( const collection of Object.values(this.delta.collections) ) collection.initialize({ full: true });
-      this.actor.sheet.render(false, {renderContext: "updateActor"});
+    if ( !this.isLinked ) {
+      update = foundry.utils.mergeObject(update, this.actorData, {
+        insertKeys: false,
+        insertValues: false,
+        inplace: false
+      });
+      this.actor.updateSource(update, options);
+      this.actor.sheet.render(false);
     }
 
-    this._onRelatedUpdate(update, options);
+    // Update tracked Combat resource
+    const c = this.combatant;
+    if ( c && foundry.utils.hasProperty(update.system || {}, game.combat.settings.resource) ) {
+      c.updateResource();
+      ui.combat.render();
+    }
+
+    // Trigger redraws on the token
+    if ( this.parent.isView ) {
+      this.object.drawBars();
+      if ( "effects" in update ) this.object.drawEffects();
+    }
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Whenever the token's actor delta changes, or the base actor changes, perform associated refreshes.
-   * @param {object} [update]                        The update delta.
-   * @param {DocumentModificationContext} [options]  The options provided to the update.
-   * @protected
+   * When the Actor data overrides change for an un-linked Token Actor, simulate the post-update process.
+   * @param {object} data
+   * @param {object} options
+   * @param {string} userId
+   * @private
    */
-  _onRelatedUpdate(update={}, options={}) {
+  _onUpdateTokenActor(data, options, userId) {
+    const embeddedKeys = new Set(["_id"]);
+    if ( this.isLinked ) return;  // Don't do this for linked tokens
+
+    // Obtain references to any embedded documents which will be deleted
+    let deletedDocuments = [];
+    if ( options.embedded && (options.action === "delete") ) {
+      const {embeddedName, hookData} = options.embedded;
+      const collection = this.actor.getEmbeddedCollection(embeddedName);
+      deletedDocuments = hookData.map(id => collection.get(id));
+    }
+
+    // Embedded collections can be updated directly
+    if ( options.embedded ) {
+      this.actor.updateSource(data, {recursive: false});
+    }
+
+    // Otherwise, handle non-embedded updates
+    else {
+      const embeddedUpdates = {};
+      for ( const k of Object.keys(data) ) {
+        const field = this.actor.schema.get(k);
+        if ( field instanceof foundry.data.fields.EmbeddedCollectionField ) {
+          embeddedUpdates[k] = this.actorData[k];
+          delete data[k];
+        }
+      }
+      if ( !foundry.utils.isEmpty(embeddedUpdates ) ) this.actor.updateSource(embeddedUpdates, {recursive: false});
+      if ( !foundry.utils.isEmpty(data) ) this.actor.updateSource(data, {recursive: true});
+    }
+
+    // Simulate modification of embedded documents
+    if ( options.embedded ) {
+      const {embeddedName, hookData} = options.embedded;
+      const collectionName = Actor.metadata.embedded[embeddedName];
+      const changes = data[collectionName];
+      const collection = this.actor.getEmbeddedCollection(embeddedName);
+      embeddedKeys.add(collectionName);
+      const result = [];
+
+      switch (options.action) {
+        case "create":
+          const created = [];
+          for ( const d of hookData ) {
+            result.push(d);
+            const doc = collection.get(d._id);
+            if ( !doc ) continue;
+            created.push(doc);
+            doc._onCreate(d, options, userId);
+            Hooks.callAll(`create${embeddedName}`, doc, options, userId);
+          }
+          this.actor._onCreateEmbeddedDocuments(embeddedName, created, result, options, userId);
+          break;
+
+        case "update":
+          const documents = [];
+          for ( let d of changes ) {
+            const update = hookData[d._id];
+            if ( !update ) continue;
+            result.push(update);
+            const doc = collection.get(d._id);
+            documents.push(doc);
+            doc._onUpdate(update, options, userId);
+            Hooks.callAll(`update${embeddedName}`, doc, update, options, userId);
+          }
+          this.actor._onUpdateEmbeddedDocuments(embeddedName, documents, result, options, userId);
+          break;
+
+        case "delete":
+          for ( let doc of deletedDocuments ) {
+            doc._onDelete(options, userId);
+            Hooks.callAll(`delete${embeddedName}`, doc, options, userId);
+          }
+          this.actor._onDeleteEmbeddedDocuments(embeddedName, deletedDocuments, hookData, options, userId);
+          break;
+      }
+    }
+
     // Update tracked Combat resource
     const c = this.combatant;
-    if ( c && foundry.utils.hasProperty(update.system || {}, game.combat.settings.resource) ) {
+    if ( c && foundry.utils.hasProperty(data.system || {}, game.combat.settings.resource) ) {
       c.updateResource();
+      ui.combat.render();
     }
-    if ( this.inCombat ) ui.combat.render();
 
-    // Trigger redraws on the token
-    if ( this.parent.isView ) {
-      if ( this.object?.hasActiveHUD ) canvas.tokens.hud.render();
-      this.object?.renderFlags.set({refreshBars: true, redrawEffects: true});
+    // Simulate updates to the Actor itself
+    if ( Object.keys(data).some(k => !embeddedKeys.has(k)) ) {
+      this.actor._onUpdate(data, options, userId);
+      Hooks.callAll("updateActor", this.actor, data, options, userId);
     }
   }
 
@@ -439,47 +691,30 @@ class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
 
   /**
    * Get an Array of attribute choices which could be tracked for Actors in the Combat Tracker
-   * @param {object|DataModel|typeof DataModel|SchemaField|string} [data]  The object to explore for attributes, or an
-   *                                                                       Actor type.
+   * @param {object|DataModel|typeof DataModel|SchemaField} [data]  The object to explore for attributes.
    * @param {string[]} [_path]
    * @returns {TrackedAttributesDescription}
    */
   static getTrackedAttributes(data, _path=[]) {
-    // Case 1 - Infer attributes from schema structure.
     if ( (data instanceof foundry.abstract.DataModel) || foundry.utils.isSubclass(data, foundry.abstract.DataModel) ) {
       return this._getTrackedAttributesFromSchema(data.schema, _path);
     }
     if ( data instanceof foundry.data.fields.SchemaField ) return this._getTrackedAttributesFromSchema(data, _path);
-
-    // Case 2 - Infer attributes from object structure.
     if ( ["Object", "Array"].includes(foundry.utils.getType(data)) ) {
       return this._getTrackedAttributesFromObject(data, _path);
     }
 
-    // Case 3 - Retrieve explicitly configured attributes.
-    if ( !data || (typeof data === "string") ) {
-      const config = this._getConfiguredTrackedAttributes(data);
-      if ( config ) return config;
-      data = undefined;
-    }
-
     // Track the path and record found attributes
-    if ( data !== undefined ) return {bar: [], value: []};
+    const attributes = {bar: [], value: []};
+    if ( data !== undefined ) return attributes;
 
-    // Case 4 - Infer attributes from system template.
-    const bar = new Set();
-    const value = new Set();
     for ( let [type, model] of Object.entries(game.model.Actor) ) {
-      const dataModel = CONFIG.Actor.dataModels?.[type];
+      const dataModel = CONFIG.Actor.systemDataModels?.[type];
       const inner = this.getTrackedAttributes(dataModel ?? model, _path);
-      inner.bar.forEach(attr => bar.add(attr.join(".")));
-      inner.value.forEach(attr => value.add(attr.join(".")));
+      attributes.bar.push(...inner.bar);
+      attributes.value.push(...inner.value);
     }
-
-    return {
-      bar: Array.from(bar).map(attr => attr.split(".")),
-      value: Array.from(value).map(attr => attr.split("."))
-    };
+    return attributes;
   }
 
   /* -------------------------------------------- */
@@ -550,38 +785,6 @@ class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
   /* -------------------------------------------- */
 
   /**
-   * Retrieve any configured attributes for a given Actor type.
-   * @param {string} [type]  The Actor type.
-   * @returns {TrackedAttributesDescription|void}
-   * @protected
-   */
-  static _getConfiguredTrackedAttributes(type) {
-
-    // If trackable attributes are not configured fallback to the system template
-    if ( foundry.utils.isEmpty(CONFIG.Actor.trackableAttributes) ) return;
-
-    // If the system defines trackableAttributes per type
-    let config = foundry.utils.deepClone(CONFIG.Actor.trackableAttributes[type]);
-
-    // Otherwise union all configured trackable attributes
-    if ( foundry.utils.isEmpty(config) ) {
-      const bar = new Set();
-      const value = new Set();
-      for ( const attrs of Object.values(CONFIG.Actor.trackableAttributes) ) {
-        attrs.bar.forEach(bar.add, bar);
-        attrs.value.forEach(value.add, value);
-      }
-      config = { bar: Array.from(bar), value: Array.from(value) };
-    }
-
-    // Split dot-separate attribute paths into arrays
-    Object.keys(config).forEach(k => config[k] = config[k].map(attr => attr.split(".")));
-    return config;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * Inspect the Actor data model and identify the set of attributes which could be used for a Token Bar
    * @param {object} attributes       The tracked attributes which can be chosen from
    * @returns {object}                A nested object of attribute choices to display
@@ -596,42 +799,6 @@ class TokenDocument extends CanvasDocumentMixin(foundry.documents.BaseToken) {
       [game.i18n.localize("TOKEN.BarAttributes")]: attributes.bar,
       [game.i18n.localize("TOKEN.BarValues")]: attributes.value
     };
-  }
-
-  /* -------------------------------------------- */
-  /*  Deprecations                                */
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  getActor() {
-    foundry.utils.logCompatibilityWarning("TokenDocument#getActor has been deprecated. Please use the "
-      + "TokenDocument#actor getter to retrieve the Actor instance that the TokenDocument represents, or use "
-      + "TokenDocument#delta#apply to generate a new synthetic Actor instance.");
-    return this.delta?.apply() ?? this.baseActor ?? null;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  get actorData() {
-    foundry.utils.logCompatibilityWarning("You are accessing TokenDocument#actorData which is deprecated. Source data "
-      + "may be retrieved via TokenDocument#delta but all modifications/access should be done via the synthetic Actor "
-      + "at TokenDocument#actor if possible.", {since: 11, until: 13});
-    return this.delta.toObject();
-  }
-
-  set actorData(actorData) {
-    foundry.utils.logCompatibilityWarning("You are accessing TokenDocument#actorData which is deprecated. Source data "
-      + "may be retrieved via TokenDocument#delta but all modifications/access should be done via the synthetic Actor "
-      + "at TokenDocument#actor if possible.", {since: 11, until: 13});
-    const id = this.delta.id;
-    this.delta = new ActorDelta.implementation({...actorData, _id: id}, {parent: this});
   }
 }
 

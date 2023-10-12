@@ -29,6 +29,12 @@ class PlaceablesLayer extends InteractionLayer {
   history = [];
 
   /**
+   * Track whether "highlight all objects" is currently active
+   * @type {boolean}
+   */
+  _highlight = false;
+
+  /**
    * Keep track of an object copied with CTRL+C which can be pasted later
    * @type {PlaceableObject[]}
    */
@@ -57,7 +63,6 @@ class PlaceablesLayer extends InteractionLayer {
    */
   static get layerOptions() {
     return foundry.utils.mergeObject(super.layerOptions, {
-      baseClass: PlaceablesLayer,
       canDragCreate: game.user.isGM,
       controllableObjects: false,
       rotatableObjects: false,
@@ -150,21 +155,6 @@ class PlaceablesLayer extends InteractionLayer {
     return Array.from(this.#controlledObjects.values());
   }
 
-  /* -------------------------------------------- */
-
-  /**
-   * Iterates over placeable objects that are eligible for control/select.
-   * @yields A placeable object
-   * @returns {Generator<PlaceableObject>}
-   */
-  *controllableObjects() {
-    for ( const placeable of this.placeables ) {
-      if ( placeable.visible && placeable.renderable && (placeable.control instanceof Function) ) yield placeable;
-    }
-  }
-
-  /* -------------------------------------------- */
-
   /**
    * Track the set of PlaceableObjects on this layer which are currently controlled.
    * @type {Map<string,PlaceableObject>}
@@ -187,19 +177,11 @@ class PlaceablesLayer extends InteractionLayer {
   }
 
   set hover(object) {
-    if ( object instanceof this.constructor.placeableClass ) this.#hover = object;
+    if ( object instanceof this.constructor.placeableClass) this.#hover = object;
     else this.#hover = null;
   }
 
   #hover = null;
-
-  /* -------------------------------------------- */
-
-  /**
-   * Track whether "highlight all objects" is currently active
-   * @type {boolean}
-   */
-  highlightObjects = false;
 
   /* -------------------------------------------- */
   /*  Rendering
@@ -228,16 +210,6 @@ class PlaceablesLayer extends InteractionLayer {
     if ( this.constructor.layerOptions.elevationSorting ) {
       this.objects.sortChildren = this._sortObjectsByElevation.bind(this.objects);
     }
-    this.objects.on("childAdded", obj => {
-      if ( !(obj instanceof this.constructor.placeableClass) ) {
-        console.error(`An object of type ${obj.constructor.name} was added to ${this.constructor.name}#objects. `
-          + `The object must be an instance of ${this.constructor.placeableClass.name}.`);
-      }
-      if ( obj instanceof PlaceableObject ) obj._updateQuadtree();
-    });
-    this.objects.on("childRemoved", obj => {
-      if ( obj instanceof PlaceableObject ) obj._updateQuadtree();
-    });
 
     // Create preview container which is always above objects
     this.preview = this.addChild(new PIXI.Container());
@@ -245,9 +217,8 @@ class PlaceablesLayer extends InteractionLayer {
     // Create and draw objects
     const documents = this.getDocuments();
     const promises = documents.map(doc => {
-      const obj = doc._object = this.createObject(doc);
-      this.objects.addChild(obj);
-      return obj.draw();
+      doc._destroyed = false;
+      return doc.object?.draw();
     });
 
     // Wait for all objects to draw
@@ -261,10 +232,14 @@ class PlaceablesLayer extends InteractionLayer {
   /**
    * Draw a single placeable object
    * @param {ClientDocument} document     The Document instance used to create the placeable object
-   * @returns {PlaceableObject}
+   * @returns {PlaceableObject|null}
    */
   createObject(document) {
-    return new this.constructor.placeableClass(document, canvas.scene);
+    if ( !this.objects ) return null;
+    const obj = new this.constructor.placeableClass(document, canvas.scene);
+    this.objects.addChild(obj);
+    if ( this.quadtree ) this.quadtree.insert({r: obj.bounds, t: obj});
+    return obj;
   }
 
   /* -------------------------------------------- */
@@ -300,7 +275,7 @@ class PlaceablesLayer extends InteractionLayer {
   /** @override */
   _activate() {
     this.objects.visible = true;
-    this.placeables.forEach(l => l.renderFlags.set({refreshState: true}));
+    this.placeables.forEach(l => l.refresh());
   }
 
   /* -------------------------------------------- */
@@ -309,7 +284,7 @@ class PlaceablesLayer extends InteractionLayer {
   _deactivate() {
     this.objects.visible = false;
     this.releaseAll();
-    this.placeables.forEach(l => l.renderFlags.set({refreshState: true}));
+    this.placeables.forEach(l => l.refresh());
     this.clearPreviewContainer();
   }
 
@@ -321,6 +296,7 @@ class PlaceablesLayer extends InteractionLayer {
   clearPreviewContainer() {
     if ( !this.preview ) return;
     this.preview.removeChildren().forEach(c => {
+      if ( c._original ) c._original._preview = undefined;
       c._onDragEnd();
       c.destroy({children: true});
     });
@@ -348,8 +324,9 @@ class PlaceablesLayer extends InteractionLayer {
   controlAll(options={}) {
     if ( !this.options.controllableObjects ) return [];
     options.releaseOthers = false;
-    for ( const placeable of this.controllableObjects() ) {
-      placeable.control(options);
+    const controllable = this.placeables.filter(o => o.visible && o.can(game.user, "control"));
+    for ( let o of controllable ) {
+      o.control(options);
     }
     return this.controlled;
   }
@@ -383,7 +360,8 @@ class PlaceablesLayer extends InteractionLayer {
    * @param {number} [options.delta]      An incremental angle of rotation (in degrees)
    * @param {number} [options.snap]       Snap the resulting angle to a multiple of some increment (in degrees)
    * @param {Array} [options.ids]         An Array of object IDs to target for rotation
-   * @returns {Promise<PlaceableObject[]>} An array of objects which were rotated
+
+   * @return {Promise<PlaceableObject[]>} An array of objects which were rotated
    */
   async rotateMany({angle, delta, snap, ids}={}) {
     if ((!this.constructor.layerOptions.rotatableObjects ) || (game.paused && !game.user.isGM)) return [];
@@ -616,37 +594,36 @@ class PlaceablesLayer extends InteractionLayer {
 
   /**
    * Select all PlaceableObject instances which fall within a coordinate rectangle.
-   * @param {object} [options={}]
-   * @param {number} [options.x]                     The top-left x-coordinate of the selection rectangle.
-   * @param {number} [options.y]                     The top-left y-coordinate of the selection rectangle.
-   * @param {number} [options.width]                 The width of the selection rectangle.
-   * @param {number} [options.height]                The height of the selection rectangle.
-   * @param {object} [options.releaseOptions={}]     Optional arguments provided to any called release() method.
-   * @param {object} [options.controlOptions={}]     Optional arguments provided to any called control() method.
-   * @param {object} [aoptions]                      Additional options to configure selection behaviour.
-   * @param {boolean} [aoptions.releaseOthers=true]  Whether to release other selected objects.
-   * @returns {boolean}       A boolean for whether the controlled set was changed in the operation.
+   *
+   * @param {number} x      The top-left x-coordinate of the selection rectangle
+   * @param {number} y      The top-left y-coordinate of the selection rectangle
+   * @param {number} width  The width of the selection rectangle
+   * @param {number} height The height of the selection rectangle
+   * @param {object} releaseOptions   Optional arguments provided to any called release() method
+   * @param {object} controlOptions   Optional arguments provided to any called control() method
+   * @param {object} [options]        Additional options to configure selection behaviour.
+   * @param {boolean} [options.releaseOthers=true]  Whether to release other selected objects.
+   * @returns {boolean}       A boolean for whether the controlled set was changed in the operation
    */
   selectObjects({x, y, width, height, releaseOptions={}, controlOptions={}}={}, {releaseOthers=true}={}) {
     if ( !this.options.controllableObjects ) return false;
     const oldSet = this.controlled;
 
     // Identify controllable objects
-    const selectionRect = new PIXI.Rectangle(x, y, width, height);
-    const newSet = [];
-    for ( const placeable of this.controllableObjects() ) {
-      const c = placeable.center;
-      if ( selectionRect.contains(c.x, c.y) ) newSet.push(placeable);
-    }
+    const controllable = this.placeables.filter(obj => obj.visible && (obj.control instanceof Function));
+    const newSet = controllable.filter(obj => {
+      let c = obj.center;
+      return Number.between(c.x, x, x+width) && Number.between(c.y, y, y+height);
+    });
 
     // Maybe release objects no longer controlled
-    const toRelease = oldSet.filter(placeable => !newSet.includes(placeable));
-    if ( releaseOthers ) toRelease.forEach(placeable => placeable.release(releaseOptions));
+    const toRelease = oldSet.filter(obj => !newSet.includes(obj));
+    if ( releaseOthers ) toRelease.forEach(obj => obj.release(releaseOptions));
 
     // Control new objects
     if ( foundry.utils.isEmpty(controlOptions) ) controlOptions.releaseOthers = false;
-    const toControl = newSet.filter(placeable => !oldSet.includes(placeable));
-    toControl.forEach(placeable => placeable.control(controlOptions));
+    const toControl = newSet.filter(obj => !oldSet.includes(obj));
+    toControl.forEach(obj => obj.control(controlOptions));
 
     // Return a boolean for whether the control set was changed
     return (releaseOthers && toRelease.length) || (toControl.length > 0);
@@ -657,10 +634,10 @@ class PlaceablesLayer extends InteractionLayer {
   /**
    * Update all objects in this layer with a provided transformation.
    * Conditionally filter to only apply to objects which match a certain condition.
-   * @param {Function|object} transformation     An object of data or function to apply to all matched objects
-   * @param {Function|null}  condition           A function which tests whether to target each object
-   * @param {object} [options]                   Additional options passed to Document.update
-   * @returns {Promise<Document[]>}              An array of updated data once the operation is complete
+   * @param {Function|object} transformation    An object of data or function to apply to all matched objects
+   * @param {Function|null}  condition          A function which tests whether to target each object
+   * @param {object} [options]                  Additional options passed to Document.update
+   * @return {Promise<Document[]>}              An array of updated data once the operation is complete
    */
   async updateAll(transformation, condition=null, options={}) {
     const hasTransformer = transformation instanceof Function;
@@ -684,7 +661,7 @@ class PlaceablesLayer extends InteractionLayer {
    * Get the world-transformed drop position.
    * @param {DragEvent} event
    * @param {object} [options]
-   * @param {boolean} [options.center=true]  Return the co-ordinates of the center of the nearest grid element.
+   * @param {boolean} [center=true]  Return the co-ordinates of the center of the nearest grid element.
    * @returns {number[]|boolean}     Returns the transformed x, y co-ordinates, or false if the drag event was outside
    *                                 the canvas.
    * @protected
@@ -700,16 +677,12 @@ class PlaceablesLayer extends InteractionLayer {
   /* -------------------------------------------- */
 
   /**
-   * Create a preview of this layer's object type from a world document and show its sheet to be finalized.
+   * Create a preview of this layer's object type from a world document and show its sheet so it can be finalized.
    * @param {object} createData                     The data to create the object with.
-   * @param {object} [options]                      Options which configure preview creation
-   * @param {boolean} [options.renderSheet]           Render the preview object config sheet?
-   * @param {number} [options.top]                    The offset-top position where the sheet should be rendered
-   * @param {number} [options.left]                   The offset-left position where the sheet should be rendered
-   * @returns {PlaceableObject}                     The created preview object
-   * @internal
+   * @param {{top: number, left: number}} position  The position to render the sheet at.
+   * @protected
    */
-  async _createPreview(createData, {renderSheet=true, top=0, left=0}={}) {
+  async _createPreview(createData, {top, left}) {
     const documentName = this.constructor.documentName;
     const cls = getDocumentClass(documentName);
     const document = new cls(createData, {parent: canvas.scene});
@@ -721,9 +694,7 @@ class PlaceablesLayer extends InteractionLayer {
     this.activate();
     this.preview.addChild(object);
     await object.draw();
-
-    if ( renderSheet ) object.sheet.render(true, {top, left});
-    return object;
+    object.sheet.render(true, {top, left});
   }
 
   /* -------------------------------------------- */
@@ -733,39 +704,38 @@ class PlaceablesLayer extends InteractionLayer {
   /** @override */
   _onClickLeft(event) {
     if ( this.hud ) this.hud.clear();
-    if ( this.options.controllableObjects && game.settings.get("core", "leftClickRelease") && !this.hover ) {
-      this.releaseAll();
-    }
+    if ( this.options.controllableObjects && game.settings.get("core", "leftClickRelease") ) this.releaseAll();
   }
 
   /* -------------------------------------------- */
 
   /** @override */
   async _onDragLeftStart(event) {
-    const interaction = event.interactionData;
     if ( !this.options.canDragCreate ) {
-      interaction.layerDragState = 0;
+      delete event.data.createState;
       return;
     }
+    event.data.createState = 0;
 
     // Clear any existing preview
     this.clearPreviewContainer();
+    event.data.preview = null;
 
     // Snap the origin to the grid
-    if ( this.options.snapToGrid && !event.shiftKey ) {
-      interaction.origin =
-        canvas.grid.getSnappedPosition(interaction.origin.x, interaction.origin.y, this.gridPrecision);
+    const {origin, originalEvent} = event.data;
+    if ( this.options.snapToGrid && !originalEvent.isShift ) {
+      event.data.origin = canvas.grid.getSnappedPosition(origin.x, origin.y, this.gridPrecision);
     }
 
     // Register the ongoing creation
-    interaction.layerDragState = 1;
+    event.data.createState = 1;
   }
 
   /* -------------------------------------------- */
 
   /** @override */
   _onDragLeftMove(event) {
-    const preview = event.interactionData.preview;
+    const preview = event.data.preview;
     if ( !preview || preview._destroyed ) return;
     if ( preview.parent === null ) { // In theory this should never happen, but rarely does
       this.preview.addChild(preview);
@@ -776,14 +746,10 @@ class PlaceablesLayer extends InteractionLayer {
 
   /** @override */
   async _onDragLeftDrop(event) {
-    const preview = event.interactionData.preview;
-    if ( !preview || preview._destroyed ) return;
-    event.interactionData.clearPreviewContainer = false;
-    const cls = getDocumentClass(this.constructor.documentName);
-    try {
-      return await cls.create(preview.document.toObject(false), {parent: canvas.scene});
-    } finally {
-      this.clearPreviewContainer();
+    const object = event.data.preview;
+    if ( object ) {
+      const cls = getDocumentClass(this.constructor.documentName);
+      return cls.create(object.document.toObject(false), {parent: canvas.scene});
     }
   }
 
@@ -791,9 +757,7 @@ class PlaceablesLayer extends InteractionLayer {
 
   /** @override */
   _onDragLeftCancel(event) {
-    if ( event.interactionData?.clearPreviewContainer !== false ) {
-      this.clearPreviewContainer();
-    }
+    this.clearPreviewContainer();
   }
 
   /* -------------------------------------------- */
@@ -820,7 +784,7 @@ class PlaceablesLayer extends InteractionLayer {
     if ( this.preview.children.length ) {
       for ( let p of this.preview.children ) {
         p.document.rotation = p._updateRotation({delta, snap});
-        p.renderFlags.set({refresh: true}); // Refresh everything, can we do better?
+        p.refresh();
       }
     }
 
@@ -846,29 +810,5 @@ class PlaceablesLayer extends InteractionLayer {
       return ids;
     }, []);
     if ( ids.length ) return canvas.scene.deleteEmbeddedDocuments(this.constructor.documentName, ids);
-  }
-
-  /* -------------------------------------------- */
-  /*  Deprecations and Compatibility              */
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  get _highlight() {
-    const msg = "PlaceableLayer#_highlight is deprecated. Use PlaceableLayer#highlightObjects instead.";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return this.highlightObjects;
-  }
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  set _highlight(state) {
-    const msg = "PlaceableLayer#_highlight is deprecated. Use PlaceableLayer#highlightObjects instead.";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    this.highlightObjects = !!state;
   }
 }

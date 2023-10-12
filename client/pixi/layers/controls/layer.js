@@ -29,21 +29,18 @@ class ControlsLayer extends InteractionLayer {
      * @type {PIXI.Container}
      */
     this.cursors = this.addChild(new PIXI.Container());
-    this.cursors.eventMode = "none";
 
     /**
      * Ruler tools, one per connected user
      * @type {PIXI.Container}
      */
     this.rulers = this.addChild(new PIXI.Container());
-    this.rulers.eventMode = "none";
 
     /**
      * A graphics instance used for drawing debugging visualization
      * @type {PIXI.Graphics}
      */
     this.debug = this.addChild(new PIXI.Graphics());
-    this.debug.eventMode = "none";
   }
 
   /**
@@ -200,13 +197,13 @@ class ControlsLayer extends InteractionLayer {
 
   /**
    * Handle mousemove events on the game canvas to broadcast activity of the user's cursor position
-   * @param {PIXI.FederatedEvent} event
+   * @param {PIXI.InteractionEvent} event
    */
   _onMouseMove(event) {
     const sc = game.user.hasPermission("SHOW_CURSOR");
     const sr = game.user.hasPermission("SHOW_RULER");
     if ( !(sc || sr) ) return;
-    const position = event.getLocalPosition(this);
+    const position = event.data.getLocalPosition(this);
     const ruler = sr && (this.ruler?._state > 0) ? this.ruler.toJSON() : undefined;
     game.user.broadcastActivity({
       cursor: position,
@@ -218,7 +215,7 @@ class ControlsLayer extends InteractionLayer {
 
   /**
    * Handle pinging the canvas.
-   * @param {PIXI.FederatedEvent}   event   The triggering canvas interaction event.
+   * @param {PIXI.InteractionEvent} event   The triggering canvas interaction event.
    * @param {PIXI.Point}            origin  The local canvas coordinates of the mousepress.
    * @protected
    */
@@ -321,7 +318,7 @@ class ControlsLayer extends InteractionLayer {
    * @returns {Promise<boolean>}   {@see Ping#animate}
    */
   async handlePing(user, position, {scene, style="pulse", pull=false, zoom=1, ...pingOptions}={}) {
-    if ( !canvas.ready || (canvas.scene?.id !== scene) || !position ) return;
+    if ( !canvas.ready || (canvas.scene?.id !== scene) ) return;
     if ( pull && user.isGM ) {
       await canvas.animatePan({
         x: position.x,

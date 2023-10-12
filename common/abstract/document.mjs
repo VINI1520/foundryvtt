@@ -1,8 +1,9 @@
 import DataModel from "./data.mjs";
 import {getProperty, hasProperty, setProperty, mergeObject} from "../utils/helpers.mjs";
 import * as CONST from "../constants.mjs";
+import {SystemDataField} from "../data/fields.mjs";
 import {logCompatibilityWarning} from "../utils/logging.mjs";
-import {TypeDataField} from "../data/fields.mjs";
+import EmbeddedCollection from "./embedded-collection.mjs";
 
 /**
  * An extension of the base DataModel which defines a Document.
@@ -17,15 +18,7 @@ import {TypeDataField} from "../data/fields.mjs";
 export default class Document extends DataModel {
 
   /** @override */
-  _configure({pack=null, parentCollection=null}={}) {
-    /**
-     * An immutable reverse-reference to the name of the collection that this Document exists in on its parent, if any.
-     * @type {string|null}
-     */
-    Object.defineProperty(this, "parentCollection", {
-      value: this._getParentCollection(parentCollection),
-      writable: false
-    });
+  _configure({pack=null}={}) {
 
     /**
      * An immutable reference to a containing Compendium collection to which this Document belongs.
@@ -43,10 +36,10 @@ export default class Document extends DataModel {
 
     // Construct Embedded Collections
     const collections = {};
-    for ( const [fieldName, field] of Object.entries(this.constructor.hierarchy) ) {
-      if ( !field.constructor.implementation ) continue;
+    for ( const fieldName of Object.values(this.constructor.metadata.embedded) ) {
+      const field = this.schema.get(fieldName);
       const data = this._source[fieldName];
-      const c = collections[fieldName] = new field.constructor.implementation(fieldName, this, data);
+      const c = collections[fieldName] = new EmbeddedCollection(this, data, field.element.implementation);
       Object.defineProperty(this, fieldName, {value: c, writable: false});
     }
 
@@ -55,44 +48,6 @@ export default class Document extends DataModel {
      * @type {Object<EmbeddedCollection>}
      */
     Object.defineProperty(this, "collections", {value: Object.seal(collections), writable: false});
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  _initialize(options={}) {
-    super._initialize(options);
-
-    const singletons = {};
-    for ( const [fieldName, field] of Object.entries(this.constructor.hierarchy) ) {
-      if ( field instanceof foundry.data.fields.EmbeddedDocumentField ) {
-        Object.defineProperty(singletons, fieldName, { get: () => this[fieldName] });
-      }
-    }
-
-    /**
-     * A mapping of singleton embedded Documents which exist in this model.
-     * @type {Object<Document>}
-     */
-    Object.defineProperty(this, "singletons", {value: Object.seal(singletons), configurable: true});
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  static *_initializationOrder() {
-    const hierarchy = this.hierarchy;
-
-    // Initialize non-hierarchical fields first
-    for ( const [name, field] of this.schema.entries() ) {
-      if ( name in hierarchy ) continue;
-      yield [name, field];
-    }
-
-    // Initialize hierarchical fields last
-    for ( const [name, field] of Object.entries(hierarchy) ) {
-      yield [name, field];
-    }
   }
 
   /* -------------------------------------------- */
@@ -168,43 +123,16 @@ export default class Document extends DataModel {
   /* -------------------------------------------- */
 
   /**
-   * Does this Document support additional sub-types?
+   * Does this Document definition include a SystemDataField?
    * @type {boolean}
    */
-  static get hasTypeData() {
-    return this.schema.get("system") instanceof TypeDataField;
+  static get hasSystemData() {
+    return this.schema.get("system") instanceof SystemDataField;
   }
 
   /* -------------------------------------------- */
   /*  Model Properties                            */
   /* -------------------------------------------- */
-
-  /**
-   * The Embedded Document hierarchy for this Document.
-   * @returns {Object<DataField>}
-   */
-  static get hierarchy() {
-    const hierarchy = {};
-    for ( const [fieldName, field] of this.schema.entries() ) {
-      if ( field.constructor.hierarchical ) hierarchy[fieldName] = field;
-    }
-    Object.defineProperty(this, "hierarchy", {value: Object.freeze(hierarchy), writable: false});
-    return this.hierarchy;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Determine the collection this Document exists in on its parent, if any.
-   * @param {string} [parentCollection]  An explicitly provided parent collection name.
-   * @returns {string|null}
-   * @private
-   */
-  _getParentCollection(parentCollection) {
-    if ( !this.parent ) return null;
-    if ( parentCollection ) return parentCollection;
-    return this.parent.constructor.getCollectionName(this.documentName);
-  }
 
   /**
    * The canonical identifier for this Document.
@@ -219,7 +147,7 @@ export default class Document extends DataModel {
    * @type {boolean}
    */
   get isEmbedded() {
-    return !!(this.parent && this.parentCollection);
+    return this.parent && (this.documentName in this.parent.constructor.metadata.embedded);
   }
 
   /* ---------------------------------------- */
@@ -244,21 +172,15 @@ export default class Document extends DataModel {
   /* ---------------------------------------- */
 
   /**
-   * Get the explicit permission level that a User has over this Document, a value in CONST.DOCUMENT_OWNERSHIP_LEVELS.
-   * This method returns the value recorded in Document ownership, regardless of the User's role.
-   * To test whether a user has a certain capability over the document, testUserPermission should be used.
+   * Get the permission level that a specific User has over this Document, a value in CONST.DOCUMENT_OWNERSHIP_LEVELS.
    * @param {documents.BaseUser} user     The User being tested
    * @returns {number|null}               A numeric permission level from CONST.DOCUMENT_OWNERSHIP_LEVELS or null
    */
   getUserLevel(user) {
     user = user || game.user;
-
-    // Compendium content uses role-based ownership
-    if ( this.pack ) return this.compendium.getUserLevel(user);
-
-    // World content uses granular per-User ownership
-    const ownership = this["ownership"] || {};
-    return ownership[user.id] ?? ownership.default ?? null;
+    const ownership = this["ownership"];
+    if ( !ownership ) return null;
+    return ownership[user.id] ?? ownership["default"] ?? null;
   }
 
   /* ---------------------------------------- */
@@ -272,10 +194,16 @@ export default class Document extends DataModel {
    * @return {boolean}                      Does the user have this permission level over the Document?
    */
   testUserPermission(user, permission, {exact=false}={}) {
+
+    // Get user permission
     const perms = CONST.DOCUMENT_OWNERSHIP_LEVELS;
-    const level = user.isGM ? perms.OWNER : this.getUserLevel(user);
+    const level = this.getUserLevel(user);
+
+    // Test against the target permission
     const target = (typeof permission === "string") ? (perms[permission] ?? perms.OWNER) : permission;
-    return exact ? level === target : level >= target;
+    if ( exact ) return level === target;   // Exact match
+    else if ( user.isGM ) return true;      // Game-masters can do anything
+    return level >= target;                 // Same level or higher
   }
 
   /* ---------------------------------------- */
@@ -333,11 +261,8 @@ export default class Document extends DataModel {
    * @returns {object}              The migrated system data object
    */
   migrateSystemData() {
-    if ( !this.constructor.hasTypeData ) {
-      throw new Error(`The ${this.documentName} Document does not include a TypeDataField.`);
-    }
-    if ( (this.system instanceof DataModel) && !(this.system.modelProvider instanceof System) ) {
-      throw new Error(`The ${this.documentName} Document does not have system-provided package data.`);
+    if ( !this.constructor.hasSystemData ) {
+      throw new Error(`The ${this.documentName} Document does not include a SystemDataField.`);
     }
     const model = game.model[this.documentName]?.[this["type"]] || {};
     return mergeObject(model, this["system"], {
@@ -553,19 +478,11 @@ export default class Document extends DataModel {
   /**
    * Get a World-level Document of this type by its id.
    * @param {string} documentId         The Document ID
-   * @param {object} [options={}]       Additional options which customize the request
    * @returns {abstract.Document|null}  The retrieved Document, or null
    */
-  static get(documentId, options={}) {
-    if ( !documentId ) return null;
-    if ( options.pack ) {
-      const pack = game.packs.get(options.pack);
-      return pack?.index.get(documentId) || null;
-    }
-    else {
-      const collection = game.collections?.get(this.documentName);
-      return collection?.get(documentId) || null;
-    }
+  static get(documentId) {
+    const collection = game.collections?.get(this.documentName);
+    return collection?.get(documentId) || null;
   }
 
   /* -------------------------------------------- */
@@ -573,62 +490,31 @@ export default class Document extends DataModel {
   /* -------------------------------------------- */
 
   /**
-   * A compatibility method that returns the appropriate name of an embedded collection within this Document.
-   * @param {string} name    An existing collection name or a document name.
-   * @returns {string|null}  The provided collection name if it exists, the first available collection for the
-   *                         document name provided, or null if no appropriate embedded collection could be found.
-   * @example Passing an existing collection name.
-   * ```js
-   * Actor.getCollectionName("items");
-   * // returns "items"
-   * ```
-   *
-   * @example Passing a document name.
-   * ```js
-   * Actor.getCollectionName("Item");
-   * // returns "items"
-   * ```
-   */
-  static getCollectionName(name) {
-    if ( name in this.hierarchy ) return name;
-    for ( const [collectionName, field] of Object.entries(this.hierarchy) ) {
-      if ( field.model.documentName === name ) return collectionName;
-    }
-    return null;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * Obtain a reference to the Array of source data within the data object for a certain embedded Document name
    * @param {string} embeddedName   The name of the embedded Document type
-   * @return {DocumentCollection}   The Collection instance of embedded Documents of the requested type
+   * @return {Collection}           The Collection instance of embedded Documents of the requested type
    */
   getEmbeddedCollection(embeddedName) {
-    const collectionName = this.constructor.getCollectionName(embeddedName);
+    const collectionName = this.constructor.metadata.embedded[embeddedName];
     if ( !collectionName ) {
       throw new Error(`${embeddedName} is not a valid embedded Document within the ${this.documentName} Document`);
     }
-    const field = this.constructor.hierarchy[collectionName];
-    return field.getCollection(this);
+    return this[collectionName];
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Get an embedded document by its id from a named collection in the parent document.
-   * @param {string} embeddedName              The name of the embedded Document type
-   * @param {string} id                        The id of the child document to retrieve
-   * @param {object} [options]                 Additional options which modify how embedded documents are retrieved
-   * @param {boolean} [options.strict=false]   Throw an Error if the requested id does not exist. See Collection#get
-   * @param {boolean} [options.invalid=false]  Allow retrieving an invalid Embedded Document.
-   * @return {Document}                        The retrieved embedded Document instance, or undefined
-   * @throws If the embedded collection does not exist, or if strict is true and the Embedded Document could not be
-   *         found.
+   * Get an embedded document by it's id from a named collection in the parent document.
+   * @param {string} embeddedName   The name of the embedded Document type
+   * @param {string} id             The id of the child document to retrieve
+   * @param {object} [options]      Additional options which modify how embedded documents are retrieved
+   * @param {boolean} [options.strict=false] Throw an Error if the requested id does not exist. See Collection#get
+   * @return {Document}             The retrieved embedded Document instance, or undefined
    */
-  getEmbeddedDocument(embeddedName, id, {invalid=false, strict=false}={}) {
+  getEmbeddedDocument(embeddedName, id, {strict=false}={}) {
     const collection = this.getEmbeddedCollection(embeddedName);
-    return collection.get(id, {invalid, strict});
+    return collection.get(id, {strict});
   }
 
   /* -------------------------------------------- */
@@ -763,7 +649,6 @@ export default class Document extends DataModel {
    * @param {object} data               The initial data object provided to the document creation request
    * @param {object} options            Additional options which modify the creation request
    * @param {documents.BaseUser} user   The User requesting the document creation
-   * @returns {Promise<boolean|void>}   A return value of false indicates the creation operation should be cancelled.
    * @protected
    */
   async _preCreate(data, options, user) {}
@@ -774,7 +659,6 @@ export default class Document extends DataModel {
    * @param {object} changed            The differential data that is changed relative to the documents prior values
    * @param {object} options            Additional options which modify the update request
    * @param {documents.BaseUser} user   The User requesting the document update
-   * @returns {Promise<boolean|void>}   A return value of false indicates the update operation should be cancelled.
    * @protected
    */
   async _preUpdate(changed, options, user) {}
@@ -784,7 +668,6 @@ export default class Document extends DataModel {
    * Pre-delete operations only occur for the client which requested the operation.
    * @param {object} options            Additional options which modify the deletion request
    * @param {documents.BaseUser} user   The User requesting the document deletion
-   * @returns {Promise<boolean|void>}   A return value of false indicates the deletion operation should be cancelled.
    * @protected
    */
   async _preDelete(options, user) {}
@@ -882,18 +765,6 @@ export default class Document extends DataModel {
       data[k] = this[k];
     }
     return this.constructor.shimData(data, {embedded: false});
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  static get hasSystemData() {
-    foundry.utils.logCompatibilityWarning(`You are accessing ${this.name}.hasSystemData which is deprecated. `
-    + `Please use ${this.name}.hasTypeData instead.`, {since: 11, until: 13});
-    return this.hasTypeData;
   }
 
   /* ---------------------------------------- */

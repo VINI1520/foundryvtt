@@ -4,14 +4,6 @@ import * as CONST from "../constants.mjs";
 import * as fields from "../data/fields.mjs";
 
 /**
- * @typedef {Object} WallThresholdData
- * @property {number} [light=0]           Minimum distance from a light source for which this wall blocks light
- * @property {number} [sight=0]           Minimum distance from a vision source for which this wall blocks vision
- * @property {number} [sound=0]           Minimum distance from a sound source for which this wall blocks sound
- * @property {boolean} [attenuation=true] Whether to attenuate the source radius when passing through the wall
- */
-
-/**
  * @typedef {Object} WallData
  * @property {string} _id                 The _id which uniquely identifies the embedded Wall document
  * @property {number[]} c                 The wall coordinates, a length-4 array of finite numbers [x0,y0,x1,y1]
@@ -22,7 +14,6 @@ import * as fields from "../data/fields.mjs";
  * @property {number} [dir=0]             The direction of effect imposed by this wall
  * @property {number} [door=0]            The type of door which this wall contains, if any
  * @property {number} [ds=0]              The state of the door this wall contains, if any
- * @property {WallThresholdData} threshold  Configuration of threshold data for this wall
  * @property {object} [flags]             An object of optional key/value flags
  */
 
@@ -81,15 +72,8 @@ class BaseWall extends Document {
       ds: new fields.NumberField({required: true, choices: Object.values(CONST.WALL_DOOR_STATES),
         initial: CONST.WALL_DOOR_STATES.CLOSED,
         validationError: "must be a value in CONST.WALL_DOOR_STATES"}),
-      doorSound: new fields.StringField({required: false, blank: true, initial: undefined}),
-      threshold: new fields.SchemaField({
-        light: new fields.NumberField({required: true, nullable: true, initial: null, positive: true}),
-        sight: new fields.NumberField({required: true, nullable: true, initial: null, positive: true}),
-        sound: new fields.NumberField({required: true, nullable: true, initial: null, positive: true}),
-        attenuation: new fields.BooleanField()
-      }),
       flags: new fields.ObjectField()
-    };
+    }
   }
 
   /**

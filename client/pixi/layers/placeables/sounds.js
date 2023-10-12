@@ -40,14 +40,6 @@ class SoundsLayer extends PlaceablesLayer {
   /*  Methods                                     */
   /* -------------------------------------------- */
 
-  /** @override */
-  _activate() {
-    super._activate();
-    for ( const p of this.placeables ) p.renderFlags.set({refreshField: true});
-  }
-
-  /* -------------------------------------------- */
-
   /** @inheritdoc */
   async _tearDown(options) {
     this.stopAll();
@@ -63,9 +55,6 @@ class SoundsLayer extends PlaceablesLayer {
     for ( let sound of this.placeables ) {
       sound.updateSource({defer: true});
     }
-    for ( let sound of this.preview.children ) {
-      sound.updateSource({defer: true});
-    }
   }
 
   /* -------------------------------------------- */
@@ -77,7 +66,6 @@ class SoundsLayer extends PlaceablesLayer {
    */
   refresh(options={}) {
     if ( !this.placeables.length ) return;
-    for ( const sound of this.placeables ) sound.source.refresh();
     if ( game.audio.locked ) {
       return game.audio.pending.push(() => this.refresh(options));
     }
@@ -132,7 +120,7 @@ class SoundsLayer extends PlaceablesLayer {
 
       // Determine whether the sound is audible, and its greatest audible volume
       for ( let l of listeners ) {
-        if ( !sound.source.active || !sound.source.shape?.contains(l.x, l.y) ) continue;
+        if ( !sound.source.active || !sound.source.los?.contains(l.x, l.y) ) continue;
         s.audible = true;
         const distance = Math.hypot(l.x - sound.x, l.y - sound.y);
         let volume = sound.document.volume;
@@ -169,10 +157,14 @@ class SoundsLayer extends PlaceablesLayer {
    * @internal
    */
   _onDarknessChange(darkness, prior) {
-    for ( const sound of this.placeables ) {
-      if ( sound.isAudible === sound.source.disabled ) sound.updateSource();
-      if ( this.active ) sound.renderFlags.set({refreshState: true, refreshField: true});
+    if ( !this.active ) return;
+    for ( let sound of this.placeables ) {
+      if ( sound.isAudible !== sound.source.active ) {
+        sound.updateSource({defer: true});
+        sound.refresh();
+      }
     }
+    this.refresh();
   }
 
   /* -------------------------------------------- */
@@ -181,12 +173,12 @@ class SoundsLayer extends PlaceablesLayer {
 
   /**
    * Handle mouse cursor movements which may cause ambient audio previews to occur
-   * @param {PIXI.FederatedEvent} event     The initiating mouse move interaction event
+   * @param {PIXI.InteractionEvent} event     The initiating mouse move interaction event
    */
   _onMouseMove(event) {
     if ( !this.livePreview ) return;
     if ( canvas.tokens.active && canvas.tokens.controlled.length ) return;
-    const position = event.getLocalPosition(this);
+    const position = event.data.getLocalPosition(this);
     this.previewSound(position);
   }
 
@@ -198,12 +190,11 @@ class SoundsLayer extends PlaceablesLayer {
 
     // Create a pending AmbientSoundDocument
     const cls = getDocumentClass("AmbientSound");
-    const doc = new cls({type: "l", ...event.interactionData.origin}, {parent: canvas.scene});
+    const doc = new cls({type: "l", ...event.data.origin}, {parent: canvas.scene});
 
     // Create the preview AmbientSound object
     const sound = new this.constructor.placeableClass(doc);
-    event.interactionData.preview = this.preview.addChild(sound);
-    event.interactionData.soundState = 1;
+    event.data.preview = this.preview.addChild(sound);
     this.preview._creating = false;
     return sound.draw();
   }
@@ -212,21 +203,22 @@ class SoundsLayer extends PlaceablesLayer {
 
   /** @inheritdoc */
   _onDragLeftMove(event) {
-    const {destination, soundState, preview, origin} = event.interactionData;
-    if ( soundState === 0 ) return;
+    const { destination, createState, preview, origin } = event.data;
+    if ( createState === 0 ) return;
     const d = canvas.dimensions;
     const radius = Math.hypot(destination.x - origin.x, destination.y - origin.y);
     preview.document.radius = radius * (d.distance / d.size);
     preview.updateSource();
-    event.interactionData.soundState = 2;
+    preview.refresh();
+    event.data.createState = 2;
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
   async _onDragLeftDrop(event) {
-    const {soundState, destination, origin, preview} = event.interactionData;
-    if ( soundState !== 2 ) return;
+    const { createState, destination, origin, preview } = event.data;
+    if ( createState !== 2 ) return;
 
     // Render the preview sheet for confirmation
     const radius = Math.hypot(destination.x - origin.x, destination.y - origin.y);
@@ -260,21 +252,17 @@ class SoundsLayer extends PlaceablesLayer {
   async _onDropData(event, data) {
     const playlistSound = await PlaylistSound.implementation.fromDropData(data);
     if ( !playlistSound ) return false;
-    let soundData;
-    if ( (data.x === undefined) || (data.y === undefined) ) {
-      const coords = this._canvasCoordinatesFromDrop(event, {center: false});
-      if ( !coords ) return false;
-      soundData = {x: coords[0], y: coords[1]};
-    } else {
-      soundData = {x: data.x, y: data.y};
-    }
-    if ( !event.shiftKey ) [soundData.x, soundData.y] = canvas.grid.getCenter(soundData.x, soundData.y);
-    if ( !canvas.dimensions.rect.contains(soundData.x, soundData.y) ) return false;
-    Object.assign(soundData, {
+
+    // Get the world-transformed drop position.
+    const coords = this._canvasCoordinatesFromDrop(event);
+    if ( !coords ) return false;
+    const soundData = {
       path: playlistSound.path,
       volume: playlistSound.volume,
+      x: coords[0],
+      y: coords[1],
       radius: canvas.dimensions.distance * 2
-    });
+    };
     return this._createPreview(soundData, {top: event.clientY - 20, left: event.clientX + 40});
   }
 }

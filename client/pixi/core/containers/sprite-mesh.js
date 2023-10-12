@@ -208,20 +208,19 @@ class SpriteMesh extends PIXI.Mesh {
 
   /** @override */
   get tint() {
-    return this._tintColor.value;
+    return this._tint;
   }
 
   set tint(tint) {
-    tint ??= 0xFFFFFF;
-    if ( tint === this.tint ) return;
-    this._tintColor.setValue(tint);
-    this._tintRGB = this._tintColor.toLittleEndianNumber();
+    if ( tint === this._tint ) return;
+    this._tint = tint;
+    this._tintRGB = (tint >> 16) + (tint & 0xff00) + ((tint & 0xff) << 16);
     this.#tintAlphaDirty = true;
   }
 
-  _tintColor = new PIXI.Color(0xFFFFFF);
+  _tint;
 
-  _tintRGB = 0xFFFFFF;
+  _tintRGB;
 
   /* ---------------------------------------- */
 
@@ -357,7 +356,7 @@ class SpriteMesh extends PIXI.Mesh {
   /* ---------------------------------------- */
 
   /** @override */
-  calculateTrimmedVertices(...args) {
+  calculateTrimmedVertices() {
     return PIXI.Sprite.prototype.calculateTrimmedVertices.call(this, ...args);
   }
 
@@ -369,9 +368,8 @@ class SpriteMesh extends PIXI.Mesh {
 
     // Update tint if necessary
     if ( this.#tintAlphaDirty ) {
-      PIXI.Color.shared.setValue(this._tintColor)
-        .premultiply(this.worldAlpha, this.alphaMode > 0)
-        .toArray(this._cachedTint);
+      this._cachedTint =
+        PIXI.utils.premultiplyTintToRgba(this._tint, this.worldAlpha, this._cachedTint, this.alphaMode);
       this.#tintAlphaDirty = false;
     }
 

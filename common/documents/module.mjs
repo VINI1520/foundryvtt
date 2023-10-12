@@ -1,5 +1,4 @@
 export {default as BaseActiveEffect} from "./active-effect.mjs";
-export {default as BaseActorDelta} from "./actor-delta.mjs";
 export {default as BaseActor} from "./actor.mjs";
 export {default as BaseAdventure} from "./adventure.mjs";
 export {default as BaseAmbientLight} from "./ambient-light.mjs";

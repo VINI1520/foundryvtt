@@ -1,91 +1,9 @@
 /**
  * The client-side database backend implementation which handles Document modification operations.
+ * @extends {abstract.DatabaseBackend}
+ * @implements {abstract.DatabaseBackend}
  */
 class ClientDatabaseBackend extends foundry.abstract.DatabaseBackend {
-
-  /* -------------------------------------------- */
-  /*  Document Modification Operations            */
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  async _getDocuments(documentClass, {query, options, pack}, user) {
-    const type = documentClass.documentName;
-
-    // Dispatch the request
-    const request = {action: "get", type, query, options, pack};
-    const response = await SocketInterface.dispatch("modifyDocument", request);
-
-    // Return the index only
-    if ( options.index ) return response.result;
-
-    // Create Document objects
-    return response.result.map(data => {
-      return documentClass.fromSource(data, {pack});
-    });
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  async _createDocuments(documentClass, context, user) {
-    const {options, pack, parent} = context;
-
-    // Prepare to create documents
-    const toCreate = await ClientDatabaseBackend.#preCreateDocumentArray(documentClass, context, user);
-    if ( !toCreate.length || options.temporary ) return toCreate;
-
-    // Dispatch the request
-    const request = ClientDatabaseBackend.#buildRequest({action: "create", data: toCreate, documentClass,
-      options, pack, parent});
-    const response = await SocketInterface.dispatch("modifyDocument", request);
-
-    // Handle document creation
-    return this.#handleCreateDocuments(response);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  async _updateDocuments(documentClass, context, user) {
-    const {options, parent, pack} = context;
-    const type = documentClass.documentName;
-    const collection = ClientDatabaseBackend.#getCollection(type, parent, pack);
-
-    // Prepare to update documents
-    const toUpdate = await ClientDatabaseBackend.#preUpdateDocumentArray(collection, context, user);
-    if ( !toUpdate.length ) return [];
-
-    // Dispatch the request
-    const request = ClientDatabaseBackend.#buildRequest({action: "update", updates: toUpdate, documentClass,
-      options, pack, parent});
-    const response = await SocketInterface.dispatch("modifyDocument", request);
-
-    // Handle document update
-    return this.#handleUpdateDocuments(response);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  async _deleteDocuments(documentClass, context, user) {
-    const {ids, options, parent, pack} = context;
-    const type = documentClass.documentName;
-    const collection = ClientDatabaseBackend.#getCollection(type, parent, pack);
-
-    // Prepare to delete documents
-    const deleteIds = options.deleteAll ? Array.from(collection instanceof CompendiumCollection
-      ? collection.index.keys() : collection.keys()) : ids;
-    const toDelete = await ClientDatabaseBackend.#preDeleteDocumentArray(collection, deleteIds, options, user);
-    if ( !toDelete.length ) return [];
-
-    // Dispatch the request
-    const request = ClientDatabaseBackend.#buildRequest({action: "delete", ids: toDelete, documentClass,
-      options, pack, parent});
-    const response = await SocketInterface.dispatch("modifyDocument", request);
-
-    // Handle document deletions
-    return this.#handleDeleteDocuments(response);
-  }
 
   /* -------------------------------------------- */
   /*  Socket Workflows                            */
@@ -99,11 +17,18 @@ class ClientDatabaseBackend extends foundry.abstract.DatabaseBackend {
 
     // Document Operations
     socket.on("modifyDocument", response => {
-      const {request} = response;
+      const { request } = response;
+      const isEmbedded = CONST.DOCUMENT_TYPES.includes(request.parentType);
       switch ( request.action ) {
-        case "create": return this.#handleCreateDocuments(response);
-        case "update": return this.#handleUpdateDocuments(response);
-        case "delete": return this.#handleDeleteDocuments(response);
+        case "create":
+          if ( isEmbedded ) return this._handleCreateEmbeddedDocuments(response);
+          else return this._handleCreateDocuments(response);
+        case "update":
+          if ( isEmbedded ) return this._handleUpdateEmbeddedDocuments(response);
+          else return this._handleUpdateDocuments(response);
+        case "delete":
+          if ( isEmbedded ) return this._handleDeleteEmbeddedDocuments(response);
+          else return this._handleDeleteDocuments(response);
         default:
           throw new Error(`Invalid Document modification action ${request.action} provided`);
       }
@@ -111,17 +36,94 @@ class ClientDatabaseBackend extends foundry.abstract.DatabaseBackend {
   }
 
   /* -------------------------------------------- */
-  /*  Internal Helper Methods                     */
+  /*  Get Operations                              */
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  async _getDocuments(documentClass, {query, options, pack}, user) {
+    const type = documentClass.documentName;
+
+    // Dispatch the request
+    const response = await SocketInterface.dispatch("modifyDocument", {
+      type: type,
+      action: "get",
+      query: query,
+      options: options,
+      pack: pack
+    });
+
+    // Return the index only
+    if ( options.index ) return response.result;
+
+    // Create Document objects
+    return response.result.map(data => {
+      return documentClass.fromSource(data, {pack});
+    });
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  async _getEmbeddedDocuments(documentClass, parent, {query, options, pack}, user) {
+    throw new Error("Get operations for embedded Documents are currently un-supported");
+  }
+
+  /* -------------------------------------------- */
+  /*  Create Operations                           */
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  async _createDocuments(documentClass, {data, options, pack}, user) {
+    const toCreate = await this._preCreateDocumentArray(documentClass, {data, options, pack, user});
+    if ( !toCreate.length || options.temporary ) return toCreate;
+    const response = await SocketInterface.dispatch("modifyDocument", {
+      type: documentClass.documentName,
+      action: "create",
+      data: toCreate,
+      options: options,
+      pack: pack
+    });
+    return this._handleCreateDocuments(response);
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  async _createEmbeddedDocuments(documentClass, parent, {data, options, pack}, user) {
+
+    // Special Case
+    if ( parent.parent ) {
+      if ( !(parent.parent instanceof TokenDocument) ) {
+        throw new Error("Managing embedded Documents which are not direct descendants of a primary Document is "
+          + "un-supported at this time.");
+      }
+      if ( !options.temporary ) {
+        return parent.parent.createActorEmbeddedDocuments(documentClass.documentName, data, options);
+      }
+    }
+
+    // Standard Case
+    const toCreate = await this._preCreateDocumentArray(documentClass, {data, options, pack, parent, user});
+    if ( !toCreate.length || options.temporary ) return toCreate;
+    const response = await SocketInterface.dispatch("modifyDocument", {
+      action: "create",
+      type: documentClass.documentName,
+      parentType: parent.documentName,
+      parentId: parent.id,
+      data: toCreate,
+      options: options,
+      pack: pack
+    });
+    return this._handleCreateEmbeddedDocuments(response);
+  }
+
   /* -------------------------------------------- */
 
   /**
    * Perform a standardized pre-creation workflow for all Document types. For internal use only.
-   * @param {typeof Document} documentClass
-   * @param {SocketRequest} request
-   * @param {User} user
+   * @private
    */
-  static async #preCreateDocumentArray(documentClass, request, user) {
-    const {data, options, pack, parent} = request;
+  async _preCreateDocumentArray(documentClass, {data, options, pack, parent, user}) {
     user = user || game.user;
     const type = documentClass.documentName;
     const toCreate = [];
@@ -140,14 +142,14 @@ class ClientDatabaseBackend extends foundry.abstract.DatabaseBackend {
       try {
         doc = new documentClass(d, {parent, pack});
       } catch(err) {
-        Hooks.onError("ClientDatabaseBackend##preCreateDocumentArray", err, {id: d._id, log: "error", notify: "error"});
+        Hooks.onError("ClientDatabaseBackend#_preCreateDocumentArray", err, {id: d._id, log: "error", notify: "error"});
         continue;
       }
+      await doc._preCreate(createData, options, user);
 
-      let allowed = await doc._preCreate(createData, options, user) ?? true;
-      allowed &&= (options.noHook || Hooks.call(`preCreate${type}`, doc, createData, options, user.id));
+      const allowed = options.noHook || Hooks.call(`preCreate${type}`, doc, createData, options, user.id);
       if ( allowed === false ) {
-        console.debug(`${vtt} | ${type} creation prevented during pre-create`);
+        console.debug(`${vtt} | ${type} creation prevented by preCreate hook`);
         continue;
       }
       toCreate.push(doc);
@@ -163,70 +165,138 @@ class ClientDatabaseBackend extends foundry.abstract.DatabaseBackend {
    * @param {SocketRequest} [response.request]      The initial socket request
    * @param {object[]} [response.result]            An Array of created data objects
    * @param {string} [response.userId]              The id of the requesting User
-   * @returns {Promise<Document[]>}                 An Array of created Document instances
+   * @returns {Document[]}                          An Array of created Document instances
+   * @private
    */
-  async #handleCreateDocuments({request, result=[], userId}) {
-    const {type, options, pack, parentUuid} = request;
-    const parent = await ClientDatabaseBackend.#getParent(parentUuid);
-    const collection = ClientDatabaseBackend.#getCollection(type, parent, pack);
+  _handleCreateDocuments({request, result=[], userId}) {
+    const { type, options, pack } = request;
 
-    // Pre-operation actions
-    const preArgs = [result, options, userId];
-    if ( parent ) parent._dispatchDescendantDocumentEvents("preCreate", collection.name, preArgs);
-    else collection._preCreateDocuments(...preArgs);
+    // Pre-operation collection actions
+    const collection = pack ? game.packs.get(pack) : game.collections.get(type);
+    collection._preCreateDocuments(result, options, userId);
 
     // Perform creations and execute callbacks
-    const callbacks = ClientDatabaseBackend.#postCreateDocumentCallbacks(collection, result, parent, pack, options,
-      userId);
-    parent?.reset();
+    const callbacks = this._postCreateDocumentCallbacks(type, collection, result, {options, userId, pack});
     const documents = callbacks.map(fn => fn());
 
-    // Post-operation actions
-    const postArgs = [documents, result, options, userId];
-    if ( parent ) parent._dispatchDescendantDocumentEvents("onCreate", collection.name, postArgs);
-    else collection._onCreateDocuments(...postArgs);
+    // Post-operation collection actions
+    collection._onCreateDocuments(documents, result, options, userId);
+    this._logOperation("Created", type, documents, {level: "info", pack});
+    return documents;
+  }
 
-    // Log and return result
+  /* -------------------------------------------- */
+
+  /**
+   * Handle a SocketResponse from the server when one or multiple documents were created
+   * @param {SocketResponse} response               The provided Socket response
+   * @param {SocketRequest} [response.request]      The initial socket request
+   * @param {object[]} [response.result]            An Array of created data objects
+   * @param {string} [response.userId]              The id of the requesting User
+   * @returns {Document[]}                          An Array of created Document instances
+   * @private
+   */
+  _handleCreateEmbeddedDocuments({request, result=[], userId}) {
+    const {type, parentType, parentId, options, pack} = request;
+    const parentCollection = pack ? game.packs.get(pack) : game.collections.get(parentType);
+    const parent = parentCollection.get(parentId, {strict: !pack});
+    if ( !parent || !result.length ) return [];
+
+    // Pre-operation parent actions
+    const collection = parent.getEmbeddedCollection(type);
+    parent._preCreateEmbeddedDocuments(type, result, options, userId);
+
+    // Perform creations and execute callbacks
+    const callbacks = this._postCreateDocumentCallbacks(type, collection, result, {options, userId, parent, pack});
+    parent.reset();
+    const documents = callbacks.map(fn => fn());
+
+    // Perform follow-up operations for the parent Document
+    parent._onCreateEmbeddedDocuments(type, documents, result, options, userId);
     this._logOperation("Created", type, documents, {level: "info", parent, pack});
-    return ClientDatabaseBackend.#buildResponse({ action: "create", documents, options });
+    return documents;
   }
 
   /* -------------------------------------------- */
 
   /**
    * Perform a standardized post-creation workflow for all Document types. For internal use only.
-   * @param {DocumentCollection} collection
-   * @param {object[]} result
-   * @param {ClientDocument} parent
-   * @param {string} pack
-   * @param {object} options
-   * @param {string} userId
-   * @returns {Array<function():Document>} An array of callback operations performed after every Document is created
+   * @returns {Function[]}   An array of callback operations to perform once every Document is created
+   * @private
    */
-  static #postCreateDocumentCallbacks(collection, result, parent, pack, options, userId) {
-    const cls = collection.documentClass;
+  _postCreateDocumentCallbacks(type, collection, result, {options, userId, parent, pack}) {
+    const cls = getDocumentClass(type);
     const callback = (doc, data) => {
       doc._onCreate(data, options, userId);
-      Hooks.callAll(`create${cls.documentName}`, doc, options, userId);
+      Hooks.callAll(`create${type}`, doc, options, userId);
       return doc;
     };
     return result.map(data => {
-      const doc = collection.createDocument(data, {parent, pack});
-      collection.set(doc.id, doc, options);
+      const doc = new cls(data, {parent, pack});
+      collection.set(doc.id, doc);
       return callback.bind(this, doc, data);
     });
   }
 
   /* -------------------------------------------- */
+  /*  Update Operations                           */
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  async _updateDocuments(documentClass, {updates, options, pack}, user) {
+    const collection = pack ? game.packs.get(pack) : game.collections.get(documentClass.documentName);
+    const toUpdate = await this._preUpdateDocumentArray(collection, {updates, options, user});
+    if ( !toUpdate.length ) return [];
+    const response = await SocketInterface.dispatch("modifyDocument", {
+      type: documentClass.documentName,
+      action: "update",
+      updates: toUpdate,
+      options: options,
+      pack: pack
+    });
+    return this._handleUpdateDocuments(response);
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  async _updateEmbeddedDocuments(documentClass, parent, {updates, options, pack}, user) {
+
+    // Special Cases
+    if ( (parent instanceof TokenDocument) && (updates.length === 1) ) {
+      return parent.modifyActorDocument(updates[0], options);
+    }
+    if ( parent.parent instanceof TokenDocument ) {
+      return parent.parent.updateActorEmbeddedDocuments(documentClass.documentName, updates, options);
+    }
+    if ( parent.parent ) {
+      throw new Error("Managing embedded Documents which are not direct descendants of a primary Document is "
+      + "un-supported at this time.");
+    }
+
+    // Normal case
+    const collection = parent.getEmbeddedCollection(documentClass.documentName);
+    const toUpdate = await this._preUpdateDocumentArray(collection, {updates, options, user});
+    if ( !toUpdate.length ) return [];
+    const response = await SocketInterface.dispatch("modifyDocument", {
+      action: "update",
+      type: documentClass.documentName,
+      parentType: parent.documentName,
+      parentId: parent.id,
+      updates: toUpdate,
+      options: options,
+      pack: pack
+    });
+    return this._handleUpdateEmbeddedDocuments(response);
+  }
+
+  /* -------------------------------------------- */
 
   /**
-   * Perform a standardized pre-update workflow for all Document types.
-   * @param {DocumentCollection} collection
-   * @param {SocketRequest} request
-   * @param {User} user
+   * Perform a standardized pre-update workflow for all Document types. For internal use only.
+   * @private
    */
-  static async #preUpdateDocumentArray(collection, request, user) {
-    const {updates, options} = request;
+  async _preUpdateDocumentArray(collection, {updates, options, user}) {
     user = user || game.user;
     const cls = collection.documentClass;
     const toUpdate = [];
@@ -235,7 +305,7 @@ class ClientDatabaseBackend extends foundry.abstract.DatabaseBackend {
         if ( u._id && !collection.has(u._id) ) arr.push(u._id);
         return arr;
       }, []);
-      await collection.getDocuments({_id__in: updateIds});
+      await collection.getDocuments({_id: {$in: updateIds}});
     }
 
     // Iterate over requested changes
@@ -246,40 +316,44 @@ class ClientDatabaseBackend extends foundry.abstract.DatabaseBackend {
       let changes;
       if ( update instanceof foundry.abstract.DataModel ) changes = update.toObject();
       else changes = foundry.utils.expandObject(update);
-
-      // Get the Document being updated
-      const doc = collection.get(update._id, {strict: true, invalid: true});
-
-      // Ensure that Document sub-type is included
-      const addType = ("type" in doc) && !("type" in changes);
-      if ( addType ) changes.type = doc.type;
-
-      // Migrate changes
       changes = cls.migrateData(changes);
 
-      // Attempt updating the document to validate the changes
-      let diff = {};
+      // Get the Document being updated
+      let doc;
       try {
-        diff = doc.updateSource(changes, {dryRun: true, fallback: false, restoreDelta: options.restoreDelta});
+        doc = collection.get(update._id, {strict: true});
+      } catch(err) {
+        if ( collection.invalidDocumentIds?.has(update._id) ) doc = collection.getInvalid(update._id);
+        else throw err;
+      }
+
+      // Clean and validate the proposed changes
+      try {
+        // Add type information to allow a system data model to be retrieved, if one exists.
+        const hasType = "type" in changes;
+        if ( !hasType && ("type" in doc) ) changes.type = doc.type;
+        doc.validate({changes, clean: true, strict: true, fallback: false});
+        if ( !hasType ) delete changes.type;
       } catch(err) {
         ui.notifications.error(err.message.split("] ").pop());
-        Hooks.onError("ClientDatabaseBackend##preUpdateDocumentArray", err, {id: doc.id, log: "error"});
+        Hooks.onError("ClientDatabaseBackend#_preUpdateDocumentArray", err, {id: doc.id, log: "error"});
         continue;
       }
 
       // Retain only the differences against the current source
       if ( options.diff ) {
-        if ( foundry.utils.isEmpty(diff) ) continue;
-        diff._id = doc.id;
-        changes = cls.shimData(diff); // Re-apply shims for backwards compatibility in _preUpdate hooks
+        changes = foundry.utils.diffObject(doc._source, changes, {deletionKeys: true});
+        if ( foundry.utils.isEmpty(changes) ) continue;
+        changes._id = doc.id;
+        changes = cls.shimData(changes); // Re-apply the shim for _preUpdate hooks
       }
-      else if ( addType ) delete changes.type;
 
       // Perform pre-update operations
-      let allowed = await doc._preUpdate(changes, options, user) ?? true;
-      allowed &&= (options.noHook || Hooks.call(`preUpdate${doc.documentName}`, doc, changes, options, user.id));
+      await doc._preUpdate(changes, options, user);
+
+      const allowed = options.noHook || Hooks.call(`preUpdate${doc.documentName}`, doc, changes, options, user.id);
       if ( allowed === false ) {
-        console.debug(`${vtt} | ${doc.documentName} update prevented during pre-update`);
+        console.debug(`${vtt} | ${doc.documentName} update prevented by preUpdate hook`);
         continue;
       }
       toUpdate.push(changes);
@@ -295,48 +369,72 @@ class ClientDatabaseBackend extends foundry.abstract.DatabaseBackend {
    * @param {SocketRequest} [response.request]      The initial socket request
    * @param {object[]} [response.result]            An Array of incremental data objects
    * @param {string} [response.userId]              The id of the requesting User
-   * @returns {Promise<Document[]>}                 An Array of updated Document instances
+   * @returns {Document[]}                          An Array of updated Document instances
+   * @private
    */
-  async #handleUpdateDocuments({request, result=[], userId}={}) {
-    const { type, options, parentUuid, pack} = request;
-    const parent = await ClientDatabaseBackend.#getParent(parentUuid, {invalid: true});
-    if ( parentUuid && !parent ) {
-      throw new Error(`Unable to update embedded documents in parent '${parentUuid}'. The parent does not exist.`);
-    }
-    const collection = ClientDatabaseBackend.#getCollection(type, parent, pack);
+  _handleUpdateDocuments({request, result=[], userId}={}) {
+    const { type, options, pack } = request;
+    const collection = pack ? game.packs.get(pack) : game.collections.get(type);
 
-    // Pre-operation actions
-    const preArgs = [result, options, userId];
-    if ( parent ) parent._dispatchDescendantDocumentEvents("preUpdate", collection.name, preArgs);
-    else collection._preUpdateDocuments(...preArgs);
+    // Pre-operation collection actions
+    collection._preUpdateDocuments(result, options, userId);
 
     // Perform updates and execute callbacks
-    options.type = type;
-    const callbacks = ClientDatabaseBackend.#postUpdateDocumentCallbacks(collection, result, options, userId);
-    parent?.reset();
+    const callbacks = this._postUpdateDocumentCallbacks(collection, result, {options, userId});
     const documents = callbacks.map(fn => fn());
 
-    // Post-operation actions
-    const postArgs = [documents, result, options, userId];
-    if ( parent ) parent._dispatchDescendantDocumentEvents("onUpdate", collection.name, postArgs);
-    else collection._onUpdateDocuments(...postArgs);
-
-    // Log and return result
-    if ( CONFIG.debug.documents ) this._logOperation("Updated", type, documents, {level: "debug", parent, pack});
-    return ClientDatabaseBackend.#buildResponse({ action: "update", documents, options });
+    // Post-operation collection actions
+    collection._onUpdateDocuments(documents, result, options, userId);
+    if ( CONFIG.debug.documents ) this._logOperation("Updated", type, documents, {level: "debug", pack});
+    return documents;
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Perform a standardized post-update workflow for all Document types.
-   * @param {DocumentCollection} collection
-   * @param {object[]} result
-   * @param {object} options
-   * @param {string} userId
-   * @returns {Array<function():Document>} An array of callback operations performed after every Document is updated
+   * Handle a SocketResponse from the server when embedded Documents are updated in a parent Document.
+   * @param {SocketResponse} response               The provided Socket response
+   * @param {SocketRequest} [response.request]      The initial socket request
+   * @param {object[]} [response.result]            An Array of incremental data objects
+   * @param {string} [response.userId]              The id of the requesting User
+   * @returns {Document[]}                          An Array of updated Document instances
+   * @private
    */
-  static #postUpdateDocumentCallbacks(collection, result, options, userId) {
+  _handleUpdateEmbeddedDocuments({request, result=[], userId}) {
+    const { type, parentType, parentId, options, pack } = request;
+    const parentCollection = pack ? game.packs.get(pack) : game.collections.get(parentType);
+    let parent;
+    try {
+      parent = parentCollection.get(parentId, {strict: true});
+    } catch(err) {
+      if ( parentCollection.invalidDocumentIds.has(parentId) ) parent = parentCollection.getInvalid(parentId);
+      else if ( !pack ) throw err;
+    }
+    if ( !parent || !result.length ) return [];
+
+    // Pre-operation parent actions
+    const collection = parent.getEmbeddedCollection(type);
+    parent._preUpdateEmbeddedDocuments(type, result, options, userId);
+
+    // Perform updates and execute callbacks
+    const callbacks = this._postUpdateDocumentCallbacks(collection, result, {options, userId});
+    parent.reset();
+    const documents = callbacks.map(fn => fn());
+
+    // Perform follow-up operations for the parent Document
+    parent._onUpdateEmbeddedDocuments(type, documents, result, options, userId);
+    if ( CONFIG.debug.documents ) this._logOperation("Updated", type, documents, {level: "debug", parent, pack});
+    return documents;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Perform a standardized post-update workflow for all Document types. For internal use only.
+   * @returns {Function[]}   An array of callback operations to perform after every Document is updated
+   * @private
+   */
+  _postUpdateDocumentCallbacks(collection, result, {options, userId}) {
     const cls = collection.documentClass;
     const callback = (doc, change) => {
       change = cls.shimData(change);
@@ -349,39 +447,94 @@ class ClientDatabaseBackend extends foundry.abstract.DatabaseBackend {
       const doc = collection.get(change._id, {strict: false});
       if ( !doc ) continue;
       doc.updateSource(change, options);
-      collection.set(doc.id, doc, options);
       callbacks.push(callback.bind(this, doc, change));
     }
     return callbacks;
   }
 
   /* -------------------------------------------- */
+  /*  Delete Operations                           */
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  async _deleteDocuments(documentClass, {ids, options, pack}, user) {
+    user = user || game.user;
+    const collection = pack ? game.packs.get(pack) : game.collections.get(documentClass.documentName);
+    if ( options.deleteAll ) ids = pack ? collection.index.keys() : collection.keys();
+    const toDelete = await this._preDeleteDocumentArray(collection, {ids, options, user});
+    if ( !toDelete.length ) return [];
+    const response = await SocketInterface.dispatch("modifyDocument", {
+      type: documentClass.documentName,
+      action: "delete",
+      ids: toDelete,
+      options: options,
+      pack: pack
+    });
+    return this._handleDeleteDocuments(response);
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  async _deleteEmbeddedDocuments(documentClass, parent, {ids, options, pack}, user) {
+
+    // Special Cases
+    if ( parent.parent instanceof TokenDocument ) {
+      return parent.parent.deleteActorEmbeddedDocuments(documentClass.documentName, ids, options);
+    }
+    if ( parent.parent ) {
+      throw new Error("Managing embedded Documents which are not direct descendants of a primary Document is "
+      + "un-supported at this time.");
+    }
+
+    // Normal case
+    const collection = parent.getEmbeddedCollection(documentClass.documentName);
+    const deleteIds = options.deleteAll ? collection.keys() : ids;
+    const toDelete = await this._preDeleteDocumentArray(collection, {ids: deleteIds, options, user});
+    if ( !toDelete.length ) return [];
+    const response = await SocketInterface.dispatch("modifyDocument", {
+      action: "delete",
+      type: documentClass.documentName,
+      parentType: parent.documentName,
+      parentId: parent.id,
+      ids: toDelete,
+      options: options,
+      pack: pack
+    });
+    return this._handleDeleteEmbeddedDocuments(response);
+  }
+
+  /* -------------------------------------------- */
 
   /**
-   * Perform a standardized pre-delete workflow for all Document types.
-   * @param {DocumentCollection} collection
-   * @param {string[]} ids
-   * @param {object} options
-   * @param {User} user
+   * Perform a standardized pre-delete workflow for all Document types. For internal use only.
+   * @private
    */
-  static async #preDeleteDocumentArray(collection, ids, options, user) {
+  async _preDeleteDocumentArray(collection, {ids, options, user}) {
     user = user || game.user;
     const toDelete = [];
     if ( collection instanceof CompendiumCollection ) {
-      await collection.getDocuments({_id__in: ids.filter(id => !collection.has(id))});
+      await collection.getDocuments({_id: {$in: ids.filter(id => !collection.has(id))}});
     }
 
     // Iterate over ids requested for deletion
     for ( let id of ids ) {
 
       // Get the Document being deleted
-      const doc = collection.get(id, {strict: true, invalid: true});
+      let doc;
+      try {
+        doc = collection.get(id, {strict: true});
+      } catch(err) {
+        if ( collection.invalidDocumentIds?.has(id) ) doc = collection.getInvalid(id);
+        else throw err;
+      }
 
       // Perform pre-deletion operations
-      let allowed = await doc._preDelete(options, user) ?? true;
-      allowed &&= (options.noHook || Hooks.call(`preDelete${doc.documentName}`, doc, options, user.id));
+      await doc._preDelete(options, user);
+
+      const allowed = options.noHook || Hooks.call(`preDelete${doc.documentName}`, doc, options, user.id);
       if ( allowed === false ) {
-        console.debug(`${vtt} | ${doc.documentName} deletion prevented during pre-delete`);
+        console.debug(`${vtt} | ${doc.documentName} deletion prevented by preDelete hook`);
         continue;
       }
       toDelete.push(id);
@@ -397,54 +550,74 @@ class ClientDatabaseBackend extends foundry.abstract.DatabaseBackend {
    * @param {SocketRequest} [response.request]      The initial socket request
    * @param {string[]} [response.result]            An Array of deleted Document ids
    * @param {string} [response.userId]              The id of the requesting User
-   * @returns {Promise<Document[]>}                 An Array of deleted Document instances
+   * @returns {Document[]}                           An Array of deleted Document instances
+   * @private
    */
-  async #handleDeleteDocuments({request, result=[], userId}={}) {
-    const {type, options, parentUuid, pack} = request;
-    const parent = await ClientDatabaseBackend.#getParent(parentUuid);
-    const collection = ClientDatabaseBackend.#getCollection(type, parent, pack);
-    result = options.deleteAll ? Array.from(collection instanceof CompendiumCollection
-      ? collection.index.keys() : collection.keys()) : result;
-    if ( !result.length ) return [];
+  _handleDeleteDocuments({request, result=[], userId}={}) {
+    const {type, options, pack} = request;
+    const collection = pack ? game.packs.get(pack) : game.collections.get(type);
+    result = options.deleteAll ? Array.from(collection.keys()) : result;
 
-    // Pre-operation actions
-    const preArgs = [result, options, userId];
-    if ( parent ) parent._dispatchDescendantDocumentEvents("preDelete", collection.name, preArgs);
-    else collection._preDeleteDocuments(...preArgs);
+    // Pre-operation collection actions
+    collection._preDeleteDocuments(result, options, userId);
 
     // Perform deletions and execute callbacks
-    const callbacks = ClientDatabaseBackend.#postDeleteDocumentCallbacks(collection, result, options, userId);
-    parent?.reset();
+    const callbacks = this._postDeleteDocumentCallbacks(collection, result, {options, userId});
     const documents = callbacks.map(fn => fn());
 
-    // Post-operation actions
-    const postArgs = [documents, result, options, userId];
-    if ( parent ) parent._dispatchDescendantDocumentEvents("onDelete", collection.name, postArgs);
-    else collection._onDeleteDocuments(...postArgs);
-
-    // Log and return result
-    this._logOperation("Deleted", type, documents, {level: "info", parent, pack});
-    return ClientDatabaseBackend.#buildResponse({ action: "delete", documents, options });
+    // Post-operation collection actions
+    collection._onDeleteDocuments(documents, result, options, userId);
+    this._logOperation("Deleted", type, documents, {level: "info", pack});
+    return documents;
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Perform a standardized post-deletion workflow for all Document types.
-   * @param {DocumentCollection} collection
-   * @param {string[]} ids
-   * @param {object} options
-   * @param {string} userId
-   * @returns {Array<function():Document>} An array of callback operations performed after every Document is deleted
+   * Handle a SocketResponse from the server when embedded Documents are deleted from a parent Document.
+   * @param {SocketResponse} response               The provided Socket response
+   * @param {SocketRequest} [response.request]      The initial socket request
+   * @param {string[]} [response.result]            An Array of deleted Document ids
+   * @param {string} [response.userId]              The id of the requesting User
+   * @returns {Document[]}                          An Array of deleted Document instances
+   * @private
    */
-  static #postDeleteDocumentCallbacks(collection, ids, options, userId) {
+  _handleDeleteEmbeddedDocuments({request, result=[], userId}) {
+    const { type, parentType, parentId, options, pack } = request;
+    const parentCollection = pack ? game.packs.get(pack) : game.collections.get(parentType);
+    const parent = parentCollection.get(parentId, {strict: !pack});
+    if ( !parent || !result.length ) return [];
+
+    // Pre-operation parent actions
+    const collection = parent.getEmbeddedCollection(type);
+    parent._preDeleteEmbeddedDocuments(type, result, options, userId);
+
+    // Perform updates and execute callbacks
+    const callbacks = this._postDeleteDocumentCallbacks(collection, result, {options, userId});
+    parent.reset();
+    const documents = callbacks.map(fn => fn());
+
+    // Perform follow-up operations for the parent Document
+    parent._onDeleteEmbeddedDocuments(type, documents, result, options, userId);
+    this._logOperation("Deleted", type, documents, {level: "info", parent, pack});
+    return documents;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Perform a standardized post-deletion workflow for all Document types. For internal use only.
+   * @returns {Function[]}   An array of callback operations to perform after every Document is deleted
+   * @private
+   */
+  _postDeleteDocumentCallbacks(collection, result, {options, userId}) {
     const callback = doc => {
       doc._onDelete(options, userId);
       Hooks.callAll(`delete${doc.documentName}`, doc, options, userId);
       return doc;
     };
     const callbacks = [];
-    for ( let id of ids ) {
+    for ( let id of result ) {
       const doc = collection.get(id, {strict: false});
       if ( !doc ) continue;
       collection.delete(id);
@@ -478,91 +651,5 @@ class ClientDatabaseBackend extends foundry.abstract.DatabaseBackend {
   /** @inheritdoc */
   getCompendiumScopes() {
     return Array.from(game.packs.keys());
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Get the parent document for given request from its provided UUID, if any.
-   * @param {string|null} uuid          The parent document UUID, or null
-   * @param {object} [options]          Options which customize how the parent document is retrieved by UUID
-   * @returns {Promise<ClientDocument>} The parent document for the transaction
-   */
-  static async #getParent(uuid, options={}) {
-    return uuid ? fromUuid(uuid, options) : null;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Obtain the document collection for a given Document type, parent, and compendium pack.
-   * @param {string} documentName           The Document name
-   * @param {ClientDocument|null} parent    A parent Document, if applicable
-   * @param {string} pack                   A compendium pack identifier, if applicable
-   * @returns {DocumentCollection|CompendiumCollection}  The relevant collection instance for this request
-   */
-  static #getCollection(documentName, parent, pack) {
-    if ( parent ) return parent.getEmbeddedCollection(documentName);
-    if ( pack ) {
-      const collection = game.packs.get(pack);
-      return documentName === "Folder" ? collection.folders : collection;
-    }
-    return game.collections.get(documentName);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Build a CRUD request.
-   * @param {SocketRequest} request  The initial request data.
-   * @returns {SocketRequest}
-   */
-  static #buildRequest({documentClass, action, data, updates, ids, options, pack, parent}) {
-    let parentUuid = parent?.uuid;
-    let type = documentClass.documentName;
-
-    // Translate updates to a token actor to the token's ActorDelta instead.
-    if ( foundry.utils.isSubclass(documentClass, Actor) && (parent instanceof TokenDocument) ) {
-      type = "ActorDelta";
-      updates[0]._id = parent.delta.id;
-      options.syntheticActorUpdate = true;
-    }
-
-    // Translate operations on a token actor's embedded children to the token's ActorDelta instead.
-    const token = ClientDatabaseBackend.#getTokenAncestor(parent);
-    if ( token && !(parent instanceof TokenDocument) ) {
-      const {embedded} = foundry.utils.parseUuid(parentUuid);
-      parentUuid = [token.delta.uuid, embedded.slice(4).join(".")].filterJoin(".");
-    }
-
-    return {type, action, data, updates, ids, options, pack, parentUuid};
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Build a CRUD response.
-   * @param {object} response                      The response data.
-   * @param {string} response.action               The type of response.
-   * @param {ClientDocument[]} response.documents  The initial response result.
-   * @param {object} response.options              The response options.
-   * @returns {ClientDocument[]}
-   */
-  static #buildResponse({ action, documents, options }) {
-    if ( options.syntheticActorUpdate ) return documents.map(delta => delta.syntheticActor);
-    return documents;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Retrieve a Document's Token ancestor, if it exists.
-   * @param {ClientDocument} parent   The parent Document
-   * @returns {TokenDocument|null}    The Token ancestor, or null
-   */
-  static #getTokenAncestor(parent) {
-    if ( !parent ) return null;
-    if ( parent instanceof TokenDocument ) return parent;
-    return this.#getTokenAncestor(parent.parent);
   }
 }

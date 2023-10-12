@@ -10,7 +10,7 @@
     <div class="form-group">
         <label>{{localize "Default"}} <strong>{{type}}</strong> {{localize "Sheet"}}</label>
         <select name="defaultClass" {{#unless isGM}}disabled{{/unless}}>
-            {{selectOptions defaultClasses selected=defaultClass}}
+            {{selectOptions sheetClasses selected=defaultClass}}
         </select>
         <p class="notes">{{localize "SHEETS.TypeSheetHint"}}</p>
     </div>

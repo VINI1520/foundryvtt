@@ -271,24 +271,6 @@ class HandlebarsHelpers {
   /* -------------------------------------------- */
 
   /**
-   * A ternary expression that allows inserting A or B depending on the value of C.
-   * @param {boolean} criteria    The test criteria
-   * @param {string} ifTrue       The string to output if true
-   * @param {string} ifFalse      The string to output if false
-   * @returns {string}            The ternary result
-   *
-   * @example Ternary if-then template usage
-   * ```hbs
-   * {{ifThen true "It is true" "It is false"}}
-   * ```
-   */
-  static ifThen(criteria, ifTrue, ifFalse) {
-    return criteria ? ifTrue : ifFalse;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * Translate a provided string key by using the loaded dictionary of localization strings.
    * @returns {string}
    *
@@ -299,7 +281,6 @@ class HandlebarsHelpers {
    * ```
    */
   static localize(value, options) {
-    if ( value instanceof Handlebars.SafeString ) value = value.toString();
     const data = options.hash;
     return foundry.utils.isEmpty(data) ? game.i18n.localize(value) : game.i18n.format(value, data);
   }
@@ -348,7 +329,6 @@ class HandlebarsHelpers {
     const step = options.hash.step ?? "any";
     properties.unshift(`step="${step}"`);
     if ( options.hash.disabled === true ) properties.push("disabled");
-    if ( options.hash.readonly === true ) properties.push("readonly");
     let safe = Number.isNumeric(value) ? Number(value) : "";
     if ( Number.isNumeric(step) && (typeof safe === "number") ) safe = safe.toNearest(Number(step));
     return new Handlebars.SafeString(`<input type="number" value="${safe}" ${properties.join(" ")}>`);
@@ -486,6 +466,25 @@ class HandlebarsHelpers {
    * </select>
    * ```
    *
+   * @example Using an Array as choices
+   * ```js
+   * let choices = [{a: "Choice A"}, {b: "Choice B"}];
+   * let value = "a";
+   * ```
+   * The template HTML structure
+   * ```hbs
+   * <select name="importantChoice">
+   *   {{selectOptions choices selected=value localize=true}}
+   * </select>
+   * ```
+   * The resulting HTML
+   * ```html
+   * <select name="importantChoice">
+   *   <option value="a" selected>Choice A</option>
+   *   <option value="b">Choice B</option>
+   * </select>
+   * ```
+   *
    * @example Using inverted choices
    * ```js
    * let choices = {"Choice A": "a", "Choice B": "b"};
@@ -574,7 +573,6 @@ Handlebars.registerHelper({
   concat: HandlebarsHelpers.concat,
   editor: HandlebarsHelpers.editor,
   filePicker: HandlebarsHelpers.filePicker,
-  ifThen: HandlebarsHelpers.ifThen,
   numberFormat: HandlebarsHelpers.numberFormat,
   numberInput: HandlebarsHelpers.numberInput,
   localize: HandlebarsHelpers.localize,

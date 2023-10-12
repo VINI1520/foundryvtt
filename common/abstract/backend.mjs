@@ -16,33 +16,34 @@ class DatabaseBackend {
   /**
    * Retrieve Documents based on provided query parameters
    * @param {Function} documentClass        The Document definition
-   * @param {object} context                Context for the requested operation
+   * @param {object} request                The requested operation
    * @param {BaseUser} [user]               The requesting User
    * @returns {Promise<Document[]>}         The created Document instances
    */
-  async get(documentClass, context, user) {
-    context = await this._getArgs(context);
-    return this._getDocuments(documentClass, context, user);
+  async get(documentClass, request, user) {
+    const parent = await this._getParent(request);
+    request = this._getArgs(request);
+    if ( parent ) return this._getEmbeddedDocuments(documentClass, parent, request, user);
+    else return this._getDocuments(documentClass, request, user);
   }
 
   /* -------------------------------------------- */
 
   /**
    * Validate the arguments passed to the get operation
-   * @param {object} context                The requested operation
-   * @param {object} [context.query={}]     A document search query to execute
-   * @param {object} [context.options={}]   Operation options
-   * @param {string} [context.pack]         A Compendium pack identifier
+   * @param {object} request                The requested operation
+   * @param {object} [request.query={}]     A document search query to execute
+   * @param {object} [request.options={}]   Operation options
+   * @param {string} [request.pack]         A Compendium pack identifier
    * @private
    */
-  async _getArgs({query={}, options={}, pack, ...context}={}) {
-    const parent = await this._getParent(context);
+  _getArgs({query={}, options={}, pack}={}) {
     options = mergeObject({index: false}, options);
     if ( pack && !this.getCompendiumScopes().includes(pack) ) {
       throw new Error(`Compendium pack ${pack} is not a valid Compendium identifier`);
     }
     options.broadcast = false; // never broadcast get requests
-    return {query, options, pack, parent, parentUuid: context.parentUuid};
+    return {query, options, pack};
   }
 
   /* -------------------------------------------- */
@@ -56,17 +57,25 @@ class DatabaseBackend {
   /* -------------------------------------------- */
 
   /**
-   * Get the parent Document (if any) associated with a request context.
-   * @param {object} context                The requested operation
+   * Get embedded Document instances
+   * @protected
+   */
+  async _getEmbeddedDocuments(documentClass, parent, request, user) {}
+
+  /* -------------------------------------------- */
+
+  /**
+   * Get the parent Document (if any) associated with a request
+   * @param {object} request                The requested operation
    * @return {Promise<Document|null>}       The parent Document, or null
    * @private
    */
-  async _getParent(context) {
-    if ( !context.parent ) return null;
-    if ( !(context.parent instanceof Document) ) {
+  async _getParent(request) {
+    if ( !request.parent ) return null;
+    if ( !(request.parent instanceof Document) ) {
       throw new Error("A parent Document provided to the database operation must be a Document instance");
     }
-    return context.parent;
+    return request.parent;
   }
 
   /* -------------------------------------------- */
@@ -76,36 +85,37 @@ class DatabaseBackend {
   /**
    * Perform document creation operations
    * @param {Function} documentClass        The Document definition
-   * @param {object} context                Context for the requested operation
+   * @param {object} request                The requested operation
    * @param {BaseUser} [user]               The requesting User
    * @returns {Promise<Document[]>}         The created Document instances
    */
-  async create(documentClass, context, user) {
-    context = await this._createArgs(context);
-    return this._createDocuments(documentClass, context, user);
+  async create(documentClass, request, user) {
+    const parent = await this._getParent(request);
+    request = this._createArgs(request);
+    if ( parent ) return this._createEmbeddedDocuments(documentClass, parent, request, user);
+    else return this._createDocuments(documentClass, request, user);
   }
 
   /* -------------------------------------------- */
 
   /**
    * Validate the arguments passed to the create operation
-   * @param {object} context                The requested operation
-   * @param {object[]} context.data         An array of document data
-   * @param {object} [context.options={}]   Operation options
-   * @param {string} [context.pack]         A Compendium pack identifier
+   * @param {object} request                The requested operation
+   * @param {object[]} request.data         An array of document data
+   * @param {object} [request.options={}]   Operation options
+   * @param {string} [request.pack]         A Compendium pack identifier
    * @private
    */
-  async _createArgs({data=[], options={}, pack, ...context}={}) {
+  _createArgs({data=[], options={}, pack}={}) {
     if ( !(data instanceof Array) ) {
       throw new Error("The data provided to the DatabaseBackend#create operation must be an array of data objects");
     }
-    const parent = await this._getParent(context);
     options = mergeObject({temporary: false, renderSheet: false, render: true}, options);
     if ( pack && !this.getCompendiumScopes().includes(pack) ) {
       throw new Error(`Compendium pack ${pack} is not a valid Compendium identifier`);
     }
     if ( options.temporary ) options.noHook = true;
-    return {data, options, pack, parent, parentUuid: context.parentUuid};
+    return {data, options, pack};
   }
 
   /* -------------------------------------------- */
@@ -115,7 +125,16 @@ class DatabaseBackend {
    * @returns {Promise<Document[]>}
    * @protected
    */
-  async _createDocuments(documentClass, context, user) {}
+  async _createDocuments(documentClass, request, user) {}
+
+  /* -------------------------------------------- */
+
+  /**
+   * Create embedded Document instances
+   * @returns {Promise<Document[]>}
+   * @protected
+   */
+  async _createEmbeddedDocuments(documentClass, parent, request, user) {}
 
   /* -------------------------------------------- */
   /*  Update Operations                           */
@@ -124,35 +143,36 @@ class DatabaseBackend {
   /**
    * Perform document update operations
    * @param {Function} documentClass        The Document definition
-   * @param {object} context                Context for the requested operation
+   * @param {object} request                The requested operation
    * @param {BaseUser} [user]               The requesting User
    * @returns {Promise<Document[]>}         The updated Document instances
    */
-  async update(documentClass, context, user) {
-    context = await this._updateArgs(context);
-    return this._updateDocuments(documentClass, context, user);
+  async update(documentClass, request, user) {
+    const parent = await this._getParent(request);
+    request = this._updateArgs(request);
+    if ( parent ) return this._updateEmbeddedDocuments(documentClass, parent, request, user);
+    else return this._updateDocuments(documentClass, request, user);
   }
 
   /* -------------------------------------------- */
 
   /**
    * Validate the arguments passed to the update operation
-   * @param {object} context                The requested operation
-   * @param {object[]} context.updates      An array of document data
-   * @param {object} [context.options={}]   Operation options
-   * @param {string} [context.pack]         A Compendium pack identifier
+   * @param {object} request                The requested operation
+   * @param {object[]} request.updates      An array of document data
+   * @param {object} [request.options={}]   Operation options
+   * @param {string} [request.pack]         A Compendium pack identifier
    * @private
    */
-  async _updateArgs({updates=[], options={}, pack, ...context}={}) {
+  _updateArgs({updates=[], options={}, pack}={}) {
     if ( !(updates instanceof Array) ) {
       throw new Error("The updates provided to the DatabaseBackend#update operation must be an array of data objects");
     }
-    const parent = await this._getParent(context);
     options = mergeObject({diff: true, render: true}, options);
     if ( pack && !this.getCompendiumScopes().includes(pack) ) {
       throw new Error(`Compendium pack ${pack} is not a valid Compendium identifier`);
     }
-    return {updates, options, pack, parent, parentUuid: context.parentUuid};
+    return {updates, options, pack};
   }
 
   /* -------------------------------------------- */
@@ -162,8 +182,19 @@ class DatabaseBackend {
    * @returns {Promise<Document[]>}
    * @protected
    */
-  async _updateDocuments(documentClass, context, user) {
+  async _updateDocuments(documentClass, request, user) {
     throw new Error("An implementation of the DatabaseBackend must define the _updateDocuments method");
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Update embedded Document instances
+   * @returns {Promise<Document[]>}
+   * @protected
+   */
+  async _updateEmbeddedDocuments(documentClass, parent, request, user) {
+    throw new Error("An implementation of the DatabaseBackend must define the _updateEmbeddedDocuments method");
   }
 
   /* -------------------------------------------- */
@@ -173,35 +204,36 @@ class DatabaseBackend {
   /**
    * Perform document deletion operations
    * @param {Function} documentClass        The Document definition
-   * @param {object} context                Context for the requested operation
+   * @param {object} request                The requested operation
    * @param {BaseUser} [user]               The requesting User
    * @returns {Promise<Document[]>}         The deleted Document instances
    */
-  async delete(documentClass, context, user) {
-    context = await this._deleteArgs(context);
-    return this._deleteDocuments(documentClass, context, user);
+  async delete(documentClass, request, user) {
+    const parent = await this._getParent(request);
+    request = this._deleteArgs(request);
+    if ( parent ) return this._deleteEmbeddedDocuments(documentClass, parent, request, user);
+    else return this._deleteDocuments(documentClass, request, user);
   }
 
   /* -------------------------------------------- */
 
   /**
    * Validate the arguments passed to the delete operation
-   * @param {object} context                The requested operation
-   * @param {string[]} context.ids          An array of document ids
-   * @param {object} [context.options={}]   Operation options
-   * @param {string} [context.pack]         A Compendium pack identifier
+   * @param {object} request                The requested operation
+   * @param {string[]} request.ids          An array of document ids
+   * @param {object} [request.options={}]   Operation options
+   * @param {string} [request.pack]         A Compendium pack identifier
    * @private
    */
-  async _deleteArgs({ids=[], options={}, pack, ...context}={}) {
+  _deleteArgs({ids=[], options={}, pack}={}) {
     if ( !(ids instanceof Array) ) {
       throw new Error("The document ids provided to the DatabaseBackend#delete operation must be an array of strings");
     }
-    const parent = await this._getParent(context);
     options = mergeObject({render: true}, options);
     if ( pack && !this.getCompendiumScopes().includes(pack) ) {
       throw new Error(`Compendium pack ${pack} is not a valid Compendium identifier`);
     }
-    return {ids, options, pack, parent, parentUuid: context.parentUuid};
+    return {ids, options, pack};
   }
 
   /* -------------------------------------------- */
@@ -211,7 +243,16 @@ class DatabaseBackend {
    * @returns {Promise<Document[]>}
    * @protected
    */
-  async _deleteDocuments(documentClass, context, user) {}
+  async _deleteDocuments(documentClass, request, user) {}
+
+  /* -------------------------------------------- */
+
+  /**
+   * Delete embedded Document instances
+   * @returns {Promise<Document[]>}
+   * @protected
+   */
+  async _deleteEmbeddedDocuments(documentClass, parent, request, user) {}
 
   /* -------------------------------------------- */
   /*  Helper Methods                              */

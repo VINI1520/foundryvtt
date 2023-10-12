@@ -47,12 +47,6 @@ class GridConfig extends FormApplication {
    */
   #layersOriginalVisibility;
 
-  /**
-   * If we should redraw when closing this window
-   * @type {boolean}
-   */
-  #redrawOnClose = false;
-
   /* -------------------------------------------- */
 
   /** @override */
@@ -125,7 +119,7 @@ class GridConfig extends FormApplication {
       layer.visible = this.#layersOriginalVisibility[layer.name];
     }
 
-    if ( !options.force ) await this._reset();
+    if ( !options.force ) this._reset();
     return super.close(options);
   }
 
@@ -195,39 +189,19 @@ class GridConfig extends FormApplication {
    */
   _onWheel(event) {
     if ( event.deltaY === 0 ) return;
-    const normalizedDelta = -Math.sign(event.deltaY);
-    const activeElement = document.activeElement;
-    const noShiftAndAlt = !(event.shiftKey || event.altKey);
-    const focus = game.keyboard.hasFocus && document.hasFocus;
 
-    // Increase/Decrease the Scene scale
-    if ( event.shiftKey || (!event.altKey && focus && activeElement.name === "scale") ) {
+    // Increase the Scene scale on shift
+    if ( event.shiftKey ) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      this._scaleBackgroundSize(normalizedDelta);
+      this._scaleBackgroundSize(-Math.sign(event.deltaY));
     }
 
-    // Increase/Decrease the Grid scale
-    else if ( event.altKey || (focus && activeElement.name === "grid.size") ) {
+    // Increase the Grid scale on alt
+    if ( event.altKey ) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      this._scaleGridSize(normalizedDelta);
-    }
-
-    // If no shift or alt key are pressed
-    else if ( noShiftAndAlt && focus ) {
-      // Increase/Decrease the background x offset
-      if ( activeElement.name === "background.offsetX" ) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        this._shiftBackground({deltaX: normalizedDelta});
-      }
-      // Increase/Decrease the background y offset
-      else if ( activeElement.name === "background.offsetY" ) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        this._shiftBackground({deltaY: normalizedDelta});
-      }
+      this._scaleGridSize(-Math.sign(event.deltaY));
     }
   }
 
@@ -236,20 +210,10 @@ class GridConfig extends FormApplication {
   /** @override */
   async _onChangeInput(event) {
     event.preventDefault();
-    const formData = this._getSubmitData();
-    const {type, size} = this.object.grid;
-    this.object.updateSource(formData);
-    if ( (this.object.grid.type !== type) || (this.object.grid.size !== size) ) {
-      this.#redrawOnClose = true;
-      canvas.grid.grid.destroy(true);
-      await canvas.grid._draw({
-        type: this.object.grid.type,
-        dimensions: this.object.getDimensions()
-      });
-    }
+    this.object.updateSource(this._getSubmitData());
     this._refresh({
       background: true,
-      grid: foundry.utils.mergeObject(this.object.grid, {color: 0xFF0000, alpha: 1.0})
+      grid: {color: 0xFF0000, alpha: 1.0}
     });
   }
 
@@ -262,17 +226,17 @@ class GridConfig extends FormApplication {
     formData.height = Math.round(this.#dimensions.sceneHeight);
 
     const delta = foundry.utils.diffObject(foundry.utils.flattenObject(this.object), formData);
-    if ( ["width", "height", "padding", "background.offsetX", "background.offsetY", "grid.size", "grid.type"].some(k => k in delta) ) {
+    if ( ["width", "height", "padding", "background.offsetX", "background.offsetY", "grid.size"].some(k => k in delta) ) {
       const confirm = await Dialog.confirm({
         title: game.i18n.localize("SCENES.DimensionChangeTitle"),
         content: `<p>${game.i18n.localize("SCENES.DimensionChangeWarning")}</p>`
       });
       // Update only if the dialog is confirmed
-      if ( confirm ) return await this.object.update(formData, {fromSheet: true});
+      if ( confirm ) return this.object.update(formData, {fromSheet: true});
     }
 
     // We need to reset if the dialog was not confirmed OR if we don't need to update
-    return await this._reset();
+    return this._reset();
   }
 
   /* -------------------------------------------- */
@@ -318,12 +282,8 @@ class GridConfig extends FormApplication {
    * Reset the scene back to its original settings
    * @private
    */
-  async _reset() {
+  _reset() {
     this.object.updateSource(this.#original);
-    if ( this.#redrawOnClose ) {
-      this.#redrawOnClose = false;
-      await canvas.draw();
-    }
     return this._refresh({background: true, grid: this.object.grid});
   }
 
@@ -335,7 +295,7 @@ class GridConfig extends FormApplication {
    * @private
    */
   _scaleBackgroundSize(delta) {
-    const scale = Math.round((parseFloat(this.form.scale.value) + delta * 0.001) * 1000) / 1000;
+    const scale = Math.round((parseFloat(this.form.scale.value) + (0.05 * delta)) * 100) / 100;
     this.form.scale.value = Math.clamped(scale, 0.25, 10.0);
     this.form.scale.dispatchEvent(new Event("change", {bubbles: true}));
   }

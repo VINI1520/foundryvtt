@@ -13,17 +13,11 @@ const BaseCanvasMixin = ContainerClass => {
     }
 
     /**
-     * The name of this canvas group.
+     * The name of this canvas group
      * @type {string}
      * @abstract
      */
     static groupName;
-
-    /**
-     * If this canvas group should teardown non-layers children.
-     * @type {boolean}
-     */
-    static tearDownChildren = true;
 
     /**
      * A mapping of CanvasLayer classes which belong to this group.
@@ -81,7 +75,7 @@ const BaseCanvasMixin = ContainerClass => {
       }
 
       // Check if we need to handle other children
-      if ( !this.constructor.tearDownChildren ) return;
+      if ( options.preserveChildren ) return;
 
       // Yes? Then proceed with children cleaning
       for ( const child of this.removeChildren() ) {

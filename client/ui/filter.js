@@ -9,39 +9,12 @@
  */
 
 /**
- * @typedef {object} FieldFilter
- * @property {string} field                                     The dot-delimited path to the field being filtered
- * @property {string} [operator=SearchFilter.OPERATORS.EQUALS]  The search operator, from CONST.OPERATORS
- * @property {boolean} negate                                   Negate the filter, returning results which do NOT match the filter criteria
- * @property {*} value                                          The value against which to test
- */
-
-/**
  * A controller class for managing a text input widget that filters the contents of some other UI element
  * @see {@link Application}
  *
  * @param {SearchFilterConfiguration}
  */
 class SearchFilter {
-
-  /**
-   * The allowed Filter Operators which can be used to define a search filter
-   * @enum {string}
-   */
-  static OPERATORS = Object.freeze({
-    EQUALS: "equals",
-    CONTAINS: "contains",
-    STARTS_WITH: "starts_with",
-    ENDS_WITH: "ends_with",
-    LESS_THAN: "lt",
-    LESS_THAN_EQUAL: "lte",
-    GREATER_THAN: "gt",
-    GREATER_THAN_EQUAL: "gte",
-    BETWEEN: "between",
-    IS_EMPTY: "is_empty",
-  });
-
-
   // Average typing speed is 167 ms per character, per https://stackoverflow.com/a/4098779
   constructor({inputSelector, contentSelector, initial="", callback, delay=200}={}) {
 
@@ -92,58 +65,6 @@ class SearchFilter {
      * @type {Function}
      */
     this._filter = foundry.utils.debounce(this.callback, delay);
-  }
-
-
-  /* -------------------------------------------- */
-
-  /**
-   * Test whether a given object matches a provided filter
-   * @param {object} obj          An object to test against
-   * @param {FieldFilter} filter  The filter to test
-   * @returns {boolean}           Whether the object matches the filter
-   */
-  static evaluateFilter(obj, filter) {
-    const docValue = foundry.utils.getProperty(obj, filter.field);
-    const filterValue = filter.value;
-
-    function _evaluate() {
-      switch (filter.operator) {
-        case SearchFilter.OPERATORS.EQUALS:
-          if ( docValue.equals instanceof Function ) return docValue.equals(filterValue);
-          else return (docValue === filterValue);
-        case SearchFilter.OPERATORS.CONTAINS:
-          if ( Array.isArray(filterValue) )
-            return filterValue.includes(docValue);
-          else
-            return [filterValue].includes(docValue);
-        case SearchFilter.OPERATORS.STARTS_WITH:
-          return docValue.startsWith(filterValue);
-        case SearchFilter.OPERATORS.ENDS_WITH:
-          return docValue.endsWith(filterValue);
-        case SearchFilter.OPERATORS.LESS_THAN:
-          return (docValue < filterValue);
-        case SearchFilter.OPERATORS.LESS_THAN_EQUAL:
-          return (docValue <= filterValue);
-        case SearchFilter.OPERATORS.GREATER_THAN:
-          return (docValue > filterValue);
-        case SearchFilter.OPERATORS.GREATER_THAN_EQUAL:
-          return (docValue >= filterValue);
-        case SearchFilter.OPERATORS.BETWEEN:
-          if ( !Array.isArray(filterValue) || filterValue.length !== 2 ) {
-            throw new Error(`Invalid filter value for ${filter.operator} operator. Expected an array of length 2.`);
-          }
-          const [min, max] = filterValue;
-          return (docValue >= min) && (docValue <= max);
-        case SearchFilter.OPERATORS.IS_EMPTY:
-          return foundry.utils.isEmpty(docValue);
-        default:
-          return (docValue === filterValue);
-      }
-    }
-
-    const result = _evaluate();
-    return filter.negate ? !result : result;
   }
 
   /* -------------------------------------------- */

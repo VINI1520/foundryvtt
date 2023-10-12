@@ -190,6 +190,16 @@ class Hooks {
     if ( msg ) error.message = `${msg}. ${error.message}`;
     if ( log ) console[log]?.(error);
     if ( notify ) ui.notifications[notify]?.(msg || error.message);
+
+    /**
+     * A hook event that fires whenever foundry experiences an error.
+     *
+     * @function error
+     * @memberof hookEvents
+     * @param {string} location      The method where the error was caught.
+     * @param {Error} err            The error.
+     * @param {object} [data={}]     Additional data that might be provided, based on the nature of the error.
+     */
     Hooks.callAll("error", location, error, data);
   }
 }

@@ -45,7 +45,7 @@ class BaseAdventure extends Document {
   static metadata = Object.freeze(mergeObject(super.metadata, {
     name: "Adventure",
     collection: "adventures",
-    compendiumIndexFields: ["_id", "name", "description", "img", "sort", "folder"],
+    compendiumIndexFields: ["_id", "name", "img", "sort"],
     label: "DOCUMENT.Adventure",
     labelPlural: "DOCUMENT.Adventures"
   }, {inplace: false}));
@@ -54,10 +54,10 @@ class BaseAdventure extends Document {
   static defineSchema() {
     return {
       _id: new fields.DocumentIdField(),
-      name: new fields.StringField({required: true, blank: false, label: "ADVENTURE.Name", hint: "ADVENTURE.NameHint", textSearch: true}),
+      name: new fields.StringField({required: true, blank: false, label: "ADVENTURE.Name", hint: "ADVENTURE.NameHint"}),
       img: new fields.FilePathField({categories: ["IMAGE"], label: "ADVENTURE.Image", hint: "ADVENTURE.ImageHint"}),
       caption: new fields.HTMLField({label: "ADVENTURE.Caption", hint: "ADVENTURE.CaptionHint"}),
-      description: new fields.HTMLField({label: "ADVENTURE.Description", hint: "ADVENTURE.DescriptionHint", textSearch: true}),
+      description: new fields.HTMLField({label: "ADVENTURE.Description", hint: "ADVENTURE.DescriptionHint"}),
       actors: new fields.SetField(new fields.EmbeddedDataField(documents.BaseActor)),
       combats: new fields.SetField(new fields.EmbeddedDataField(documents.BaseCombat)),
       items: new fields.SetField(new fields.EmbeddedDataField(documents.BaseItem)),
@@ -68,7 +68,6 @@ class BaseAdventure extends Document {
       cards: new fields.SetField(new fields.EmbeddedDataField(documents.BaseCards)),
       playlists: new fields.SetField(new fields.EmbeddedDataField(documents.BasePlaylist)),
       folders: new fields.SetField(new fields.EmbeddedDataField(documents.BaseFolder)),
-      folder: new fields.ForeignDocumentField(documents.BaseFolder),
       sort: new fields.IntegerSortField(),
       flags: new fields.ObjectField(),
       _stats: new fields.DocumentStatsField()

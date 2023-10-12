@@ -115,13 +115,6 @@ class Scene extends ClientDocumentMixin(foundry.documents.BaseScene) {
 
   /* -------------------------------------------- */
 
-  /** @override */
-  reset() {
-    this._initialize({sceneReset: true});
-  }
-
-  /* -------------------------------------------- */
-
   /** @inheritdoc */
   prepareBaseData() {
     this.dimensions = this.getDimensions();
@@ -179,7 +172,6 @@ class Scene extends ClientDocumentMixin(foundry.documents.BaseScene) {
       sceneX, sceneY, sceneWidth, sceneHeight,
       sceneRect: new PIXI.Rectangle(sceneX, sceneY, sceneWidth, sceneHeight),
       distance: this.grid.distance,
-      distancePixels: size / this.grid.distance,
       ratio: sceneWidth / sceneHeight,
       maxR: Math.hypot(width, height)
     };
@@ -212,13 +204,6 @@ class Scene extends ClientDocumentMixin(foundry.documents.BaseScene) {
 
     // Trigger Playlist Updates
     if ( this.active ) return game.playlists._onChangeScene(this, data);
-
-    /**
-     * If this was a purely programmatic creation of a Scene, i.e. not via compendium import, then tag the version to
-     * avoid potentially marking it as a legacy hex Scene.
-     * @deprecated since v10
-     */
-    if ( !this.getFlag("core", "sourceId") ) this.updateSource({"_stats.coreVersion": game.release.version});
   }
 
   /* -------------------------------------------- */
@@ -238,113 +223,8 @@ class Scene extends ClientDocumentMixin(foundry.documents.BaseScene) {
       options.thumb ??= [];
       options.thumb.push(this.id);
     }
-
-    // If the canvas size has changed, translate the placeable objects
-    if ( options.autoReposition ) {
-      try {
-        data = this._repositionObjects(data);
-      }
-      catch (err) {
-        delete data.width;
-        delete data.height;
-        delete data.padding;
-        delete data.background;
-        return ui.notifications.error(err.message);
-      }
-    }
-
     const audioChange = ("active" in data) || (this.active && ["playlist", "playlistSound"].some(k => k in data));
     if ( audioChange ) return game.playlists._onChangeScene(this, data);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle repositioning of placed objects when the Scene dimensions change
-   * @private
-   */
-  _repositionObjects(sceneUpdateData) {
-    const translationScaleX = "width" in sceneUpdateData ? (sceneUpdateData.width / this.width) : 1;
-    const translationScaleY = "height" in sceneUpdateData ? (sceneUpdateData.height / this.height) : 1;
-    const averageTranslationScale = (translationScaleX + translationScaleY) / 2;
-
-    // If the padding is larger than before, we need to add to it. If it's smaller, we need to subtract from it.
-    const originalDimensions = this.getDimensions();
-    const updatedScene = this.clone();
-    updatedScene.updateSource(sceneUpdateData);
-    const newDimensions = updatedScene.getDimensions();
-    const paddingOffsetX = "padding" in sceneUpdateData ? ((newDimensions.width - originalDimensions.width) / 2) : 0;
-    const paddingOffsetY = "padding" in sceneUpdateData ? ((newDimensions.height - originalDimensions.height) / 2) : 0;
-
-    // Adjust for the background offset
-    const backgroundOffsetX = sceneUpdateData.background?.offsetX !== undefined ? (this.background.offsetX - sceneUpdateData.background.offsetX) : 0;
-    const backgroundOffsetY = sceneUpdateData.background?.offsetY !== undefined ? (this.background.offsetY - sceneUpdateData.background.offsetY) : 0;
-
-    // If not gridless and grid size is not already being updated, adjust the grid size, ensuring the minimum
-    if ( (this.grid.type !== CONST.GRID_TYPES.GRIDLESS) && (!sceneUpdateData["grid.size"]) ) {
-      sceneUpdateData["grid.size"] = Math.round(this.grid.size * averageTranslationScale);
-      if ( sceneUpdateData["grid.size"] < 50 ) {
-        throw new Error(game.i18n.localize("SCENES.GridSizeError"));
-      }
-    }
-
-    function adjustPoint(x, y, applyOffset = true) {
-      return {
-        x: Math.round(x * translationScaleX + (applyOffset ? paddingOffsetX + backgroundOffsetX: 0) ),
-        y: Math.round(y * translationScaleY + (applyOffset ? paddingOffsetY + backgroundOffsetY: 0) )
-      }
-    }
-
-    // Placeables that have just a Position
-    for ( let collection of ["tokens", "lights", "sounds", "templates"] ) {
-      sceneUpdateData[collection] = this[collection].map(p => {
-        const {x, y} = adjustPoint(p.x, p.y);
-        return {_id: p.id, x, y};
-      });
-    }
-
-    // Placeables that have a Position and a Size
-    for ( let collection of ["tiles"] ) {
-      sceneUpdateData[collection] = this[collection].map(p => {
-        const {x, y} = adjustPoint(p.x, p.y);
-        const width = Math.round(p.width * translationScaleX);
-        const height = Math.round(p.height * translationScaleY);
-        return {_id: p.id, x, y, width, height};
-      });
-    }
-
-    // Notes have both a position and an icon size
-    sceneUpdateData["notes"] = this.notes.map(p => {
-      const {x, y} = adjustPoint(p.x, p.y);
-      const iconSize = Math.max(32, Math.round(p.iconSize * averageTranslationScale));
-      return {_id: p.id, x, y, iconSize};
-    });
-
-    // Drawings possibly have relative shape points
-    sceneUpdateData["drawings"] = this.drawings.map(p => {
-      const {x, y} = adjustPoint(p.x, p.y);
-      const width = Math.round(p.shape.width * translationScaleX);
-      const height = Math.round(p.shape.height * translationScaleY);
-      let points = [];
-      if ( p.shape.points ) {
-        for ( let i = 0; i < p.shape.points.length; i += 2 ) {
-          const {x, y} = adjustPoint(p.shape.points[i], p.shape.points[i+1], false);
-          points.push(x);
-          points.push(y);
-        }
-      }
-      return {_id: p.id, x, y, "shape.width": width, "shape.height": height, "shape.points": points};
-    });
-
-    // Walls are two points
-    sceneUpdateData["walls"] = this.walls.map(w => {
-      const c = w.c;
-      const p1 = adjustPoint(c[0], c[1]);
-      const p2 = adjustPoint(c[2], c[3]);
-      return {_id: w.id, c: [p1.x, p1.y, p2.x, p2.y]};
-    });
-
-    return sceneUpdateData;
   }
 
   /* -------------------------------------------- */
@@ -391,7 +271,7 @@ class Scene extends ClientDocumentMixin(foundry.documents.BaseScene) {
       }
 
       // New initial view position
-      if ( ["initial.x", "initial.y", "initial.scale", "width", "height"].some(k => changed.has(k)) ) {
+      if ( ["initial.x", "initial.y", "initial.scale"].some(k => changed.has(k)) ) {
         this._viewPosition = {};
         canvas.initializeCanvasPosition();
       }
@@ -412,9 +292,6 @@ class Scene extends ClientDocumentMixin(foundry.documents.BaseScene) {
   _onDelete(options, userId) {
     super._onDelete(options, userId);
     if ( canvas.scene?.id === this.id ) canvas.draw(null);
-    for ( const token of this.tokens ) {
-      token.baseActor?._unregisterDependentScene(this);
-    }
   }
 
   /* -------------------------------------------- */
@@ -442,49 +319,57 @@ class Scene extends ClientDocumentMixin(foundry.documents.BaseScene) {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _preCreateDescendantDocuments(parent, collection, data, options, userId) {
-    super._preCreateDescendantDocuments(parent, collection, data, options, userId);
-
-    // Record layer history for child embedded documents
-    if ( (userId === game.userId) && this.isView && (parent === this) && !options.isUndo ) {
-      const layer = canvas.getCollectionLayer(collection);
-      layer?.storeHistory("create", data);
+  _preCreateEmbeddedDocuments(embeddedName, result, options, userId) {
+    super._preCreateEmbeddedDocuments(embeddedName, result, options, userId);
+    if ( (userId === game.userId) && this.isView && !options.isUndo ) {
+      const layer = canvas.getLayerByEmbeddedName(embeddedName);
+      layer?.storeHistory("create", result);
     }
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _preUpdateDescendantDocuments(parent, collection, changes, options, userId) {
-    super._preUpdateDescendantDocuments(parent, collection, changes, options, userId);
+  _onCreateEmbeddedDocuments(...args) {
+    super._onCreateEmbeddedDocuments(...args);
+    if ( this.isView ) canvas.triggerPendingOperations();
+  }
 
-    // Record layer history for child embedded documents
-    if ( (userId === game.userId) && this.isView && (parent === this) && !options.isUndo ) {
-      const documentCollection = this.getEmbeddedCollection(collection);
-      const updatedIds = new Set(changes.map(r => r._id));
-      const originals = documentCollection.reduce((arr, d) => {
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  _preUpdateEmbeddedDocuments(embeddedName, result, options, userId) {
+    super._preUpdateEmbeddedDocuments(embeddedName, result, options, userId);
+    if ( (userId === game.userId) && this.isView && !options.isUndo ) {
+      const layer = canvas.getLayerByEmbeddedName(embeddedName);
+      const updatedIds = new Set(result.map(r => r._id));
+      const originals = this.getEmbeddedCollection(embeddedName).reduce((arr, d) => {
         if ( updatedIds.has(d.id) ) arr.push(d.toJSON());
         return arr;
       }, []);
-      const layer = canvas.getCollectionLayer(collection);
       layer?.storeHistory("update", originals);
     }
   }
 
   /* -------------------------------------------- */
 
-  /** @inheritdoc */
-  _preDeleteDescendantDocuments(parent, collection, ids, options, userId) {
-    super._preDeleteDescendantDocuments(parent, collection, ids, options, userId);
+  /** @override */
+  _onUpdateEmbeddedDocuments(...args) {
+    super._onUpdateEmbeddedDocuments(...args);
+    if ( this.isView ) canvas.triggerPendingOperations();
+  }
 
-    // Record layer history for child embedded documents
-    if ( (userId === game.userId) && this.isView && (parent === this) && !options.isUndo ) {
-      const documentCollection = this.getEmbeddedCollection(collection);
-      const originals = documentCollection.reduce((arr, d) => {
-        if ( ids.includes(d.id) ) arr.push(d.toJSON());
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  _preDeleteEmbeddedDocuments(embeddedName, result, options, userId) {
+    super._preDeleteEmbeddedDocuments(embeddedName, result, options, userId);
+    if ( (userId === game.userId) && this.isView && !options.isUndo ) {
+      const layer = canvas.getLayerByEmbeddedName(embeddedName);
+      const originals = this.getEmbeddedCollection(embeddedName).reduce((arr, d) => {
+        if ( result.includes(d.id) ) arr.push(d.toJSON());
         return arr;
       }, []);
-      const layer = canvas.getCollectionLayer(collection);
       layer?.storeHistory("delete", originals);
     }
   }
@@ -492,11 +377,9 @@ class Scene extends ClientDocumentMixin(foundry.documents.BaseScene) {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onUpdateDescendantDocuments(parent, collection, documents, changes, options, userId) {
-    super._onUpdateDescendantDocuments(parent, collection, documents, changes, options, userId);
-    if ( (parent === this) && documents.some(doc => doc.object?.hasActiveHUD) ) {
-      canvas.getCollectionLayer(collection).hud.render();
-    }
+  _onDeleteEmbeddedDocuments(...args) {
+    super._onDeleteEmbeddedDocuments(...args);
+    if ( this.isView ) canvas.triggerPendingOperations();
   }
 
   /* -------------------------------------------- */

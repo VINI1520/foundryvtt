@@ -20,7 +20,7 @@ export default class Color extends Number {
    * @type {[number, number, number]}
    */
   get rgb() {
-    return [((this >> 16) & 0xFF) / 255, ((this >> 8) & 0xFF) / 255, (this & 0xFF) / 255];
+    return [...this];
   }
 
   /* ------------------------------------------ */
@@ -155,7 +155,9 @@ export default class Color extends Number {
    * @returns {Color}           The resulting mixed Color
    */
   mix(other, weight) {
-    return new Color(Color.mix(this, other, weight));
+    const o = other.rgb;
+    const mixed = this.rgb.map((c, i) => Math.clamped((weight * o[i]) + ((1 - weight) * c), 0, 1));
+    return Color.fromRGB(mixed);
   }
 
   /* ------------------------------------------ */
@@ -166,8 +168,9 @@ export default class Color extends Number {
    * @returns {Color}             The resulting Color.
    */
   multiply(other) {
-    if ( other instanceof Color ) return new Color(Color.multiply(this, other));
-    return new Color(Color.multiplyScalar(this, other));
+    const o = other instanceof Color ? other.rgb : [other, other, other];
+    const mixed = this.rgb.map((c, i) => Math.clamped(c * o[i], 0, 1));
+    return Color.fromRGB(mixed);
   }
 
   /* ------------------------------------------ */
@@ -178,8 +181,9 @@ export default class Color extends Number {
    * @returns {Color}             The resulting Color.
    */
   add(other) {
-    if ( other instanceof Color ) return new Color(Color.add(this, other));
-    return new Color(Color.addScalar(this, other));
+    const o = other instanceof Color ? other.rgb : [other, other, other];
+    const mixed = this.rgb.map((c, i) => Math.clamped(c + o[i], 0, 1));
+    return Color.fromRGB(mixed);
   }
 
   /* ------------------------------------------ */
@@ -190,8 +194,9 @@ export default class Color extends Number {
    * @returns {Color}             The resulting Color.
    */
   subtract(other) {
-    if ( other instanceof Color ) return new Color(Color.subtract(this, other));
-    return new Color(Color.subtractScalar(this, other));
+    const o = other instanceof Color ? other.rgb : [other, other, other];
+    const mixed = this.rgb.map((c, i) => Math.clamped(c - o[i], 0, 1));
+    return Color.fromRGB(mixed);
   }
 
   /* ------------------------------------------ */
@@ -202,8 +207,9 @@ export default class Color extends Number {
    * @returns {Color}             The resulting Color.
    */
   maximize(other) {
-    if ( other instanceof Color ) return new Color(Color.maximize(this, other));
-    return new Color(Color.maximizeScalar(this, other));
+    const o = other instanceof Color ? other.rgb : [other, other, other];
+    const mixed = this.rgb.map((c, i) => Math.clamped(Math.max(c, o[i]), 0, 1));
+    return Color.fromRGB(mixed);
   }
 
   /* ------------------------------------------ */
@@ -214,8 +220,9 @@ export default class Color extends Number {
    * @returns {Color}             The resulting Color.
    */
   minimize(other) {
-    if ( other instanceof Color ) return new Color(Color.minimize(this, other));
-    return new Color(Color.minimizeScalar(this, other));
+    const o = other instanceof Color ? other.rgb : [other, other, other];
+    const mixed = this.rgb.map((c, i) => Math.clamped(Math.min(c, o[i]), 0, 1));
+    return Color.fromRGB(mixed);
   }
 
   /* ------------------------------------------ */
@@ -230,189 +237,6 @@ export default class Color extends Number {
     yield this.r;
     yield this.g;
     yield this.b;
-  }
-
-  /* ------------------------------------------------------------------------------------------- */
-  /*                      Real-time performance Methods and Properties                           */
-  /*  Important Note:                                                                            */
-  /*  These methods are not a replacement, but a tool when real-time performance is needed.      */
-  /*  They do not have the flexibility of the "classic" methods and come with some limitations.  */
-  /*  Unless you have to deal with real-time performance, you should use the "classic" methods.  */
-  /* ------------------------------------------------------------------------------------------- */
-
-  /**
-   * Set an rgb array with the rgb values contained in this Color class.
-   * @param {number[]} vec3  Receive the result. Must be an array with at least a length of 3.
-   */
-  applyRGB(vec3) {
-    vec3[0] = ((this >> 16) & 0xFF) / 255;
-    vec3[1] = ((this >> 8) & 0xFF) / 255;
-    vec3[2] = (this & 0xFF) / 255;
-  }
-
-  /* ------------------------------------------ */
-
-  /**
-   * Apply a linear interpolation between two colors, according to the weight.
-   * @param {number}        color1       The first color to mix.
-   * @param {number}        color2       The second color to mix.
-   * @param {number}        weight       Weight of the linear interpolation.
-   * @returns {number}                   The resulting mixed color
-   */
-  static mix(color1, color2, weight) {
-    return (((((color1 >> 16) & 0xFF) * (1 - weight) + ((color2 >> 16) & 0xFF) * weight) << 16) & 0xFF0000)
-      | (((((color1 >> 8) & 0xFF) * (1 - weight) + ((color2 >> 8) & 0xFF) * weight) << 8) & 0x00FF00)
-      | (((color1 & 0xFF) * (1 - weight) + (color2 & 0xFF) * weight) & 0x0000FF);
-  }
-
-  /* ------------------------------------------ */
-
-  /**
-   * Multiply two colors.
-   * @param {number}        color1       The first color to multiply.
-   * @param {number}        color2       The second color to multiply.
-   * @returns {number}                   The result.
-   */
-  static multiply(color1, color2) {
-    return ((((color1 >> 16) & 0xFF) / 255 * ((color2 >> 16) & 0xFF) / 255) * 255 << 16)
-      | ((((color1 >> 8) & 0xFF) / 255 * ((color2 >> 8) & 0xFF) / 255) * 255 << 8)
-      | (((color1 & 0xFF) / 255 * ((color2 & 0xFF) / 255)) * 255);
-  }
-
-  /* ------------------------------------------ */
-
-  /**
-   * Multiply a color by a scalar
-   * @param {number} color        The color to multiply.
-   * @param {number} scalar       A static scalar to multiply with.
-   * @returns {number}            The resulting color as a number.
-   */
-  static multiplyScalar(color, scalar) {
-    return ((((color >> 16) & 0xFF) / 255 * scalar) * 255 << 16)
-      | ((((color >> 8) & 0xFF) / 255 * scalar) * 255 << 8)
-      | (((color & 0xFF) / 255 * scalar) * 255);
-  }
-
-  /* ------------------------------------------ */
-
-  /**
-   * Maximize two colors.
-   * @param {number}        color1       The first color.
-   * @param {number}        color2       The second color.
-   * @returns {number}                   The result.
-   */
-  static maximize(color1, color2) {
-    return (Math.clamped(Math.max((color1 >> 16) & 0xFF, (color2 >> 16) & 0xFF), 0, 0xFF) << 16)
-      | (Math.clamped(Math.max((color1 >> 8) & 0xFF, (color2 >> 8) & 0xFF), 0, 0xFF) << 8)
-      | Math.clamped(Math.max(color1 & 0xFF, color2 & 0xFF), 0, 0xFF);
-  }
-
-  /* ------------------------------------------ */
-
-  /**
-   * Maximize a color by a static scalar.
-   * @param {number} color         The color to maximize.
-   * @param {number} scalar        Scalar to maximize with (normalized).
-   * @returns {number}             The resulting color as a number.
-   */
-  static maximizeScalar(color, scalar) {
-    return (Math.clamped(Math.max((color >> 16) & 0xFF, scalar * 255), 0, 0xFF) << 16)
-      | (Math.clamped(Math.max((color >> 8) & 0xFF, scalar * 255), 0, 0xFF) << 8)
-      | Math.clamped(Math.max(color & 0xFF, scalar * 255), 0, 0xFF);
-  }
-
-  /* ------------------------------------------ */
-
-  /**
-   * Add two colors.
-   * @param {number}        color1       The first color.
-   * @param {number}        color2       The second color.
-   * @returns {number}                   The resulting color as a number.
-   */
-  static add(color1, color2) {
-    return (Math.clamped((((color1 >> 16) & 0xFF) + ((color2 >> 16) & 0xFF)), 0, 0xFF) << 16)
-      | (Math.clamped((((color1 >> 8) & 0xFF) + ((color2 >> 8) & 0xFF)), 0, 0xFF) << 8)
-      | Math.clamped(((color1 & 0xFF) + (color2 & 0xFF)), 0, 0xFF);
-  }
-
-  /* ------------------------------------------ */
-
-  /**
-   * Add a static scalar to a color.
-   * @param {number} color         The color.
-   * @param {number} scalar        Scalar to add with (normalized).
-   * @returns {number}             The resulting color as a number.
-   */
-  static addScalar(color, scalar) {
-    return (Math.clamped((((color >> 16) & 0xFF) + scalar * 255), 0, 0xFF) << 16)
-      | (Math.clamped((((color >> 8) & 0xFF) + scalar * 255), 0, 0xFF) << 8)
-      | Math.clamped(((color & 0xFF) + scalar * 255), 0, 0xFF);
-  }
-
-  /* ------------------------------------------ */
-
-  /**
-   * Subtract two colors.
-   * @param {number}        color1       The first color.
-   * @param {number}        color2       The second color.
-   */
-  static subtract(color1, color2) {
-    return (Math.clamped((((color1 >> 16) & 0xFF) - ((color2 >> 16) & 0xFF)), 0, 0xFF) << 16)
-      | (Math.clamped((((color1 >> 8) & 0xFF) - ((color2 >> 8) & 0xFF)), 0, 0xFF) << 8)
-      | Math.clamped(((color1 & 0xFF) - (color2 & 0xFF)), 0, 0xFF);
-  }
-
-  /* ------------------------------------------ */
-
-  /**
-   * Subtract a color by a static scalar.
-   * @param {number} color         The color.
-   * @param {number} scalar        Scalar to subtract with (normalized).
-   * @returns {number}             The resulting color as a number.
-   */
-  static subtractScalar(color, scalar) {
-    return (Math.clamped((((color >> 16) & 0xFF) - scalar * 255), 0, 0xFF) << 16)
-      | (Math.clamped((((color >> 8) & 0xFF) - scalar * 255), 0, 0xFF) << 8)
-      | Math.clamped(((color & 0xFF) - scalar * 255), 0, 0xFF);
-  }
-
-  /* ------------------------------------------ */
-
-  /**
-   * Minimize two colors.
-   * @param {number}        color1       The first color.
-   * @param {number}        color2       The second color.
-   */
-  static minimize(color1, color2) {
-    return (Math.clamped(Math.min((color1 >> 16) & 0xFF, (color2 >> 16) & 0xFF), 0, 0xFF) << 16)
-      | (Math.clamped(Math.min((color1 >> 8) & 0xFF, (color2 >> 8) & 0xFF), 0, 0xFF) << 8)
-      | Math.clamped(Math.min(color1 & 0xFF, color2 & 0xFF), 0, 0xFF);
-  }
-
-  /* ------------------------------------------ */
-
-  /**
-   * Minimize a color by a static scalar.
-   * @param {number} color         The color.
-   * @param {number} scalar        Scalar to minimize with (normalized).
-   */
-  static minimizeScalar(color, scalar) {
-    return (Math.clamped(Math.min((color >> 16) & 0xFF, scalar * 255), 0, 0xFF) << 16)
-      | (Math.clamped(Math.min((color >> 8) & 0xFF, scalar * 255), 0, 0xFF) << 8)
-      | Math.clamped(Math.min(color & 0xFF, scalar * 255), 0, 0xFF);
-  }
-
-  /* ------------------------------------------ */
-
-  /**
-   * Convert a color to RGB and assign values to a passed array.
-   * @param {number} color   The color to convert to RGB values.
-   * @param {number[]} vec3  Receive the result. Must be an array with at least a length of 3.
-   */
-  static applyRGB(color, vec3) {
-    vec3[0] = ((color >> 16) & 0xFF) / 255;
-    vec3[1] = ((color >> 8) & 0xFF) / 255;
-    vec3[2] = (color & 0xFF) / 255;
   }
 
   /* ------------------------------------------ */
@@ -454,19 +278,6 @@ export default class Color extends Number {
    */
   static fromRGB(rgb) {
     return new this(((rgb[0] * 255) << 16) + ((rgb[1] * 255) << 8) + (rgb[2] * 255 | 0));
-  }
-
-  /* ------------------------------------------ */
-
-  /**
-   * Create a Color instance from an RGB normalized values.
-   * @param {number} r                          The red value
-   * @param {number} g                          The green value
-   * @param {number} b                          The blue value
-   * @returns {Color}                           The hex color instance
-   */
-  static fromRGBvalues(r, g, b) {
-    return new this(((r * 255) << 16) + ((g * 255) << 8) + (b * 255 | 0));
   }
 
   /* ------------------------------------------ */

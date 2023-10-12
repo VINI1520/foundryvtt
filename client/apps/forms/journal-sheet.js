@@ -10,6 +10,19 @@
  * @param {JournalSheetOptions} [options]  Application options
  */
 class JournalSheet extends DocumentSheet {
+  constructor(object, options={}) {
+    super(object, options);
+
+    /**
+     * The cached list of processed page entries.
+     * @type {object[]}
+     */
+    this._pages = this.object.pages.contents.sort((a, b) => a.sort - b.sort).filter(page => {
+      return page.testUserPermission(game.user, "OBSERVER");
+    });
+  }
+
+  /* -------------------------------------------- */
 
   /**
    * @override
@@ -28,21 +41,11 @@ class JournalSheet extends DocumentSheet {
       viewPermission: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE,
       scrollY: [".scrollable"],
       filters: [{inputSelector: 'input[name="search"]', contentSelector: ".directory-list"}],
-      dragDrop: [{dragSelector: ".directory-item, .heading-link", dropSelector: ".directory-list"}],
-      pageIndex: undefined,
-      pageId: undefined
+      dragDrop: [{dragSelector: ".directory-item, .heading-link", dropSelector: ".directory-list"}]
     });
   }
 
   /* -------------------------------------------- */
-
-  /**
-   * The cached list of processed page entries.
-   * This array is populated in the getData method.
-   * @type {object[]}
-   * @protected
-   */
-  _pages;
 
   /**
    * Track which page IDs are currently displayed due to a search filter
@@ -117,25 +120,6 @@ class JournalSheet extends DocumentSheet {
    */
   get mode() {
     return this.#mode ?? this.document.getFlag("core", "viewMode") ?? this.constructor.VIEW_MODES.SINGLE;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * The current search mode for this journal
-   * @type {string}
-   */
-  get searchMode() {
-    return this.document.getFlag("core", "searchMode") || CONST.DIRECTORY_SEARCH_MODES.NAME;
-  }
-
-  /**
-   * Toggle the search mode for this journal between "name" and "full" text search
-   */
-  toggleSearchMode() {
-    const updatedSearchMode = this.document.getFlag("core", "searchMode") === CONST.DIRECTORY_SEARCH_MODES.NAME ?
-      CONST.DIRECTORY_SEARCH_MODES.FULL : CONST.DIRECTORY_SEARCH_MODES.NAME;
-    this.document.setFlag("core", "searchMode", updatedSearchMode);
   }
 
   /* -------------------------------------------- */
@@ -240,36 +224,29 @@ class JournalSheet extends DocumentSheet {
 
   /** @inheritdoc */
   getData(options={}) {
-    const context = super.getData(options);
-    context.mode = this.mode;
-    context.toc = this._pages = this._getPageData();
-    this._getCurrentPage(options);
-    context.viewMode = {};
+    const data = super.getData(options);
+    data.mode = this.mode;
+    data.toc = this._pages = this._getPageData();
+    data.viewMode = {};
 
     // Viewing single page
     if ( this.mode === this.constructor.VIEW_MODES.SINGLE ) {
-      context.pages = [context.toc[this.pageIndex]];
-      context.viewMode = {label: "JOURNAL.ViewMultiple", icon: "fa-solid fa-note", cls: "single-page"};
+      data.pages = [data.toc[this.pageIndex]];
+      data.viewMode = {label: "JOURNAL.ViewMultiple", icon: "fa-solid fa-note", cls: "single-page"};
     }
 
     // Viewing multiple pages
     else {
-      context.pages = context.toc;
-      context.viewMode = {label: "JOURNAL.ViewSingle", icon: "fa-solid fa-notes", cls: "multi-page"};
+      data.pages = data.toc;
+      data.viewMode = {label: "JOURNAL.ViewSingle", icon: "fa-solid fa-notes", cls: "multi-page"};
     }
 
     // Sidebar collapsed mode
-    context.sidebarClass = this.sidebarCollapsed ? "collapsed" : "";
-    context.collapseMode = this.sidebarCollapsed
+    data.sidebarClass = this.sidebarCollapsed ? "collapsed" : "";
+    data.collapseMode = this.sidebarCollapsed
       ? {label: "JOURNAL.ViewExpand", icon: "fa-solid fa-caret-left"}
       : {label: "JOURNAL.ViewCollapse", icon: "fa-solid fa-caret-right"};
-
-    // Search mode
-    context.searchIcon = this.searchMode === CONST.DIRECTORY_SEARCH_MODES.NAME ? "fa-search" :
-      "fa-file-magnifying-glass";
-    context.searchTooltip = this.searchMode === CONST.DIRECTORY_SEARCH_MODES.NAME ? "SIDEBAR.SearchModeName" :
-      "SIDEBAR.SearchModeFull";
-    return context;
+    return data;
   }
 
   /* -------------------------------------------- */
@@ -284,16 +261,9 @@ class JournalSheet extends DocumentSheet {
     return this.object.pages.contents.sort((a, b) => a.sort - b.sort).reduce((arr, page) => {
       if ( !this.isPageVisible(page) ) return arr;
       const p = page.toObject();
-      const sheet = this.getPageSheet(page.id);
-
-      // Page CSS classes
-      const cssClasses = [p.type, `level${p.title.level}`];
+      const cssClasses = [`level${p.title.level}`];
       if ( hasFilterQuery && !this.#filteredPages.has(page.id) ) cssClasses.push("hidden");
-      p.tocClass = p.cssClass = cssClasses.join(" ");
-      cssClasses.push(...(sheet.options.viewClasses || []));
-      p.viewClass = cssClasses.join(" ");
-
-      // Other page data
+      p.cssClass = cssClasses.join(" ");
       p.editable = page.isOwner;
       if ( page.parent.pack ) p.editable &&= !game.packs.get(page.parent.pack)?.locked;
       p.number = arr.length;
@@ -304,29 +274,6 @@ class JournalSheet extends DocumentSheet {
       arr.push(p);
       return arr;
     }, []);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Identify which page of the journal sheet should be currently rendered.
-   * This can be controlled by options passed into the render method or by a subclass override.
-   * @param {object} options    Sheet rendering options
-   * @param {number} [options.pageIndex]    A numbered index of page to render
-   * @param {string} [options.pageId]       The ID of a page to render
-   * @returns {number}      The currently displayed page index
-   * @protected
-   */
-  _getCurrentPage({pageIndex, pageId}={}) {
-    let newPageIndex;
-    if ( typeof pageIndex === "number" ) newPageIndex = pageIndex;
-    if ( pageId ) newPageIndex = this._pages.findIndex(p => p._id === pageId);
-    if ( (newPageIndex != null) && (newPageIndex !== this.pageIndex) ) {
-      if ( this.mode === this.constructor.VIEW_MODES.SINGLE ) this.#callCloseHooks(this.pageIndex);
-      this.#pageIndex = newPageIndex;
-    }
-    this.options.pageIndex = this.options.pageId = undefined;
-    return this.#pageIndex = Math.clamped(this.pageIndex, 0, this._pages.length - 1);
   }
 
   /* -------------------------------------------- */
@@ -380,11 +327,18 @@ class JournalSheet extends DocumentSheet {
 
     // Override the view mode
     const modeChange = ("mode" in options) && (options.mode !== this.mode);
-    if ( modeChange ) {
-      if ( this.mode === this.constructor.VIEW_MODES.MULTIPLE ) this.#callCloseHooks();
-      this.#mode = options.mode;
-    }
+    if ( modeChange && (this.mode === this.constructor.VIEW_MODES.MULTIPLE) ) this.#callCloseHooks();
     if ( "collapsed" in options ) this.#sidebarState.collapsed = options.collapsed;
+
+    // Target a specific page number
+    let newPageIndex;
+    if ( typeof options.pageIndex === "number" ) newPageIndex = options.pageIndex;
+    if ( options.pageId ) newPageIndex = this._pages.findIndex(p => p._id === options.pageId);
+    if ( (newPageIndex != null) && (newPageIndex !== this.pageIndex) ) {
+      if ( this.mode === this.constructor.VIEW_MODES.SINGLE ) this.#callCloseHooks(this.pageIndex);
+      this.#pageIndex = newPageIndex;
+    }
+    this.#pageIndex = Math.clamped(this.pageIndex, 0, this._pages.length - 1);
 
     // Render the application
     await super._render(force, options);
@@ -394,7 +348,7 @@ class JournalSheet extends DocumentSheet {
     // Re-sync the TOC scroll position to the new view
     const pageChange = ("pageIndex" in options) || ("pageId" in options);
     if ( modeChange || pageChange ) {
-      const pageId = this._pages[this.pageIndex]?._id;
+      const pageId = this._pages[newPageIndex ?? this.pageIndex]?._id;
       if ( this.mode === this.constructor.VIEW_MODES.MULTIPLE ) this.goToPage(pageId, options.anchor);
       else if ( options.anchor ) {
         this.getPageSheet(pageId)?.toc[options.anchor]?.element?.scrollIntoView();
@@ -537,9 +491,6 @@ class JournalSheet extends DocumentSheet {
         return this.render(true, {mode});
       case "toggleCollapse":
         return this.toggleSidebar(event);
-      case "toggleSearch":
-        this.toggleSearchMode();
-        return this.render();
     }
   }
 
@@ -703,7 +654,7 @@ class JournalSheet extends DocumentSheet {
     const button = event.currentTarget;
     const pageId = button.closest("[data-page-id]").dataset.pageId;
     const page = this.object.pages.get(pageId);
-    return page?.sheet.render(true);
+    return page?.sheet.render(true, {focus: true});
   }
 
   /* -------------------------------------------- */
@@ -996,6 +947,8 @@ class JournalSheet extends DocumentSheet {
 
   /** @inheritdoc */
   async _onDrop(event) {
+    if ( !this._canDragDrop() ) return;
+
     // Retrieve the dropped Journal Entry Page
     const data = TextEditor.getDragEventData(event);
     if ( data.type !== "JournalEntryPage" ) return;
@@ -1005,9 +958,6 @@ class JournalSheet extends DocumentSheet {
     // Determine the target that was dropped
     const target = event.target.closest("[data-page-id]");
     const sortTarget = target ? this.object.pages.get(target?.dataset.pageId) : null;
-
-    // Prevent dropping a page on itself.
-    if ( page === sortTarget ) return;
 
     // Case 1 - Sort Pages
     if ( page.parent === this.document ) return page.sortRelative({
@@ -1028,21 +978,12 @@ class JournalSheet extends DocumentSheet {
   /** @inheritdoc */
   _onSearchFilter(event, query, rgx, html) {
     this.#filteredPages.clear();
-    const nameOnlySearch = (this.searchMode === CONST.DIRECTORY_SEARCH_MODES.NAME);
-
-    // Match Pages
-    let results = [];
-    if ( !nameOnlySearch ) results = this.object.pages.search({query: query});
     for ( const el of html.querySelectorAll(".directory-item") ) {
       const page = this.object.pages.get(el.dataset.pageId);
-      let match = !query;
-      if ( !match && nameOnlySearch ) match = rgx.test(SearchFilter.cleanQuery(page.name));
-      else if ( !match ) match = !!results.find(r => r._id === page._id);
-      if ( match ) this.#filteredPages.add(page._id);
+      const match = !query || rgx.test(SearchFilter.cleanQuery(page.name));
+      if ( match ) this.#filteredPages.add(page.id);
       el.classList.toggle("hidden", !match);
     }
-
-    // Restore TOC Positions
     if ( this.#restoreTOCPositions && this._scrollPositions ) {
       this.#restoreTOCPositions = false;
       const position = this._scrollPositions[this.options.scrollY[0]]?.[0];

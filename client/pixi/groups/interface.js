@@ -31,6 +31,30 @@ class InterfaceCanvasGroup extends BaseCanvasMixin(PIXI.Container) {
     this.#drawOutline();
     this.#drawScrollingText();
     await super.draw();
+
+    // Now, all placeables have been created on the primary canvas group
+    // We must sort them
+    canvas.primary.sortChildren();
+
+    // After the layers are drawn, assign the reverse mask filter.
+    this.grid.filters = [this.#createReverseMaskFilter()];
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Create the reverse mask filter.
+   * @returns {ReverseMaskFilter}  The reference to the reverse mask.
+   */
+  #createReverseMaskFilter() {
+    if ( !this.reverseMaskfilter ) {
+      this.reverseMaskfilter = ReverseMaskFilter.create({
+        uMaskSampler: canvas.primary.tokensRenderTexture,
+        channel: "a"
+      });
+      this.reverseMaskfilter.blendMode = PIXI.BLEND_MODES.NORMAL;
+    }
+    return this.reverseMaskfilter;
   }
 
   /* -------------------------------------------- */
@@ -137,7 +161,7 @@ class InterfaceCanvasGroup extends BaseCanvasMixin(PIXI.Container) {
     ], {
       context: this,
       duration: duration * 0.25,
-      easing: CanvasAnimation.easeInOutCosine,
+      easing: this.easeInOutCosine,
       ontick: () => text.visible = true
     });
 
@@ -148,30 +172,11 @@ class InterfaceCanvasGroup extends BaseCanvasMixin(PIXI.Container) {
     await CanvasAnimation.animate(scroll, {
       context: this,
       duration: duration * 0.75,
-      easing: CanvasAnimation.easeInOutCosine
+      easing: this.easeInOutCosine
     });
 
     // Clean-up
     this.#scrollingText.removeChild(text);
     text.destroy();
-  }
-
-  /* -------------------------------------------- */
-  /*  Deprecations                                */
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  get reverseMaskfilter() {
-    foundry.utils.logCompatibilityWarning("InterfaceCanvasGroup.reverseMaskfilter is deprecated. "
-      + "Please create your own ReverseMaskFilter, or instead of attaching the filter to each of your "
-      + "objects extend the already masked GridLayer with a container for these objects, "
-      + "which is much better for performance.", {since: 11, until: 13});
-    return ReverseMaskFilter.create({
-      uMaskSampler: canvas.primary.tokensRenderTexture,
-      channel: "a"
-    });
   }
 }

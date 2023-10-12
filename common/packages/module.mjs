@@ -28,7 +28,7 @@ export {PackageCompatibility, RelatedPackage} from "./base-package.mjs";
  * @typedef {Object} PackageCompendiumData
  * @property {string} name        The canonical compendium name. This should contain no spaces or special characters
  * @property {string} label       The human-readable compendium name
- * @property {string} path        The local relative path to the compendium source directory. The filename should match
+ * @property {string} path        The local relative path to the compendium source .db file. The filename should match
  *                                the name attribute
  * @property {string} type        The specific document type that is contained within this compendium pack
  * @property {string} [system]    Denote that this compendium pack requires a specific game system to function properly
@@ -50,6 +50,12 @@ export {PackageCompatibility, RelatedPackage} from "./base-package.mjs";
  * @property {string} [manifest]                      An explicit manifest URL, otherwise learned from the Foundry web server
  * @property {PackageCompatibility} [compatibility]   The compatibility data with this related Package
  * @property {string} [reason]                        The reason for this relationship
+ */
+
+/**
+ * @typedef {Object} PackageRelationships
+ * @property {RelatedPackage[]} systems     Systems that this Package supports
+ * @property {RelatedPackage[]} required    Packages that are required for base functionality
  */
 
 /**

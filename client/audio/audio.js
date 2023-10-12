@@ -255,7 +255,7 @@ class AudioHelper {
   async awaitFirstGesture() {
     if ( !this.locked ) return this.context;
     await new Promise(resolve => {
-      for ( let eventName of ["contextmenu", "auxclick", "pointerdown", "pointerup", "keydown"] ) {
+      for ( let eventName of ["contextmenu", "auxclick", "mousedown", "mouseup", "keydown"] ) {
         document.addEventListener(eventName, event => this._onFirstGesture(event, resolve), {once: true});
       }
     });
@@ -354,7 +354,7 @@ class AudioHelper {
    * @param socket
    */
   static _activateSocketListeners(socket) {
-    socket.on("playAudio", audioData => this.play(audioData, false));
+    socket.on("playAudio", this.play);
     socket.on("preloadAudio", src => this.preloadSound(src));
   }
 
@@ -368,10 +368,7 @@ class AudioHelper {
    * @param {number} data.volume    The volume level at which to play the audio, between 0 and 1.
    * @param {boolean} data.autoplay Begin playback of the audio effect immediately once it is loaded.
    * @param {boolean} data.loop     Loop the audio effect and continue playing it until it is manually stopped.
-   * @param {object|boolean} socketOptions  Options which only apply when emitting playback over websocket.
-   *                                As a boolean, emits (true) or does not emit (false) playback to all other clients
-   *                                As an object, can configure which recipients should receive the event.
-   * @param {string[]} [socketOptions.recipients] An array of user IDs to push audio playback to. All users by default.
+   * @param {boolean} [push]        Push the audio sound effect to other connected clients?
    *
    * @returns {Sound}               A Sound instance which controls audio playback.
    *
@@ -380,7 +377,7 @@ class AudioHelper {
    * AudioHelper.play({src: "sounds/lock.wav", volume: 0.8, loop: false}, true);
    * ```
    */
-  static play(data, socketOptions) {
+  static play(data, push=false) {
     const audioData = foundry.utils.mergeObject({
       src: null,
       volume: 1.0,
@@ -388,14 +385,7 @@ class AudioHelper {
     }, data, {insertKeys: true});
 
     // Push the sound to other clients
-    const push = socketOptions && (socketOptions !== false);
-    if ( push ) {
-      socketOptions = foundry.utils.getType(socketOptions) === "Object" ? socketOptions : {};
-      if ( "recipients" in socketOptions && !Array.isArray(socketOptions.recipients)) {
-        throw new Error("Socket recipients must be an array of User IDs");
-      }
-      game.socket.emit("playAudio", audioData, socketOptions);
-    }
+    if ( push ) game.socket.emit("playAudio", audioData);
 
     // Backwards compatibility, if autoplay was passed as false take no further action
     if ( audioData.autoplay === false ) return;
@@ -618,6 +608,14 @@ class AudioHelper {
    * @private
    */
   _onChangeGlobalVolume(key, volume) {
+    /**
+     * A hook event that fires when the user modifies a global volume slider.
+     * The hook name needs to be customized to include the type of global volume being changed, one of:
+     * `globalPlaylistVolumeChanged`, `globalAmbientVolumeChanged`, or `globalInterfaceVolumeChanged`.
+     * @function globalVolumeChanged
+     * @memberof hookEvents
+     * @param {number} volume     The new volume level
+     */
     Hooks.callAll(`${key}Changed`, volume);
   }
 }

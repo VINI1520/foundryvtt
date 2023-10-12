@@ -1,77 +1,3 @@
-/**
- * Test whether the polygon is has a positive signed area.
- * Using a y-down axis orientation, this means that the polygon is "clockwise".
- * @type {boolean}
- */
-Object.defineProperties(PIXI.Polygon.prototype, {
-  isPositive: {
-    get: function() {
-      if ( this._isPositive !== undefined ) return this._isPositive;
-      if ( this.points.length < 6 ) return undefined;
-      return this._isPositive = this.signedArea() > 0;
-    }
-  },
-  _isPositive: {value: undefined, writable: true, enumerable: false}
-});
-
-/* -------------------------------------------- */
-
-/**
- * Clear the cached signed orientation.
- */
-PIXI.Polygon.prototype.clearCache = function() {
-  this._isPositive = undefined;
-};
-
-/* -------------------------------------------- */
-
-/**
- * Compute the signed area of polygon using an approach similar to ClipperLib.Clipper.Area.
- * The math behind this is based on the Shoelace formula. https://en.wikipedia.org/wiki/Shoelace_formula.
- * The area is positive if the orientation of the polygon is positive.
- * @returns {number}              The signed area of the polygon
- */
-PIXI.Polygon.prototype.signedArea = function() {
-  const points = this.points;
-  const ln = points.length;
-  if ( ln < 6 ) return 0;
-
-  // Compute area
-  let area = 0;
-  let x1 = points[ln - 2];
-  let y1 = points[ln - 1];
-  for ( let i = 0; i < ln; i += 2 ) {
-    const x2 = points[i];
-    const y2 = points[i + 1];
-    area += (x2 - x1) * (y2 + y1);
-    x1 = x2;
-    y1 = y2;
-  }
-
-  // Negate the area because in Foundry canvas, y-axis is reversed
-  // See https://sourceforge.net/p/jsclipper/wiki/documentation/#clipperlibclipperorientation
-  // The 1/2 comes from the Shoelace formula
-  return area * -0.5;
-};
-
-/* -------------------------------------------- */
-
-/**
- * Reverse the order of the polygon points in-place, replacing the points array into the polygon.
- * Note: references to the old points array will not be affected.
- * @returns {PIXI.Polygon}      This polygon with its orientation reversed
- */
-PIXI.Polygon.prototype.reverseOrientation = function() {
-  const reversed_pts = [];
-  const pts = this.points;
-  const ln = pts.length - 2;
-  for ( let i = ln; i >= 0; i -= 2 ) reversed_pts.push(pts[i], pts[i + 1]);
-  this.points = reversed_pts;
-  if ( this._isPositive !== undefined ) this._isPositive = !this._isPositive;
-  return this;
-};
-
-/* -------------------------------------------- */
 
 /**
  * Add a de-duplicated point to the Polygon.
@@ -80,13 +6,10 @@ PIXI.Polygon.prototype.reverseOrientation = function() {
  */
 PIXI.Polygon.prototype.addPoint = function({x, y}={}) {
   const l = this.points.length;
-  if ( (x === this.points[l-2]) && (y === this.points[l-1]) ) return this;
+  if ( (x === this.points[l-2]) && (y === this.points[l-1]) ) return;
   this.points.push(x, y);
-  this.clearCache();
   return this;
 };
-
-/* -------------------------------------------- */
 
 /**
  * Return the bounding box for a PIXI.Polygon.
@@ -95,7 +18,7 @@ PIXI.Polygon.prototype.addPoint = function({x, y}={}) {
  */
 PIXI.Polygon.prototype.getBounds = function() {
   if ( this.points.length < 2 ) return new PIXI.Rectangle(0, 0, 0, 0);
-  let maxX; let maxY;
+  let maxX, maxY;
   let minX = maxX = this.points[0];
   let minY = maxY = this.points[1];
   for ( let i=3; i<this.points.length; i+=2 ) {
@@ -112,17 +35,11 @@ PIXI.Polygon.prototype.getBounds = function() {
 /* -------------------------------------------- */
 
 /**
- * @typedef {Object} ClipperPoint
- * @property {number} X
- * @property {number} Y
- */
-
-/**
  * Construct a PIXI.Polygon instance from an array of clipper points [{X,Y}, ...].
- * @param {ClipperPoint[]} points                 An array of points returned by clipper
- * @param {object} [options]                      Options which affect how canvas points are generated
- * @param {number} [options.scalingFactor=1]        A scaling factor used to preserve floating point precision
- * @returns {PIXI.Polygon}                        The resulting PIXI.Polygon
+ * @param {Array<{X: number, Y: number}>} points    An array of points returned by clipper
+ * @param {object} [options]                        Options which affect how canvas points are generated
+ * @param {number} [options.scalingFactor=1]            A scaling factor used to preserve floating point precision
+ * @returns {PIXI.Polygon}                          The resulting PIXI.Polygon
  */
 PIXI.Polygon.fromClipperPoints = function(points, {scalingFactor=1}={}) {
   const polygonPoints = [];
@@ -138,16 +55,16 @@ PIXI.Polygon.fromClipperPoints = function(points, {scalingFactor=1}={}) {
  * Convert a PIXI.Polygon into an array of clipper points [{X,Y}, ...].
  * Note that clipper points must be rounded to integers.
  * In order to preserve some amount of floating point precision, an optional scaling factor may be provided.
- * @param {object} [options]                  Options which affect how clipper points are generated
- * @param {number} [options.scalingFactor=1]    A scaling factor used to preserve floating point precision
- * @returns {ClipperPoint[]}                  An array of points to be used by clipper
+ * @param {object} [options]                        Options which affect how clipper points are generated
+ * @param {number} [options.scalingFactor=1]            A scaling factor used to preserve floating point precision
+ * @returns {Array<{X: number, Y: number}>}         An array of points to be used by clipper
  */
 PIXI.Polygon.prototype.toClipperPoints = function({scalingFactor=1}={}) {
   const points = [];
   for ( let i = 1; i < this.points.length; i += 2 ) {
     points.push({
-      X: Math.round(this.points[i-1] * scalingFactor),
-      Y: Math.round(this.points[i] * scalingFactor)
+      X: Math.roundFast(this.points[i-1] * scalingFactor),
+      Y: Math.roundFast(this.points[i] * scalingFactor)
     });
   }
   return points;
@@ -181,29 +98,13 @@ Object.defineProperty(PIXI.Polygon.prototype, "isClosed", {
  * @returns {PIXI.Polygon|null}       The intersected polygon or null if no solution was present
  */
 PIXI.Polygon.prototype.intersectPolygon = function(other, {clipType, scalingFactor}={}) {
-  const otherPts = other.toClipperPoints({scalingFactor});
-  const solution = this.intersectClipper(otherPts, {clipType, scalingFactor});
-  return PIXI.Polygon.fromClipperPoints(solution.length ? solution[0] : [], {scalingFactor});
-};
-
-/* -------------------------------------------- */
-
-/**
- * Intersect this PIXI.Polygon with an array of ClipperPoints.
- * @param {ClipperPoint[]} clipperPoints    Array of clipper points generated by PIXI.Polygon.toClipperPoints()
- * @param {object} [options]                Options which configure how the intersection is computed
- * @param {number} [options.clipType]         The clipper clip type
- * @param {number} [options.scalingFactor]    A scaling factor passed to Polygon#toClipperPoints to preserve precision
- * @returns {ClipperPoint[]}                The resulting ClipperPaths
- */
-PIXI.Polygon.prototype.intersectClipper = function(clipperPoints, {clipType, scalingFactor} = {}) {
   clipType ??= ClipperLib.ClipType.ctIntersection;
   const c = new ClipperLib.Clipper();
   c.AddPath(this.toClipperPoints({scalingFactor}), ClipperLib.PolyType.ptSubject, true);
-  c.AddPath(clipperPoints, ClipperLib.PolyType.ptClip, true);
+  c.AddPath(other.toClipperPoints({scalingFactor}), ClipperLib.PolyType.ptClip, true);
   const solution = new ClipperLib.Paths();
   c.Execute(clipType, solution);
-  return solution;
+  return PIXI.Polygon.fromClipperPoints(solution.length ? solution[0] : [], {scalingFactor});
 };
 
 /* -------------------------------------------- */
@@ -234,3 +135,5 @@ PIXI.Polygon.prototype.intersectCircle = function(circle, options) {
 PIXI.Polygon.prototype.intersectRectangle = function(rect, options) {
   return rect.intersectPolygon(this, options);
 };
+
+/* -------------------------------------------- */

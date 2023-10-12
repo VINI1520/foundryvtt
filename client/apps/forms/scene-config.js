@@ -20,14 +20,6 @@ class SceneConfig extends DocumentSheet {
 
   /* -------------------------------------------- */
 
-  /**
-   * Indicates if width / height should change together to maintain aspect ratio
-   * @type {boolean}
-   */
-  linkedDimensions = true;
-
-  /* -------------------------------------------- */
-
   /** @override */
   get title() {
     return `${game.i18n.localize("SCENES.ConfigTitle")}: ${this.object.name}`;
@@ -131,7 +123,6 @@ class SceneConfig extends DocumentSheet {
     super.activateListeners(html);
     html.find("button.capture-position").click(this._onCapturePosition.bind(this));
     html.find("button.grid-config").click(this._onGridConfig.bind(this));
-    html.find("button.dimension-link").click(this._onLinkDimensions.bind(this));
     html.find("select[name='playlist']").change(this._onChangePlaylist.bind(this));
     html.find('select[name="journal"]').change(this._onChangeJournal.bind(this));
   }
@@ -156,45 +147,9 @@ class SceneConfig extends DocumentSheet {
 
   /* -------------------------------------------- */
 
-  /**
-   * Handle click events to open the grid configuration application
-   * @param {Event} event   The originating click event
-   * @private
-   */
-  async _onGridConfig(event) {
-    event.preventDefault();
-    if ( !this.object.isView ) await this.object.view();
-    new GridConfig(this.object, this).render(true);
-    return this.minimize();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Handle click events to link or unlink the scene dimensions
-   * @param {Event} event
-   * @returns {Promise<void>}
-   * @private
-   */
-  async _onLinkDimensions(event) {
-    event.preventDefault();
-    this.linkedDimensions = !this.linkedDimensions;
-    this.element.find("button.dimension-link > i").toggleClass("fa-link-simple", this.linkedDimensions);
-    this.element.find("button.dimension-link > i").toggleClass("fa-link-simple-slash", !this.linkedDimensions);
-    this.element.find("button.resize").attr("disabled", !this.linkedDimensions);
-
-    // Update Tooltip
-    const tooltip = game.i18n.localize(this.linkedDimensions ? "SCENES.DimensionLinked" : "SCENES.DimensionUnlinked");
-    this.element.find("button.dimension-link").attr("data-tooltip", tooltip);
-    game.tooltip.activate(this.element.find("button.dimension-link")[0], { text: tooltip });
-  }
-
-  /* -------------------------------------------- */
-
   /** @override */
   async _onChangeInput(event) {
     this._previewScene(event.target.name);
-    if ( event.target.name === "width" || event.target.name === "height" ) this._onChangeDimensions(event);
     return super._onChangeInput(event);
   }
 
@@ -292,27 +247,15 @@ class SceneConfig extends DocumentSheet {
   /* -------------------------------------------- */
 
   /**
-   * Handle updating the select menu of JournalEntryPage options when the JournalEntry is changed.
-   * @param event
+   * Handle click events to open the grid configuration application
+   * @param {Event} event   The originating click event
    * @private
    */
-  _onChangeDimensions(event) {
+  async _onGridConfig(event) {
     event.preventDefault();
-    if ( !this.linkedDimensions ) return;
-    const name = event.currentTarget.name;
-    const value = Number(event.currentTarget.value);
-    const oldValue = name === "width" ? this.object.width : this.object.height;
-    const scale = value / oldValue;
-    const otherInput = this.form.elements[name === "width" ? "height" : "width"];
-    otherInput.value = otherInput.value * scale;
-
-    // If new value is not a round number, display an error and revert
-    if ( !Number.isInteger(parseFloat(otherInput.value)) ) {
-      ui.notifications.error(game.i18n.localize("SCENES.InvalidDimension"));
-      this.form.elements[name].value = oldValue;
-      otherInput.value = name === "width" ? this.object.height : this.object.width;
-      return;
-    }
+    if ( !this.object.isView ) await this.object.view();
+    new GridConfig(this.object, this).render(true);
+    return this.minimize();
   }
 
   /* -------------------------------------------- */
@@ -370,8 +313,8 @@ class SceneConfig extends DocumentSheet {
     // Warn the user if Scene dimensions are changing
     const delta = foundry.utils.diffObject(scene._source, foundry.utils.expandObject(formData));
     const changes = foundry.utils.flattenObject(delta);
-    const textureChange = ["scaleX", "scaleY", "rotation"].map(k => `background.${k}`);
-    if ( ["grid.size", ...textureChange].some(k => k in changes) ) {
+    const textureChange = ["offsetX", "offsetY", "scaleX", "scaleY", "rotation"].map(k => `background.${k}`);
+    if ( ["width", "height", "padding", "grid.size", ...textureChange].some(k => k in changes) ) {
       const confirm = await Dialog.confirm({
         title: game.i18n.localize("SCENES.DimensionChangeTitle"),
         content: `<p>${game.i18n.localize("SCENES.DimensionChangeWarning")}</p>`
@@ -379,35 +322,7 @@ class SceneConfig extends DocumentSheet {
       if ( !confirm ) return;
     }
 
-    // If the canvas size has changed in a nonuniform way, ask the user if they want to reposition
-    let autoReposition = false;
-    if ( (scene.background?.src || scene.foreground?.src) && (["width", "height", "padding", "background"].some(x => x in changes)) ) {
-      autoReposition = true;
-
-      // If aspect ratio changes, prompt to replace all tokens with new dimensions and warn about distortions
-      let showPrompt = false;
-      if ( "width" in changes && "height" in changes ) {
-        const currentScale = this.object.width / this.object.height;
-        const newScale = formData.width / formData.height;
-        if ( currentScale !== newScale ) {
-          showPrompt = true;
-        }
-      }
-      else if ( "width" in changes || "height" in changes ) {
-        showPrompt = true;
-      }
-
-      if ( showPrompt ) {
-        const confirm = await Dialog.confirm({
-          title: game.i18n.localize("SCENES.DistortedDimensionsTitle"),
-          content: game.i18n.localize("SCENES.DistortedDimensionsWarning"),
-          defaultYes: false
-        });
-        if ( !confirm ) autoReposition = false;
-      }
-    }
-
     // Perform the update
-    return scene.update(formData, {autoReposition});
+    return scene.update(formData);
   }
 }

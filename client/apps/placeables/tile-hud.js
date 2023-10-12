@@ -98,6 +98,10 @@ class TileHUD extends BasePlaceableHUD {
     const icon = event.currentTarget.children[0];
     const isPlaying = !src.paused && !src.ended;
 
+    // Replacing icons according to video state
+    if ( isPlaying ) icon.classList.replace("fa-play", "fa-pause");
+    else icon.classList.replace("fa-pause", "fa-play");
+
     // Intercepting state change if the source is not looping and not playing
     if ( !src.loop && !isPlaying ) {
       const self = this;

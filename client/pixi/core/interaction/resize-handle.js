@@ -4,7 +4,7 @@ class ResizeHandle extends PIXI.Graphics {
     this.offset = offset;
     this.handlers = handlers;
     this.lineStyle(4, 0x000000, 1.0).beginFill(0xFF9829, 1.0).drawCircle(0, 0, 10).endFill();
-    this.cursor = "pointer";
+    this.buttonMode = true;
   }
 
   /**
@@ -52,34 +52,35 @@ class ResizeHandle extends PIXI.Graphics {
   /* -------------------------------------------- */
 
   activateListeners() {
-    this.off("pointerover").off("pointerout").off("pointerdown")
-      .on("pointerover", this._onHoverIn.bind(this))
-      .on("pointerout", this._onHoverOut.bind(this))
-      .on("pointerdown", this._onMouseDown.bind(this));
-    this.eventMode = "static";
+    this.off("mouseover").off("mouseout").off("mousedown")
+      .on("mouseover", this._onHoverIn.bind(this))
+      .on("mouseout", this._onHoverOut.bind(this))
+      .on("mousedown", this._onMouseDown.bind(this));
+    this.interactive = true;
   }
 
   /* -------------------------------------------- */
 
   /**
    * Handle mouse-over event on a control handle
-   * @param {PIXI.FederatedEvent} event   The mouseover event
+   * @param {PIXI.InteractionEvent} event   The mouseover event
    * @protected
    */
   _onHoverIn(event) {
     const handle = event.target;
     handle.scale.set(1.5, 1.5);
+    event.data["handle"] = event.target;
   }
 
   /* -------------------------------------------- */
 
   /**
    * Handle mouse-out event on a control handle
-   * @param {PIXI.FederatedEvent} event   The mouseout event
+   * @param {PIXI.InteractionEvent} event   The mouseout event
    * @protected
    */
   _onHoverOut(event) {
-    const handle = event.target;
+    const {handle} = event.data;
     handle.scale.set(1.0, 1.0);
   }
 
@@ -87,7 +88,7 @@ class ResizeHandle extends PIXI.Graphics {
 
   /**
    * When we start a drag event - create a preview copy of the Tile for re-positioning
-   * @param {PIXI.FederatedEvent} event   The mousedown event
+   * @param {PIXI.InteractionEvent} event   The mousedown event
    * @protected
    */
   _onMouseDown(event) {

@@ -11,6 +11,9 @@ class GamepadManager {
      * @private
      */
     this._connectedGamepads = new Map();
+
+    window.addEventListener("gamepadconnected", this._onGamepadConnect.bind(this));
+    window.addEventListener("gamepaddisconnected", this._onGamepadDisconnect.bind(this));
   }
 
   /**
@@ -18,17 +21,6 @@ class GamepadManager {
    * @type {number}
    */
   static GAMEPAD_POLLER_INTERVAL_MS = 100;
-
-  /* -------------------------------------------- */
-
-  /**
-   * Begin listening to gamepad events.
-   * @internal
-   */
-  _activateListeners() {
-    window.addEventListener("gamepadconnected", this._onGamepadConnect.bind(this));
-    window.addEventListener("gamepaddisconnected", this._onGamepadDisconnect.bind(this));
-  }
 
   /* -------------------------------------------- */
 

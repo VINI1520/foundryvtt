@@ -12,7 +12,7 @@ class AmbientLight extends PlaceableObject {
      * A reference to the PointSource object which defines this light source area of effect
      * @type {LightSource}
      */
-    this.source = new LightSource({object: this});
+    this.source = new LightSource(this);
   }
 
   /**
@@ -21,19 +21,10 @@ class AmbientLight extends PlaceableObject {
    */
   controlIcon;
 
-  /* -------------------------------------------- */
+  /* --------------------c------------------------ */
 
   /** @inheritdoc */
   static embeddedName = "AmbientLight";
-
-  /** @override */
-  static RENDER_FLAGS = {
-    redraw: {propagate: ["refresh"]},
-    refresh: {propagate: ["refreshField"], alias: true},
-    refreshField: {propagate: ["refreshPosition", "refreshState"]},
-    refreshPosition: {},
-    refreshState: {}
-  };
 
   /* -------------------------------------------- */
 
@@ -138,10 +129,10 @@ class AmbientLight extends PlaceableObject {
   /* -------------------------------------------- */
 
   /** @override */
-  async _draw(options) {
+  async _draw() {
     this.field = this.addChild(new PIXI.Graphics());
-    this.field.eventMode = "none";
-    this.controlIcon = this.addChild(this.#drawControlIcon());
+    this.controlIcon = this.addChild(this._drawControlIcon());
+    this.updateSource({defer: true});
   }
 
   /* -------------------------------------------- */
@@ -149,8 +140,9 @@ class AmbientLight extends PlaceableObject {
   /**
    * Draw the ControlIcon for the AmbientLight
    * @returns {ControlIcon}
+   * @private
    */
-  #drawControlIcon() {
+  _drawControlIcon() {
     const size = Math.max(Math.round((canvas.dimensions.size * 0.5) / 20) * 20, 40);
     let icon = new ControlIcon({texture: CONFIG.controlIcons.light, size: size });
     icon.x -= (size * 0.5);
@@ -159,60 +151,36 @@ class AmbientLight extends PlaceableObject {
   }
 
   /* -------------------------------------------- */
-  /*  Incremental Refresh                         */
-  /* -------------------------------------------- */
 
   /** @override */
-  _applyRenderFlags(flags) {
-    if ( flags.refreshField ) this.#refreshField();
-    if ( flags.refreshPosition ) this.#refreshPosition();
-    if ( flags.refreshState ) this.#refreshState();
-  }
+  _refresh(options) {
+    const active = this.layer.active;
 
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the shape of the light field-of-effect. This is refreshed when the AmbientLight fov polygon changes.
-   */
-  #refreshField() {
-    this.field.clear();
-    if ( !this.source.disabled ) this.field.lineStyle(2, 0xEEEEEE, 0.4).drawShape(this.source.shape);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the position of the AmbientLight. Called with the coordinates change.
-   */
-  #refreshPosition() {
+    // Update position and FOV
     const {x, y} = this.document;
     this.position.set(x, y);
     this.field.position.set(-x, -y);
-  }
 
-  /* -------------------------------------------- */
+    // Draw the light preview field
+    const l = this.field.clear();
+    if ( active && this.source.los ) l.lineStyle(2, 0xEEEEEE, 0.4).drawShape(this.source.los);
 
-  /**
-   * Refresh the state of the light. Called when the disabled state or darkness conditions change.
-   */
-  #refreshState() {
-    this.alpha = this._getTargetAlpha();
+    // Update control icon appearance
     this.refreshControl();
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Refresh the display of the ControlIcon for this AmbientLight source.
+   * Refresh the display of the ControlIcon for this AmbientLight source
    */
   refreshControl() {
-    const isHidden = this.id && this.document.hidden;
     this.controlIcon.texture = getTexture(this.isVisible ? CONFIG.controlIcons.light : CONFIG.controlIcons.lightOff);
-    this.controlIcon.tintColor = isHidden ? 0xFF3300 : 0xFFFFFF;
-    this.controlIcon.borderColor = isHidden ? 0xFF3300 : 0xFF5500;
+    this.controlIcon.tintColor = this.document.hidden ? 0xFF3300 : 0xFFFFFF;
+    this.controlIcon.borderColor = this.document.hidden ? 0xFF3300 : 0xFF5500;
     this.controlIcon.draw();
     this.controlIcon.visible = this.layer.active;
-    this.controlIcon.border.visible = this.hover || this.layer.highlightObjects;
+    this.controlIcon.border.visible = this.hover;
   }
 
   /* -------------------------------------------- */
@@ -222,7 +190,7 @@ class AmbientLight extends PlaceableObject {
   /**
    * Update the LightSource associated with this AmbientLight object.
    * @param {object} [options={}]   Options which modify how the source is updated
-   * @param {boolean} [options.defer]     Defer updating perception to manually update it later
+   * @param {boolean} [options.defer]     Defer refreshing the LightingLayer to manually call that refresh later
    * @param {boolean} [options.deleted]   Indicate that this light source has been deleted
    */
   updateSource({defer=false, deleted=false}={}) {
@@ -242,55 +210,44 @@ class AmbientLight extends PlaceableObject {
         walls: this.document.walls,
         vision: this.document.vision,
         z: this.document.getFlag("core", "priority") ?? null,
-        seed: this.document.getFlag("core", "animationSeed"),
-        disabled: !this.emitsLight,
-        preview: this.isPreview
+        seed: this.document.getFlag("core", "animationSeed")
       });
       this.source.initialize(sourceData);
       canvas.effects.lightSources.set(this.sourceId, this.source);
     }
 
     // Schedule a perception refresh, unless that operation is deferred for some later workflow
-    if ( !defer ) canvas.perception.update({refreshLighting: true, refreshVision: true});
-    if ( this.layer.active ) this.renderFlags.set({refreshField: true});
+    if ( !defer ) canvas.perception.update({refreshLighting: true, refreshVision: true, forceUpdateFog: true}, true);
   }
 
   /* -------------------------------------------- */
-  /*  Document Event Handlers                     */
+  /*  Socket Listeners and Handlers               */
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onCreate(data, options, userId) {
-    super._onCreate(data, options, userId);
+  _onCreate(...args) {
+    super._onCreate(...args);
     this.updateSource();
   }
 
   /* -------------------------------------------- */
 
-  /** @override */
-  _onUpdate(data, options, userId) {
-    super._onUpdate(data, options, userId);
-
-    // Refresh Light Source
+  /** @inheritdoc */
+  _onUpdate(...args) {
     this.updateSource();
-
-    // Incremental Refresh
-    this.renderFlags.set({
-      refreshState: ["hidden", "config"].some(k => k in data),
-      refreshField: ["hidden", "x", "y", "config", "rotation", "walls"].some(k => k in data)
-    });
+    super._onUpdate(...args);
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onDelete(options, userId) {
+  _onDelete(...args) {
+    super._onDelete(...args);
     this.updateSource({deleted: true});
-    super._onDelete(options, userId);
   }
 
   /* -------------------------------------------- */
-  /*  Interactivity                               */
+  /*  Mouse Interaction Handlers                  */
   /* -------------------------------------------- */
 
   /** @inheritdoc */
@@ -317,7 +274,7 @@ class AmbientLight extends PlaceableObject {
   /** @inheritdoc */
   _onDragLeftMove(event) {
     super._onDragLeftMove(event);
-    const clones = event.interactionData.clones || [];
+    const clones = event.data.clones || [];
     for ( let c of clones ) {
       c.updateSource({defer: true});
     }
@@ -327,9 +284,8 @@ class AmbientLight extends PlaceableObject {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onDragEnd() {
-    this.updateSource({deleted: true});
-    this._original?.updateSource();
-    super._onDragEnd();
+  _onDragLeftCancel(event) {
+    super._onDragLeftCancel(event);
+    this.updateSource();
   }
 }

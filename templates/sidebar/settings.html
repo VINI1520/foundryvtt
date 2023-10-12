@@ -11,9 +11,8 @@
         </li>
         <li class="build">{{localize "MODMANAGE.Build"}} <span>{{ release.build }}</span></li>
         <hr />
-        <li class="system flexrow">
-            <span class="system-title">{{system.title}}</span>
-            <span class="system-info">
+        <li class="system">{{system.title}}
+            <span>
                 {{#if systemUpdate}}
                 <i class="notification-pip update fas fa-exclamation-circle" data-action="system-update" data-tooltip="{{ systemUpdate }}"></i>
                 {{/if}}
@@ -59,7 +58,6 @@
     <div id="settings-documentation">
         <button data-action="support">
             <i class="fas fa-hands-helping"></i> {{localize 'SETTINGS.Support'}}
-            {{#if issues}}({{issues}}){{/if}}
         </button>
         <button data-action="docs">
             <i class="fas fa-book"></i> {{localize 'SETTINGS.Docs'}}
@@ -81,7 +79,7 @@
         </button>
         {{#if canReturnSetup}}
         <button data-action="setup">
-            <i class="fas fa-home"></i> {{localize 'GAME.ReturnSetup'}}
+            <i class="fas fa-home"></i> {{localize 'SETTINGS.Setup'}}
         </button>
         {{/if}}
     </div>

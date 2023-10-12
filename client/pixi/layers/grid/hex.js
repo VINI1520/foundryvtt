@@ -1,22 +1,12 @@
 /**
- * @typedef {Object} HexGridConfiguration
- * @property {boolean} columns    Columnar orientation?
- * @property {boolean} even       Offset even rows?
- * @property {number} size        Hex size in pixels
- * @property {number} [width]     Hex width in pixels
- * @property {number} [height]    Hex height in pixels
- * @property {boolean} [legacy]   Legacy hex grid computation (not recommended)
- */
-
-/**
- * @typedef {Object} HexCubeCoordinate
+ * @typedef {Object} GridHexCubeCoordinate
  * @property {number} q     Coordinate along the SW - NE axis
  * @property {number} r     Coordinate along the S - N axis
  * @property {number} s     Coordinate along the NW - SE axis
  */
 
 /**
- * @typedef {Object} HexOffsetCoordinate
+ * @typedef {Object} GridHexOffsetCoordinate
  * @property {number} row   The row coordinate
  * @property {number} col   The column coordinate
  */
@@ -28,47 +18,36 @@
 class GridHex {
   /**
    * Construct a GridHex instance by providing a hex coordinate.
-   * @param {HexOffsetCoordinate|HexCubeCoordinate} coordinate The coordinates of the hex to construct
-   * @param {HexGridConfiguration} config       The grid configuration used for this hex
+   * @param {GridHexOffsetCoordinate|GridHexCubeCoordinate} coordinate The coordinates of the hex to construct
    */
-  constructor(coordinate, config) {
-
-    // Verify config data
-    config.columns ??= true;
-    config.even ??= false;
-    config.size ??= 100;
-
-    /**
-     * The hexagonal grid type which this hex belongs to.
-     * @type {HexGridConfiguration}
-     */
-    this.config = config;
+  constructor(coordinate) {
+    const g = canvas.grid.grid;
 
     // Cube coordinate provided
     if ( ["q", "r", "s"].every(k => k in coordinate) ) {
       this.cube = coordinate;
-      this.offset = HexagonalGrid.cubeToOffset(this.cube, this.config);
+      this.offset = g.cubeToOffset(this.cube);
     }
 
     // Offset coordinate provided
     else if ( ["row", "col"].every(k => k in coordinate) ) {
       this.offset = coordinate;
-      this.cube = HexagonalGrid.offsetToCube(this.offset, this.config);
+      this.cube = g.offsetToCube(this.offset);
     }
 
     // Invalid input
-    else throw new Error("The GridHex constructor must be passed a HexCubeCoordinate or a HexOffsetCoordinate");
+    else throw new Error("The GridHex constructor must be passed a GridHexCubeCoordinate or a GridHexOffsetCoordinate");
   }
 
   /**
    * The cube coordinates representation of this Hexagon
-   * @type {HexCubeCoordinate}
+   * @type {GridHexCubeCoordinate}
    */
   cube;
 
   /**
    * The offset coordinates representation of this Hexagon
-   * @type {HexOffsetCoordinate}
+   * @type {GridHexOffsetCoordinate}
    */
   offset;
 
@@ -79,9 +58,9 @@ class GridHex {
    * @type {Point}
    */
   get center() {
+    const g = canvas.grid.grid;
     const {x, y} = this.topLeft;
-    const {width, height} = this.config;
-    return {x: x + (width / 2), y: y + (height / 2)};
+    return {x: x + (g.w / 2), y: y + (g.h / 2)};
   }
 
   /* -------------------------------------------- */
@@ -91,7 +70,7 @@ class GridHex {
    * @type {Point}
    */
   get topLeft() {
-    const {x, y} = HexagonalGrid.offsetToPixels(this.offset, this.config);
+    const [x, y] = canvas.grid.grid.getPixelsFromGridPosition(this.offset.row, this.offset.col);
     return new PIXI.Point(x, y);
   }
 
@@ -123,7 +102,7 @@ class GridHex {
    */
   shiftCube(dq, dr, ds) {
     const {q, r, s} = this.cube;
-    return new this.constructor({q: q + dq, r: r + dr, s: s + ds}, this.config);
+    return new this.constructor({q: q + dq, r: r + dr, s: s + ds});
   }
 
   /* -------------------------------------------- */
@@ -142,49 +121,62 @@ class GridHex {
 
 /**
  * Construct a hexagonal grid
- * @param {HexGridConfiguration} config       The hexagonal grid configuration
  * @extends {BaseGrid}
  */
 class HexagonalGrid extends BaseGrid {
-  constructor(config) {
-    super(config);
+  constructor(options) {
+    super(options);
 
     /**
      * Is this hex grid column-based (flat-topped), or row-based (pointy-topped)?
      * @type {boolean}
      */
-    this.columnar = !!config.columns;
+    this.columnar = !!options.columnar;
 
     /**
      * Is this hex grid even or odd?
      * @type {boolean}
      */
-    this.even = !!config.even;
+    this.even = !!options.even;
 
-    // Compute and cache hex dimensions
-    const {width, height} = HexagonalGrid.computeDimensions(this.options);
-    this.w = this.options.width = width;
-    this.h = this.options.height = height;
+    /**
+     * The legacy flag allows scenes created using the old hex measurements to be preserved. Newer hex scenes should
+     * never use this flag.
+     * @type {boolean}
+     * @private
+     */
+    this._legacy = !!options.legacy;
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Compute the grid configuration from a provided type
-   * @param {number} type     The grid type
-   * @param {number} size     The grid size in pixels
+   * Legacy hex sizing set the 'size' of a hexagon (the distance from a hexagon's centre to a vertex) to be equal to
+   * half the grid size. This created some measuring inaccuracies that added up over larger distances.
+   * @param {number} s                  The grid size.
+   * @param {boolean} columnar          Are the hexagons stacked in columns, or rows?
+   * @returns {{w: number, h: number}}  The width and height of a single hexagon, in pixels.
+   * @private
    */
-  static getConfig(type, size) {
-    const T = CONST.GRID_TYPES;
-    const config = {
-      columns: [T.HEXODDQ, T.HEXEVENQ].includes(type),
-      even: [T.HEXEVENR, T.HEXEVENQ].includes(type),
-      size: size
-    };
-    const {width, height} = HexagonalGrid.computeDimensions(config);
-    config.width = width;
-    config.height = height;
-    return config;
+  static _computeLegacySizing(s, columnar) {
+    if ( columnar ) return { w: s, h: Math.sqrt(3) * 0.5 * s };
+    return { w: Math.sqrt(3) * 0.5 * s, h: s };
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * We set the 'size' of a hexagon (the distance from a hexagon's centre to a vertex) to be equal to the grid size
+   * divided by √3. This makes the distance from top-to-bottom on a flat-topped hexagon, or left-to-right on a pointy-
+   * topped hexagon equal to the grid size.
+   * @param {number} s                  The grid size.
+   * @param {boolean} columnar          Are the hexagons stacked in columns, or rows?
+   * @returns {{w: number, h: number}}  The width and height of a single hexagon, in pixels.
+   * @private
+   */
+  static _computeHexSizing(s, columnar) {
+    if ( columnar ) return { w: (2 * s) / Math.sqrt(3), h: s };
+    return { w: s, h: (2 * s) / Math.sqrt(3) };
   }
 
   /* -------------------------------------------- */
@@ -258,6 +250,24 @@ class HexagonalGrid extends BaseGrid {
   /* -------------------------------------------- */
 
   /**
+   * Compute hexagonal grid width and height.
+   * @param {number} size                     Size of the hex.
+   * @param {object} [options]
+   * @param {boolean} [options.legacy]        If computation should be done using the legacy method.
+   * @protected
+   */
+  _computeHexGridDimensions(size, {legacy}={}) {
+    legacy ??= this._legacy;
+    const { w, h } = legacy
+      ? this.constructor._computeLegacySizing(size, this.columnar)
+      : this.constructor._computeHexSizing(size, this.columnar);
+    this.w = w;
+    this.h = h;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
    * An array of the points which define a hexagon for this grid shape
    * @returns {PointArray[]}
    */
@@ -273,11 +283,16 @@ class HexagonalGrid extends BaseGrid {
   draw(options={}) {
     super.draw(options);
     let {color, alpha, dimensions} = foundry.utils.mergeObject(this.options, options);
-    if ( alpha === 0 ) return this;
 
     // Set dimensions
     this.width = dimensions.width;
     this.height = dimensions.height;
+
+    // Grid width and height
+    this._computeHexGridDimensions(dimensions.size);
+
+    // Need to draw the grid?
+    if ( alpha === 0 ) return this;
 
     // Draw grid polygons
     this.addChild(this._drawGrid({color, alpha}));
@@ -416,7 +431,32 @@ class HexagonalGrid extends BaseGrid {
 
   /** @override */
   getGridPositionFromPixels(x, y) {
-    let {row, col} = HexagonalGrid.pixelsToOffset({x, y}, this.options);
+    return this._getGridPositionFromPixels(x, y, "floor");
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Get the position in grid space from a pixel coordinate.
+   * @param {number} x        The origin x-coordinate
+   * @param {number} y        The origin y-coordinate
+   * @param {string} method   The rounding method applied
+   * @returns {number[]}      The row, column combination
+   * @private
+   */
+  _getGridPositionFromPixels(x, y, method="floor") {
+    let row;
+    let col;
+    const fn = Math[method];
+    if ( this.columnar ) {
+      col = fn(x / (this.w*0.75));
+      const isEven = (col+1) % 2 === 0;
+      row = fn((y / this.h) + (this.options.even === isEven ? 0.5 : 0));
+    } else {
+      row = fn(y / (this.h*0.75));
+      const isEven = (row+1) % 2 === 0;
+      col = fn((x / this.w) + (this.options.even === isEven ? 0.5 : 0));
+    }
     return [row, col];
   }
 
@@ -424,7 +464,22 @@ class HexagonalGrid extends BaseGrid {
 
   /** @override */
   getPixelsFromGridPosition(row, col) {
-    const {x, y} = HexagonalGrid.offsetToPixels({row, col}, this.options);
+    let x;
+    let y;
+
+    // Flat-topped hexes
+    if ( this.columnar ) {
+      x = Math.ceil(col * (this.w * 0.75));
+      const isEven = (col + 1) % 2 === 0;
+      y = Math.ceil((row - (this.options.even === isEven ? 0.5 : 0)) * this.h);
+    }
+
+    // Pointy-topped hexes
+    else {
+      y = Math.ceil(row * (this.h * 0.75));
+      const isEven = (row + 1) % 2 === 0;
+      x = Math.ceil((col - (this.options.even === isEven ? 0.5 : 0)) * this.w);
+    }
     return [x, y];
   }
 
@@ -433,7 +488,7 @@ class HexagonalGrid extends BaseGrid {
   /** @override */
   getCenter(x, y) {
     let [x0, y0] = this.getTopLeft(x, y);
-    return [x0 + (this.w / 2), y0 + (this.h / 2)];
+    return [x0 + (this.w/2), y0 + (this.h/2)];
   }
 
   /* -------------------------------------------- */
@@ -467,15 +522,9 @@ class HexagonalGrid extends BaseGrid {
       if ( this.columnar && (token.document.height > 1) ) y += this.h / 2;
       if ( !this.columnar && (token.document.width > 1) ) x += this.w / 2;
     }
-    const offset = HexagonalGrid.pixelsToOffset({x, y}, this.options, "round");
-    const point = HexagonalGrid.offsetToPixels(offset, this.options);
-
-    // Adjust pixel coordinate for token size
-    let x0 = point.x;
-    let y0 = point.y;
+    let [r0, c0] = this._getGridPositionFromPixels(x, y, "round");
+    let [x0, y0] = this.getPixelsFromGridPosition(r0, c0);
     if ( token ) [x0, y0] = this._adjustSnapForTokenSize(x0, y0, token);
-
-    // Snap directly at interval 1
     if ( interval === 1 ) return {x: x0, y: y0};
 
     // Round the remainder
@@ -504,6 +553,7 @@ class HexagonalGrid extends BaseGrid {
   /** @override */
   shiftPosition(x, y, dx, dy, {token}={}) {
     let [row, col] = this.getGridPositionFromPixels(x, y);
+    if ( token ) [row, col] = this._adjustPositionForTokenSize(row, col, token);
 
     // Adjust diagonal moves for offset
     let isDiagonal = (dx !== 0) && (dy !== 0);
@@ -613,34 +663,26 @@ class HexagonalGrid extends BaseGrid {
   static calculatePadding(gridType, width, height, size, padding, {legacy}={}) {
     if ( legacy ) return super.calculatePadding(gridType, width, height, size, padding);
     if ( !padding ) return { width, height, x: 0, y: 0 };
-
-    // Compute the hexagonal grid configuration
-    const gridConfig = this.getConfig(gridType, size);
-    const columns = gridConfig.columns;
-    const w = gridConfig.width;
-    const h = gridConfig.height;
-
+    const columnar = [CONST.GRID_TYPES.HEXODDQ, CONST.GRID_TYPES.HEXEVENQ].includes(gridType);
+    const { w, h } = this._computeHexSizing(size, columnar);
     // The grid size is equal to the short diagonal of the hexagon, so padding in that axis will divide evenly by the
     // grid size. In the cross-axis, however, the hexagons do not stack but instead interleave. Multiplying the long
     // diagonal by 75% gives us the amount of space each hexagon takes up in that axis without overlapping.
-    const x = columns ? w * .75 : h * .75;
-    let offsetX = Math.round((padding * width).toNearest(columns ? x : w, "ceil"));
-    let offsetY = Math.round((padding * height).toNearest(columns ? h : x, "ceil"));
-
+    const x = columnar ? w * .75 : h * .75;
+    let offsetX = Math.round((padding * width).toNearest(columnar ? x : w, "ceil"));
+    let offsetY = Math.round((padding * height).toNearest(columnar ? h : x, "ceil"));
     // Ensure that the top-left hexagon of the scene rectangle is always a full hexagon for even grids and always a
     // half hexagon for odd grids, by shifting the padding in the main axis by half a hex if the number of hexagons in
     // the cross-axis is odd.
-    const crossEven = (Math.round((columns ? offsetX : offsetY) / x) % 2) === 0;
+    const crossEven = (Math.round((columnar ? offsetX : offsetY) / x) % 2) === 0;
     if ( !crossEven ) {
-      if ( columns ) offsetY += h * .5;
+      if ( columnar ) offsetY += h * .5;
       else offsetX += w * .5;
     }
-    width = (width + (2 * offsetX)).toNearest(columns ? x : w);
-    height = (height + (2 * offsetY)).toNearest(columns ? h : x);
-    if ( columns ) width += w - x;
+    width = (width + (2 * offsetX)).toNearest(columnar ? x : w);
+    height = (height + (2 * offsetY)).toNearest(columnar ? h : x);
+    if ( columnar ) width += w - x;
     else height += h - x;
-
-    // Return the padding data
     return {
       width, height,
       x: offsetX,
@@ -664,7 +706,7 @@ class HexagonalGrid extends BaseGrid {
 
   /** @override */
   getNeighbors(row, col) {
-    const hex = new GridHex({row, col}, this.options);
+    const hex = new GridHex({row, col});
     return hex.getNeighbors().map(n => [n.offset.row, n.offset.col]);
   }
 
@@ -690,8 +732,8 @@ class HexagonalGrid extends BaseGrid {
   measureDistance(p0, p1) {
     const [r0, c0] = this.getGridPositionFromPixels(p0.x, p0.y);
     const [r1, c1] = this.getGridPositionFromPixels(p1.x, p1.y);
-    let hex0 = HexagonalGrid.offsetToCube({row: r0, col: c0}, this.options);
-    let hex1 = HexagonalGrid.offsetToCube({row: r1, col: c1}, this.options);
+    let hex0 = this.offsetToCube({row: r0, col: c0});
+    let hex1 = this.offsetToCube({row: r1, col: c1});
     return HexagonalGrid.cubeDistance(hex0, hex1);
   }
 
@@ -750,7 +792,7 @@ class HexagonalGrid extends BaseGrid {
       path.unshift(c.hex);
       c = c.from;
     }
-    return {from: start, to: goal, cost: solution.cost, path};
+    return {from: start, to: goal, cost: current.cost, path};
   }
 
   /* -------------------------------------------- */
@@ -761,15 +803,14 @@ class HexagonalGrid extends BaseGrid {
    * Convert an offset coordinate (row, col) into a cube coordinate (q, r, s).
    * See https://www.redblobgames.com/grids/hexagons/ for reference
    * Source code available https://www.redblobgames.com/grids/hexagons/codegen/output/lib-functions.js
-   * @param {HexOffsetCoordinate} offset                  The offset coordinate
-   * @param {{columns: boolean, even: boolean}} config    The hex grid configuration
-   * @returns {HexCubeCoordinate}                         The cube coordinate
+   * @param {GridHexOffsetCoordinate} offset    The offset coordinate
+   * @returns {GridHexCubeCoordinate}           The cube coordinate
    */
-  static offsetToCube({row, col}={}, {columns=true, even=false}={}) {
-    const offset = even ? 1 : -1;
+  offsetToCube({row, col}={}) {
+    const offset = this.options.even ? 1 : -1;
 
     // Column orientation
-    if ( columns ) {
+    if ( this.columnar ) {
       const q = col;
       const r = row - ((col + (offset * (col & 1))) / 2);
       return {q, r, s: 0 - q - r};
@@ -789,15 +830,14 @@ class HexagonalGrid extends BaseGrid {
    * Convert a cube coordinate (q, r, s) into an offset coordinate (row, col).
    * See https://www.redblobgames.com/grids/hexagons/ for reference
    * Source code available https://www.redblobgames.com/grids/hexagons/codegen/output/lib-functions.js
-   * @param {HexCubeCoordinate} cube          The cube coordinate
-   * @param {HexGridConfiguration} config     The hex grid configuration
-   * @returns {HexOffsetCoordinate}           The offset coordinate
+   * @param {GridHexCubeCoordinate} cube    The cube coordinate
+   * @returns {GridHexOffsetCoordinate}     The offset coordinate
    */
-  static cubeToOffset({q, r, s}={}, {columns=true, even=false}={}) {
-    const offset = even ? 1 : -1;
+  cubeToOffset({q, r, s}={}) {
+    const offset = this.options.even ? 1 : -1;
 
     // Column orientation
-    if ( columns ) {
+    if ( this.columnar ) {
       const col = q;
       const row = r + ((q + (offset * (q & 1))) / 2);
       return {row, col};
@@ -816,14 +856,13 @@ class HexagonalGrid extends BaseGrid {
   /**
    * Given a cursor position (x, y), obtain the cube coordinate hex (q, r, s) of the hex which contains it
    * http://justinpombrio.net/programming/2020/04/28/pixel-to-hex.html
-   * @param {Point} point                     The pixel point
-   * @param {HexGridConfiguration} config     The hex grid configuration
-   * @returns {HexCubeCoordinate}             The cube coordinate
+   * @param {Point} point                 The pixel point
+   * @returns {GridHexCubeCoordinate}     The cube coordinate
    */
-  static pixelToCube({x, y}={}, config) {
-    const {size} = config;
-    const cx = x / (size / 2);
-    const cy = y / (size / 2);
+  static pixelToCube({x, y}={}) {
+    const size = canvas.dimensions.size / 2;
+    const cx = x / size;
+    const cy = y / size;
 
     // Fractional hex coordinates, might not satisfy (fx + fy + fz = 0) due to rounding
     const fr = (2/3) * cx;
@@ -847,124 +886,12 @@ class HexagonalGrid extends BaseGrid {
 
   /**
    * Measure the distance in hexagons between two cube coordinates.
-   * @param {HexCubeCoordinate} a         The first cube coordinate
-   * @param {HexCubeCoordinate} b         The second cube coordinate
+   * @param {GridHexCubeCoordinate} a     The first cube coordinate
+   * @param {GridHexCubeCoordinate} b     The second cube coordinate
    * @returns {number}                    The distance between the two cube coordinates in hexagons
    */
   static cubeDistance(a, b) {
     let diff = {q: a.q - b.q, r: a.r - b.r, s: a.s - b.s};
     return (Math.abs(diff.q) + Math.abs(diff.r) + Math.abs(diff.s)) / 2;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Compute the top-left pixel coordinate of a hexagon from its offset coordinate.
-   * @param {HexOffsetCoordinate} offset      The offset coordinate
-   * @param {HexGridConfiguration} config     The hex grid configuration
-   * @returns {Point}                         The coordinate in pixels
-   */
-  static offsetToPixels({row, col}, {columns, even, size, width, height}) {
-    let x;
-    let y;
-
-    // Flat-topped hexes
-    if ( columns ) {
-      x = Math.ceil(col * (width * 0.75));
-      const isEven = (col + 1) % 2 === 0;
-      y = Math.ceil((row - (even === isEven ? 0.5 : 0)) * height);
-    }
-
-    // Pointy-topped hexes
-    else {
-      y = Math.ceil(row * (height * 0.75));
-      const isEven = (row + 1) % 2 === 0;
-      x = Math.ceil((col - (even === isEven ? 0.5 : 0)) * width);
-    }
-
-    // Return the pixel coordinate
-    return {x, y};
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Compute the offset coordinate of a hexagon from a pixel coordinate contained within that hex.
-   * @param {Point} point                     The pixel coordinate
-   * @param {HexGridConfiguration} config     The hex grid configuration
-   * @param {string} [method=floor]           Which Math rounding method to use
-   * @returns {HexOffsetCoordinate}           The offset coordinate
-   */
-  static pixelsToOffset({x, y}, config, method="floor") {
-    const {columns, even, width, height} = config;
-    const fn = Math[method];
-    let row;
-    let col;
-
-    // Columnar orientation
-    if ( columns ) {
-      col = fn(x / (width * 0.75));
-      const isEven = (col + 1) % 2 === 0;
-      row = fn((y / height) + (even === isEven ? 0.5 : 0));
-    }
-
-    // Row orientation
-    else {
-      row = fn(y / (height * 0.75));
-      const isEven = (row + 1) % 2 === 0;
-      col = fn((x / width) + (even === isEven ? 0.5 : 0));
-    }
-    return {row, col};
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * We set the 'size' of a hexagon (the distance from a hexagon's centre to a vertex) to be equal to the grid size
-   * divided by √3. This makes the distance from top-to-bottom on a flat-topped hexagon, or left-to-right on a pointy-
-   * topped hexagon equal to the grid size.
-   * @param {HexGridConfiguration} config         The grid configuration
-   * @returns {{width: number, height: number}}   The width and height of a single hexagon, in pixels.
-   */
-  static computeDimensions(config) {
-    const {size, columns, legacy} = config;
-
-    // Legacy dimensions (deprecated)
-    if ( legacy ) {
-      if ( columns ) return { width: size, height: Math.sqrt(3) * 0.5 * size };
-      return { width: Math.sqrt(3) * 0.5 * size, height: size };
-    }
-
-    // Columnar orientation
-    if ( columns ) return { width: (2 * size) / Math.sqrt(3), height: size };
-
-    // Row orientation
-    return { width: size, height: (2 * size) / Math.sqrt(3) };
-  }
-
-  /* -------------------------------------------- */
-  /*  Deprecations and Compatibility              */
-  /* -------------------------------------------- */
-
-  /**
-   * @see {@link HexagonalGrid.offsetToCube}
-   * @deprecated since v11
-   * @ignore
-   */
-  offsetToCube(offset) {
-    foundry.utils.logCompatibilityWarning("HexagonalGrid#offsetToCube is deprecated in favor of the "
-      + "HexagonalGrid.offsetToCube static method.", {since: 11, until: 13});
-    return this.constructor.offsetToCube(offset, this.options);
-  }
-
-  /**
-   * @see {@link HexagonalGrid.cubeToOffset}
-   * @deprecated since v11
-   * @ignore
-   */
-  cubeToOffset(cube) {
-    foundry.utils.logCompatibilityWarning("HexagonalGrid#cubeToOffset is deprecated in favor of the "
-      + "HexagonalGrid.cubeToOffset static method.", {since: 11, until: 13});
-    return HexagonalGrid.cubeToOffset(cube, this.options);
   }
 }

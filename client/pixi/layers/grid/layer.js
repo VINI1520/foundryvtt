@@ -106,15 +106,17 @@ class GridLayer extends CanvasLayer {
     // Get grid data
     const gt = type !== null ? type : this.type;
 
-    // Create the grid class
+    // Grid configuration
     let gridOptions = {
       dimensions: dimensions || canvas.dimensions,
       color: color || canvas.scene.grid.color.replace("#", "0x") || "0x000000",
       alpha: alpha ?? canvas.scene.grid.alpha,
+      columnar: [CONST.GRID_TYPES.HEXODDQ, CONST.GRID_TYPES.HEXEVENQ].includes(gt),
+      even: [CONST.GRID_TYPES.HEXEVENR, CONST.GRID_TYPES.HEXEVENQ].includes(gt),
       legacy: canvas.scene.flags.core?.legacyHex
     };
+
     const gridCls = BaseGrid.implementationFor(gt);
-    if ( gridCls.getConfig ) Object.assign(gridOptions, gridCls.getConfig(gt, dimensions?.size ?? this.size));
     const grid = new gridCls(gridOptions);
 
     // Draw the highlight layer
@@ -126,13 +128,6 @@ class GridLayer extends CanvasLayer {
 
     // Draw object borders container
     this.borders = this.addChild(new PIXI.Container());
-
-    // Add the reverse mask filter
-    this.filterArea = canvas.app.renderer.screen;
-    this.filters = [ReverseMaskFilter.create({
-      uMaskSampler: canvas.primary.tokensRenderTexture,
-      channel: "a"
-    })];
   }
 
   /* -------------------------------------------- */

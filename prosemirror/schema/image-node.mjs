@@ -1,17 +1,11 @@
-import SchemaDefinition from "./schema-definition.mjs";
-import {mergeObject} from "../../common/utils/helpers.mjs";
-
 /**
  * A class responsible for encapsulating logic around image nodes in the ProseMirror schema.
- * @extends {SchemaDefinition}
  */
-export default class ImageNode extends SchemaDefinition {
-  /** @override */
-  static tag = "img[src]";
-
-  /* -------------------------------------------- */
-
-  /** @override */
+export default class ImageNode {
+  /**
+   * Image node schema attributes.
+   * @returns {object}
+   */
   static get attrs() {
     return {
       src: {},
@@ -25,7 +19,11 @@ export default class ImageNode extends SchemaDefinition {
 
   /* -------------------------------------------- */
 
-  /** @override */
+  /**
+   * Check if an HTML element is appropriate to represent as this node, and if so, extract its schema attributes.
+   * @param {HTMLElement} el    The HTML element.
+   * @returns {object|boolean}  Returns false if the HTML element is not appropriate for this schema node.
+   */
   static getAttrs(el) {
     const attrs = {
       src: el.getAttribute("src"),
@@ -41,7 +39,11 @@ export default class ImageNode extends SchemaDefinition {
 
   /* -------------------------------------------- */
 
-  /** @override */
+  /**
+   * Convert a ProseMirror image node back into an HTML element.
+   * @param {Node} node  The ProseMirror node.
+   * @returns {[string, any]}
+   */
   static toDOM(node) {
     const {src, alt, title, width, height, alignment} = node.attrs;
     const attrs = {src};
@@ -56,12 +58,18 @@ export default class ImageNode extends SchemaDefinition {
 
   /* -------------------------------------------- */
 
-  /** @inheritdoc */
-  static make() {
-    return mergeObject(super.make(), {
+  /**
+   * Create a ProseMirror schema node that represents an image element.
+   * @returns {NodeSpec}
+   */
+  static makeNode() {
+    return {
+      attrs: this.attrs,
       managed: {styles: ["float"], classes: ["centered"]},
       group: "block",
-      draggable: true
-    });
+      draggable: true,
+      parseDOM: [{tag: "img[src]", getAttrs: this.getAttrs.bind(this)}],
+      toDOM: this.toDOM.bind(this)
+    };
   }
 }

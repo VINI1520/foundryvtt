@@ -22,9 +22,7 @@ class CanvasIlluminationEffects extends CanvasLayer {
    * Is global illumination currently applied to the canvas?
    * @type {boolean}
    */
-  get globalLight() {
-    return canvas.effects.globalLightSource && !canvas.effects.globalLightSource.disabled;
-  }
+  globalLight = false;
 
   /**
    * The filter used to mask visual effects on this layer
@@ -90,6 +88,7 @@ class CanvasIlluminationEffects extends CanvasLayer {
     this.darknessLevel = canvas.darknessLevel;
     this.filter = VisualEffectsMaskingFilter.create({
       filterMode: VisualEffectsMaskingFilter.FILTER_MODES.ILLUMINATION,
+      uRoofSampler: canvas.masks.depth.renderTexture,
       uVisionSampler: canvas.masks.vision.renderTexture
     });
     this.filter.blendMode = PIXI.BLEND_MODES.MULTIPLY;
@@ -119,16 +118,19 @@ class CanvasIlluminationEffects extends CanvasLayer {
   }
 
   /* -------------------------------------------- */
-  /*  Deprecations                                */
-  /* -------------------------------------------- */
 
   /**
-   * @deprecated since v11
-   * @ignore
+   * Does this scene currently benefit from global illumination?
+   * @returns {boolean}     Did the value of global light change?
    */
   updateGlobalLight() {
-    const msg = "CanvasIlluminationEffects#updateGlobalLight has been deprecated.";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
+    const {globalLight, globalLightThreshold} = canvas.scene;
+    if ( !globalLight ) return this.globalLight = false;
+    const hasGlobalLight = (globalLightThreshold === null) || (canvas.darknessLevel <= globalLightThreshold);
+    if ( hasGlobalLight !== this.globalLight ) {
+      this.globalLight = hasGlobalLight;
+      return true;
+    }
     return false;
   }
 }

@@ -50,6 +50,7 @@ class CanvasBackgroundAlterationEffects extends CanvasLayer {
     // Add the background lighting filter
     const lf = this.lighting.filter = VisualEffectsMaskingFilter.create({
       filterMode: VisualEffectsMaskingFilter.FILTER_MODES.BACKGROUND,
+      uRoofSampler: canvas.masks.depth.renderTexture,
       uVisionSampler: canvas.masks.vision.renderTexture
     });
     lf.blendMode = PIXI.BLEND_MODES.NORMAL;

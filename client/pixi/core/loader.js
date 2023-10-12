@@ -10,53 +10,27 @@ class TextureLoader {
   static CACHE_TTL = 1000 * 60 * 15;
 
   /**
-   * Record the timestamps when each asset path is retrieved from cache.
-   * @type {Map<PIXI.BaseTexture|PIXI.Spritesheet,{src:string,time:number}>}
+   * The cached mapping of textures
+   * @type {Map<string,{tex: PIXI.BaseTexture, time: number}>}
+   * @private
    */
-  static #cacheTime = new Map();
-
-  /**
-   * A mapping of url to cached texture buffer data
-   * @type {Map<string,object>}
-   */
-  static textureBufferDataMap = new Map();
-
-  /**
-   * Create a fixed retry string to use for CORS retries.
-   * @type {string}
-   */
-  static #retryString = Date.now().toString();
-
-  /* -------------------------------------------- */
-
-  /**
-   * Check if a source has a text file extension.
-   * @param {string} src          The source.
-   * @returns {boolean}           If the source has a text extension or not.
-   */
-  static hasTextExtension(src) {
-    let rgx = new RegExp(`(\\.${Object.keys(CONST.TEXT_FILE_EXTENSIONS).join("|\\.")})(\\?.*)?`, "i");
-    return rgx.test(src);
-  }
+  #cache = new Map();
 
   /* -------------------------------------------- */
 
   /**
    * Load all the textures which are required for a particular Scene
-   * @param {Scene} scene                                 The Scene to load
-   * @param {object} [options={}]                         Additional options that configure texture loading
-   * @param {boolean} [options.expireCache=true]          Destroy other expired textures
-   * @param {boolean} [options.additionalSources=[]]      Additional sources to load during canvas initialize
-   * @param {number} [options.maxConcurrent]              The maximum number of textures that can be loaded concurrently
+   * @param {Scene} scene           The Scene to load
+   * @param {object} [options={}]   Additional options that configure texture loading
+   * @param {boolean} [options.expireCache=true]  Destroy other expired textures
    * @returns {Promise<void[]>}
    */
-  static loadSceneTextures(scene, {expireCache=true, additionalSources=[], maxConcurrent}={}) {
+  static loadSceneTextures(scene, {expireCache=true}={}) {
     let toLoad = [];
 
     // Scene background and foreground textures
     if ( scene.background.src ) toLoad.push(scene.background.src);
     if ( scene.foreground ) toLoad.push(scene.foreground);
-    if ( scene.fogOverlay ) toLoad.push(scene.fogOverlay);
 
     // Tiles
     toLoad = toLoad.concat(scene.tiles.reduce((arr, t) => {
@@ -73,19 +47,12 @@ class TextureLoader {
     // Control Icons
     toLoad = toLoad.concat(Object.values(CONFIG.controlIcons)).concat(CONFIG.statusEffects.map(e => e.icon ?? e));
 
-    // Configured scene textures
-    toLoad.push(...Object.values(canvas.sceneTextures));
-
-    // Additional requested sources
-    toLoad.push(...additionalSources);
-
     // Load files
     const showName = scene.active || scene.visible;
     const loadName = showName ? (scene.navName || scene.name) : "...";
     return this.loader.load(toLoad, {
       message: game.i18n.format("SCENES.Loading", {name: loadName}),
-      expireCache,
-      maxConcurrent
+      expireCache: expireCache
     });
   }
 
@@ -97,56 +64,115 @@ class TextureLoader {
    * @param {object} [options={}]   Additional options which modify loading
    * @param {string} [options.message]              The status message to display in the load bar
    * @param {boolean} [options.expireCache=false]   Expire other cached textures?
-   * @param {number} [options.maxConcurrent]        The maximum number of textures that can be loaded concurrently.
    * @returns {Promise<void[]>}     A Promise which resolves once all textures are loaded
    */
-  async load(sources, {message, expireCache=false, maxConcurrent}={}) {
-    sources = new Set(sources);
-    const progress = {message: message, loaded: 0, failed: 0, total: sources.size, pct: 0};
-    console.groupCollapsed(`${vtt} | Loading ${sources.size} Assets`);
-    const loadTexture = async src => {
-      try {
-        await this.loadTexture(src);
-        TextureLoader.#onProgress(src, progress);
-      } catch(err) {
-        TextureLoader.#onError(src, progress, err);
-      }
-    };
+  async load(sources, {message, expireCache=false}={}) {
+    const seen = new Set();
     const promises = [];
-    if ( maxConcurrent ) {
-      const semaphore = new foundry.utils.Semaphore(maxConcurrent);
-      for ( const src of sources ) promises.push(semaphore.add(loadTexture, src));
-    } else {
-      for ( const src of sources ) promises.push(loadTexture(src));
+    const progress = {message: message, loaded: 0, failed: 0, total: 0, pct: 0};
+    for ( const src of sources ) {
+      if ( seen.has(src) ) continue;
+      seen.add(src);
+      const promise = this.loadTexture(src)
+        .then(() => TextureLoader.#onProgress(src, progress))
+        .catch(err => TextureLoader.#onError(src, progress, err));
+      promises.push(promise);
     }
-    await Promise.allSettled(promises);
-    console.groupEnd();
-    if ( expireCache ) await this.expireCache();
+    progress.total = promises.length;
+
+    // Expire any cached textures
+    if ( expireCache ) this.expireCache();
+
+    // Load all media
+    return Promise.all(promises);
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Load a single texture or spritesheet on-demand from a given source URL path
-   * @param {string} src                                          The source texture path to load
-   * @returns {Promise<PIXI.BaseTexture|PIXI.Spritesheet|null>}   The loaded texture object
+   * Load a single texture on-demand from a given source URL path
+   * @param {string} src                    The source texture path to load
+   * @returns {Promise<PIXI.BaseTexture>}   The loaded texture object
    */
   async loadTexture(src) {
-    const loadAsset = async (src, bustCache=false) => {
-      if ( bustCache ) src = TextureLoader.getCacheBustURL(src);
-      if ( !src ) return null;
-      try {
-        return await PIXI.Assets.load(src);
-      } catch ( err ) {
-        if ( bustCache ) throw err;
-        return await loadAsset(src, true);
-      }
-    };
-    let asset = await loadAsset(src);
-    if ( !asset?.baseTexture?.valid ) return null;
-    if ( asset instanceof PIXI.Texture ) asset = asset.baseTexture;
-    this.setCache(src, asset);
-    return asset;
+    let bt = this.getCache(src);
+    if ( bt?.valid ) return bt;
+    return VideoHelper.hasVideoExtension(src) ? this.loadVideoTexture(src) : this.loadImageTexture(src);
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Load an image texture from a provided source url.
+   * @param {string} src                    The source image URL
+   * @returns {Promise<PIXI.BaseTexture>}   The loaded BaseTexture
+   */
+  async loadImageTexture(src) {
+    const blob = await TextureLoader.fetchResource(src);
+
+    // Create the Image element
+    const img = new Image();
+    img.decoding = "async";
+    img.loading = "eager";
+
+    // Wait for the image to load
+    return new Promise((resolve, reject) => {
+
+      // Create the texture on successful load
+      img.onload = () => {
+        URL.revokeObjectURL(img.src);
+        img.height = img.naturalHeight;
+        img.width = img.naturalWidth;
+        const tex = PIXI.BaseTexture.from(img);
+        this.setCache(src, tex);
+        resolve(tex);
+      };
+
+      // Handle errors for valid URLs due to CORS
+      img.onerror = err => {
+        URL.revokeObjectURL(img.src);
+        reject(err);
+      };
+      img.src = URL.createObjectURL(blob);
+    });
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Load a video texture from a provided source url
+   * @param {string} src                    The source video URL
+   * @returns {Promise<PIXI.BaseTexture>}   The loaded BaseTexture
+   */
+  async loadVideoTexture(src) {
+    if ( !VideoHelper.hasVideoExtension(src) ) {
+      throw new Error(`${src} is not a valid video texture`);
+    }
+    const blob = await TextureLoader.fetchResource(src);
+
+    // Create a Video element
+    const video = document.createElement("VIDEO");
+    video.preload = "auto";
+    video.autoplay = false;
+    video.crossOrigin = "anonymous";
+    video.src = URL.createObjectURL(blob);
+
+    // Begin loading and resolve or reject
+    return new Promise((resolve, reject) => {
+      video.oncanplay = () => {
+        video.height = video.videoHeight;
+        video.width = video.videoWidth;
+        const tex = PIXI.BaseTexture.from(video, {resourceOptions: {autoPlay: false}});
+        this.setCache(src, tex);
+        video.oncanplay = null;
+        resolve(tex);
+      };
+      video.onerror = err => {
+        URL.revokeObjectURL(video.src);
+        reject(err);
+      };
+      video.load();
+    });
   }
 
   /* --------------------------------------------- */
@@ -186,7 +212,7 @@ class TextureLoader {
     progress.loaded++;
     progress.pct = Math.round((progress.loaded + progress.failed) * 100 / progress.total);
     SceneNavigation.displayProgressBar({label: progress.message, pct: progress.pct});
-    console.log(`Loaded ${src} (${progress.pct}%)`);
+    console.log(`${vtt} | Loaded ${src} (${progress.pct}%)`);
   }
 
   /* -------------------------------------------- */
@@ -202,7 +228,7 @@ class TextureLoader {
     progress.failed++;
     progress.pct = Math.round((progress.loaded + progress.failed) * 100 / progress.total);
     SceneNavigation.displayProgressBar({label: progress.message, pct: progress.pct});
-    console.warn(`Loading failed for ${src} (${progress.pct}%): ${error.message}`);
+    console.warn(`${vtt} | Loading failed for ${src} (${progress.pct}%): ${error.message}`);
   }
 
   /* -------------------------------------------- */
@@ -210,51 +236,48 @@ class TextureLoader {
   /* -------------------------------------------- */
 
   /**
-   * Add an image or a sprite sheet url to the assets cache.
-   * @param {string} src                                 The source URL.
-   * @param {PIXI.BaseTexture|PIXI.Spritesheet} asset    The asset
+   * Add an image url to the texture cache
+   * @param {string} src              The source URL
+   * @param {PIXI.BaseTexture} tex    The loaded base texture
    */
-  setCache(src, asset) {
-    TextureLoader.#cacheTime.set(asset, {src, time: Date.now()});
+  setCache(src, tex) {
+    this.#cache.set(src, {
+      tex: tex,
+      time: Date.now()
+    });
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Retrieve a texture or a sprite sheet from the assets cache
-   * @param {string} src                                     The source URL
-   * @returns {PIXI.BaseTexture|PIXI.Spritesheet|null}       The cached texture, a sprite sheet or undefined
+   * Retrieve a texture from the texture cache
+   * @param {string} src          The source URL
+   * @returns {PIXI.BaseTexture}  The cached texture, or undefined
    */
   getCache(src) {
-    if ( !src ) return null;
-    if ( !PIXI.Assets.cache.has(src) ) src = TextureLoader.getCacheBustURL(src) || src;
-    let asset = PIXI.Assets.get(src);
-    if ( !asset?.baseTexture?.valid ) return null;
-    if ( asset instanceof PIXI.Texture ) asset = asset.baseTexture;
-    this.setCache(src, asset);
-    return asset;
+    const val = this.#cache.get(src);
+    if ( !val || val?.tex.destroyed ) return undefined;
+    val.time = Date.now();
+    return val?.tex;
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Expire and unload assets from the cache which have not been used for more than CACHE_TTL milliseconds.
+   * Expire (and destroy) textures from the cache which have not been used for more than CACHE_TTL milliseconds.
    */
-  async expireCache() {
-    const promises = [];
+  expireCache() {
     const t = Date.now();
-    for ( const [asset, {src, time}] of TextureLoader.#cacheTime.entries() ) {
-      const baseTexture = asset instanceof PIXI.Spritesheet ? asset.baseTexture : asset;
-      if ( !baseTexture || baseTexture.destroyed ) {
-        TextureLoader.#cacheTime.delete(asset);
-        continue;
+    for ( let [key, obj] of this.#cache.entries() ) {
+      if ( (t - obj.time) > TextureLoader.CACHE_TTL ) {
+        console.log(`${vtt} | Expiring cached texture: ${key}`);
+        const texture = obj.tex;
+        const srcURL = texture.resource?.source?.src;
+        if ( srcURL ) URL.revokeObjectURL(srcURL);
+        if ( !texture._destroyed ) texture.destroy(true);
+        this.#cache.delete(key);
       }
-      if ( (t - time) <= TextureLoader.CACHE_TTL ) continue;
-      console.log(`${vtt} | Expiring cached texture: ${src}`);
-      promises.push(PIXI.Assets.unload(src));
-      TextureLoader.#cacheTime.delete(asset);
     }
-    await Promise.allSettled(promises);
   }
 
   /* -------------------------------------------- */
@@ -268,34 +291,8 @@ class TextureLoader {
     const url = URL.parseSafe(src);
     if ( !url ) return false;
     if ( url.origin === window.location.origin ) return false;
-    url.searchParams.append("cors-retry", TextureLoader.#retryString);
+    url.searchParams.append("cors-retry", Date.now().toString());
     return url.href;
-  }
-
-  /* -------------------------------------------- */
-  /*  Deprecations                                */
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  async loadImageTexture(src) {
-    const warning = "TextureLoader#loadImageTexture is deprecated. Use TextureLoader#loadTexture instead.";
-    foundry.utils.logCompatibilityWarning(warning, {since: 11, until: 13});
-    return this.loadTexture(src);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  async loadVideoTexture(src) {
-    const warning = "TextureLoader#loadVideoTexture is deprecated. Use TextureLoader#loadTexture instead.";
-    foundry.utils.logCompatibilityWarning(warning, {since: 11, until: 13});
-    return this.loadTexture(src);
   }
 }
 
@@ -325,15 +322,14 @@ async function srcExists(src) {
 
 
 /**
- * Get a single texture or sprite sheet from the cache.
- * @param {string} src                            The texture path to load.
- * @returns {PIXI.Texture|PIXI.Spritesheet|null}  A texture, a sprite sheet or null if not found in cache.
+ * Get a single texture from the cache
+ * @param {string} src
+ * @returns {PIXI.Texture}
  */
 function getTexture(src) {
-  const asset = TextureLoader.loader.getCache(src);
-  const baseTexture = asset instanceof PIXI.Spritesheet ? asset.baseTexture : asset;
+  let baseTexture = TextureLoader.loader.getCache(src);
   if ( !baseTexture?.valid ) return null;
-  return (asset instanceof PIXI.Spritesheet ? asset : new PIXI.Texture(asset));
+  return new PIXI.Texture(baseTexture);
 }
 
 
@@ -341,30 +337,26 @@ function getTexture(src) {
 
 
 /**
- * Load a single asset and return a Promise which resolves once the asset is ready to use
- * @param {string} src                           The requested asset source
- * @param {object} [options]                     Additional options which modify asset loading
- * @param {string} [options.fallback]            A fallback texture URL to use if the requested source is unavailable
- * @returns {PIXI.Texture|PIXI.Spritesheet|null} The loaded Texture or sprite sheet,
- *                                               or null if loading failed with no fallback
+ * Load a single texture and return a Promise which resolves once the texture is ready to use
+ * @param {string} src                The requested texture source
+ * @param {object} [options]          Additional options which modify texture loading
+ * @param {string} [options.fallback]     A fallback texture URL to use if the requested source is unavailable
+ * @returns {PIXI.Texture|null}        The loaded Texture, or null if loading failed with no fallback
  */
 async function loadTexture(src, {fallback}={}) {
-  let asset;
+  let bt;
   let error;
   try {
-    asset = await TextureLoader.loader.loadTexture(src);
-    const baseTexture = asset instanceof PIXI.Spritesheet ? asset.baseTexture : asset;
-    if ( !baseTexture?.valid ) error = new Error(`Invalid Asset ${src}`);
+    bt = await TextureLoader.loader.loadTexture(src);
+    if ( !bt?.valid ) error = new Error(`Invalid BaseTexture ${src}`);
   }
   catch(err) {
-    err.message = `The requested asset ${src} could not be loaded: ${err.message}`;
+    err.message = `The requested texture ${src} could not be loaded: ${err.message}`;
     error = err;
   }
   if ( error ) {
     console.error(error);
-    if ( TextureLoader.hasTextExtension(src) ) return null; // No fallback for spritesheets
     return fallback ? loadTexture(fallback) : null;
   }
-  if ( asset instanceof PIXI.Spritesheet ) return asset;
-  return new PIXI.Texture(asset);
+  return new PIXI.Texture(bt);
 }

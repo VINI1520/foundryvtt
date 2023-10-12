@@ -66,11 +66,7 @@ class Messages extends WorldCollection {
     return Dialog.confirm({
       title: game.i18n.localize("CHAT.FlushTitle"),
       content: `<h4>${game.i18n.localize("AreYouSure")}</h4><p>${game.i18n.localize("CHAT.FlushWarning")}</p>`,
-      yes: () => {
-        this.documentClass.deleteDocuments([], {deleteAll: true});
-        const jumpToBottomElement = document.querySelector(".jump-to-bottom");
-        jumpToBottomElement.classList.toggle("hidden", true);
-      },
+      yes: () => this.documentClass.deleteDocuments([], {deleteAll: true}),
       options: {
         top: window.innerHeight - 150,
         left: window.innerWidth - 720

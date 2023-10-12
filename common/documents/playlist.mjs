@@ -43,7 +43,7 @@ class BasePlaylist extends Document {
     name: "Playlist",
     collection: "playlists",
     indexed: true,
-    compendiumIndexFields: ["_id", "name", "description", "sort", "folder"],
+    compendiumIndexFields: ["_id", "name", "sort"],
     embedded: {PlaylistSound: "sounds"},
     label: "DOCUMENT.Playlist",
     labelPlural: "DOCUMENT.Playlists",
@@ -53,8 +53,8 @@ class BasePlaylist extends Document {
   static defineSchema() {
     return {
       _id: new fields.DocumentIdField(),
-      name: new fields.StringField({required: true, blank: false, textSearch: true}),
-      description: new fields.StringField({textSearch: true}),
+      name: new fields.StringField({required: true, blank: false}),
+      description: new fields.StringField(),
       sounds: new fields.EmbeddedCollectionField(documents.BasePlaylistSound),
       mode: new fields.NumberField({required: true, choices: Object.values(CONST.PLAYLIST_MODES),
         initial: CONST.PLAYLIST_MODES.SEQUENTIAL, validationError: "must be a value in CONST.PLAYLIST_MODES"}),

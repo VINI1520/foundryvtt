@@ -10,27 +10,12 @@ class Wall extends PlaceableObject {
   constructor(document) {
     super(document);
     this.#initializeVertices();
-    this.#priorDoorState = this.document.ds;
   }
 
-  /** @inheritdoc */
-  static embeddedName = "Wall";
-
-  /** @override */
-  static RENDER_FLAGS = {
-    redraw: {propagate: ["refresh"]},
-    refresh: {propagate: ["refreshState", "refreshLine"], alias: true},
-    refreshState: {propagate: ["refreshEndpoints", "refreshHighlight"]},
-    refreshLine: {propagate: ["refreshEndpoints", "refreshHighlight", "refreshDirection"]},
-    refreshEndpoints: {},
-    refreshDirection: {},
-    refreshHighlight: {}
-  };
-
   /**
-   * A reference the Door Control icon associated with this Wall, if any
+   * An reference the Door Control icon associated with this Wall, if any
    * @type {DoorControl|null}
-   * @protected
+   * @private
    */
   doorControl;
 
@@ -41,22 +26,14 @@ class Wall extends PlaceableObject {
   roof;
 
   /**
-   * A Graphics object used to highlight this wall segment. Only used when the wall is controlled.
-   * @type {PIXI.Graphics}
-   */
-  highlight;
-
-  /**
    * A set which tracks other Wall instances that this Wall intersects with (excluding shared endpoints)
    * @type {Map<Wall,LineIntersection>}
    */
   intersectsWith = new Map();
 
-  /**
-   * Cache the prior door state so that we can identify changes in the door state.
-   * @type {number}
-   */
-  #priorDoorState;
+
+  /** @inheritdoc */
+  static embeddedName = "Wall";
 
   /* -------------------------------------------- */
   /*  Properties                                  */
@@ -152,7 +129,7 @@ class Wall extends PlaceableObject {
    */
   get hasActiveRoof() {
     if ( !this.roof ) return false;
-    return !this.roof.occluded && (this.roof.document.occlusion.mode !== CONST.OCCLUSION_MODES.VISION);
+    return !this.roof.occluded && (this.roof.document.occlusion.mode !== CONST.TILE_OCCLUSION_MODES.VISION);
   }
 
   /* -------------------------------------------- */
@@ -217,10 +194,10 @@ class Wall extends PlaceableObject {
 
   /** @override */
   async _draw() {
+    this.directionIcon = this.document.dir ? this.addChild(this._drawDirection()) : null;
     this.line = this.addChild(new PIXI.Graphics());
-    this.directionIcon = this.addChild(this.#drawDirection());
     this.endpoints = this.addChild(new PIXI.Graphics());
-    this.endpoints.cursor = "pointer";
+    this.endpoints.buttonMode = true;
   }
 
   /* -------------------------------------------- */
@@ -271,27 +248,23 @@ class Wall extends PlaceableObject {
   }
 
   /* -------------------------------------------- */
+  /*  Interactivity                               */
+  /* -------------------------------------------- */
 
-  /**
-   * Test whether to apply a configured threshold of this wall.
-   * When the proximity threshold is met, this wall is excluded as an edge in perception calculations.
-   * @param {string} sourceType     Sense type for the source
-   * @param {Point} sourceOrigin    The origin or position of the source on the canvas
-   * @param {number} [externalRadius=0] The external radius of the source
-   * @returns {boolean}             True if the wall has a threshold greater than 0 for the
-   *                                source type, and the source type is within that distance.
-   */
-  applyThreshold(sourceType, sourceOrigin, externalRadius=0) {
-    const document = this.document;
-    const d = document.threshold[sourceType];
-    if ( !d ) return false; // No threshold applies
-    const proximity = document[sourceType] === CONST.WALL_SENSE_TYPES.PROXIMITY;
-    const pt = foundry.utils.closestPointToSegment(sourceOrigin, this.A, this.B); // Closest point
-    const sourceDistance = Math.hypot(pt.x - sourceOrigin.x, pt.y - sourceOrigin.y);
-    const thresholdDistance = d * document.parent.dimensions.distancePixels;
-    return proximity
-      ? Math.max(sourceDistance - externalRadius, 0) < thresholdDistance
-      : (sourceDistance + externalRadius) > thresholdDistance;
+  /** @inheritdoc */
+  _createInteractionManager() {
+    const mgr = super._createInteractionManager();
+    mgr.options.target = ["endpoints"];
+    return mgr;
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  activateListeners() {
+    super.activateListeners();
+    this.line.interactive = true;
+    this.line.on("mouseover", this._onMouseOverLine, this).on("mouseout", this._onHoverOut, this);
   }
 
   /* -------------------------------------------- */
@@ -299,52 +272,101 @@ class Wall extends PlaceableObject {
   /**
    * Draw a directional prompt icon for one-way walls to illustrate their direction of effect.
    * @returns {PIXI.Sprite|null}   The drawn icon
+   * @private
    */
-  #drawDirection() {
-    if ( this.directionIcon ) return;
+  _drawDirection() {
+    if (this.directionIcon) this.removeChild(this.directionIcon);
+    let d = this.document.dir;
+    if ( !d ) return null;
 
     // Create the icon
-    const tex = getTexture(CONFIG.controlIcons.wallDirection);
-    const icon = new PIXI.Sprite(tex);
-
-    // Set icon initial state
+    const icon = PIXI.Sprite.from("icons/svg/wall-direction.svg");
     icon.width = icon.height = 32;
+
+    // Rotate the icon
+    let iconAngle = -Math.PI / 2;
+    let angle = this.direction;
     icon.anchor.set(0.5, 0.5);
-    icon.visible = false;
+    icon.rotation = iconAngle + angle;
     return icon;
+  }
+
+  /* -------------------------------------------- */
+
+  /** @override */
+  _refresh(options) {
+    const p = this.coords;
+    const mp = [(p[0] + p[2]) / 2, (p[1] + p[3]) / 2];
+    const wc = this._getWallColor();
+
+    // Determine circle radius and line width
+    let lw = 2;
+    if ( canvas.dimensions.size > 150 ) lw = 4;
+    else if ( canvas.dimensions.size > 100 ) lw = 3;
+    const cr = this.hover ? lw * 4 : lw * 3;
+    let lw3 = lw * 3;
+
+    // Draw line
+    this.line.clear()
+      .lineStyle(lw3, 0x000000, 1.0)  // Background black
+      .moveTo(p[0], p[1])
+      .lineTo(p[2], p[3]);
+    this.line.lineStyle(lw, wc, 1.0)  // Foreground color
+      .lineTo(p[0], p[1]);
+
+    // Draw endpoints
+    this.endpoints.clear()
+      .lineStyle(lw, 0x000000, 1.0)
+      .beginFill(wc, 1.0)
+      .drawCircle(p[0], p[1], cr)
+      .drawCircle(p[2], p[3], cr)
+      .endFill();
+
+    // Tint direction icon
+    if ( this.directionIcon ) {
+      this.directionIcon.position.set(mp[0], mp[1]);
+      this.directionIcon.tint = wc;
+    }
+
+    // Re-position door control icon
+    if ( this.doorControl ) this.doorControl.reposition();
+
+    // Update line hit area
+    this.line.hitArea = this._getWallHitPolygon(p, lw3);
   }
 
   /* -------------------------------------------- */
 
   /**
    * Compute an approximate Polygon which encloses the line segment providing a specific hitArea for the line
+   * @param {number[]} coords     The original wall coordinates
    * @param {number} pad          The amount of padding to apply
    * @returns {PIXI.Polygon}      A constructed Polygon for the line
+   * @private
    */
-  #getHitPolygon(pad) {
-    const c = this.document.c;
+  _getWallHitPolygon(coords, pad) {
 
     // Identify wall orientation
-    const dx = c[2] - c[0];
-    const dy = c[3] - c[1];
+    const dx = coords[2] - coords[0];
+    const dy = coords[3] - coords[1];
 
     // Define the array of polygon points
     let points;
     if ( Math.abs(dx) >= Math.abs(dy) ) {
       const sx = Math.sign(dx);
       points = [
-        c[0]-(pad*sx), c[1]-pad,
-        c[2]+(pad*sx), c[3]-pad,
-        c[2]+(pad*sx), c[3]+pad,
-        c[0]-(pad*sx), c[1]+pad
+        coords[0]-(pad*sx), coords[1]-pad,
+        coords[2]+(pad*sx), coords[3]-pad,
+        coords[2]+(pad*sx), coords[3]+pad,
+        coords[0]-(pad*sx), coords[1]+pad
       ];
     } else {
       const sy = Math.sign(dy);
       points = [
-        c[0]-pad, c[1]-(pad*sy),
-        c[2]-pad, c[3]+(pad*sy),
-        c[2]+pad, c[3]+(pad*sy),
-        c[0]+pad, c[1]-(pad*sy)
+        coords[0]-pad, coords[1]-(pad*sy),
+        coords[2]-pad, coords[3]+(pad*sy),
+        coords[2]+pad, coords[3]+(pad*sy),
+        coords[0]+pad, coords[1]-(pad*sy)
       ];
     }
 
@@ -354,17 +376,64 @@ class Wall extends PlaceableObject {
 
   /* -------------------------------------------- */
 
-  /** @inheritDoc */
-  control({chain=false, ...options}={}) {
-    const controlled = super.control(options);
-    if ( controlled && chain ) {
+  /**
+   * Given the properties of the wall - decide upon a color to render the wall for display on the WallsLayer
+   * @private
+   */
+  _getWallColor() {
+
+    // Invisible Walls
+    if ( this.document.sight === CONST.WALL_SENSE_TYPES.NONE ) return 0x77E7E8;
+
+    // Terrain Walls
+    else if ( this.document.sight === CONST.WALL_SENSE_TYPES.LIMITED ) return 0x81B90C;
+
+    // Ethereal Walls
+    else if ( this.document.move === CONST.WALL_SENSE_TYPES.NONE ) return 0xCA81FF;
+
+    // Doors
+    else if ( this.document.door === CONST.WALL_DOOR_TYPES.DOOR ) {
+      let ds = this.document.ds || CONST.WALL_DOOR_STATES.CLOSED;
+      if ( ds === CONST.WALL_DOOR_STATES.CLOSED ) return 0x6666EE;
+      else if ( ds === CONST.WALL_DOOR_STATES.OPEN ) return 0x66CC66;
+      else if ( ds === CONST.WALL_DOOR_STATES.LOCKED ) return 0xEE4444;
+    }
+
+    // Secret Doors
+    else if ( this.document.door === CONST.WALL_DOOR_TYPES.SECRET ) {
+      let ds = this.document.ds || CONST.WALL_DOOR_STATES.CLOSED;
+      if ( ds === CONST.WALL_DOOR_STATES.CLOSED ) return 0xA612D4;
+      else if ( ds === CONST.WALL_DOOR_STATES.OPEN ) return 0x7C1A9b;
+      else if ( ds === CONST.WALL_DOOR_STATES.LOCKED ) return 0xEE4444;
+    }
+
+    // Standard Walls
+    else return 0xFFFFBB;
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  _onControl({chain=false}={}) {
+
+    // Add chained walls
+    if ( chain ) {
       const links = this.getLinkedSegments();
       for ( let l of links.walls ) {
         l.control({releaseOthers: false});
         this.layer.controlledObjects.set(l.id, l);
       }
     }
-    return controlled;
+
+    // Draw control highlights
+    this.layer.highlightControlledSegments();
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
+  _onRelease(options) {
+    this.layer.highlightControlledSegments();
   }
 
   /* -------------------------------------------- */
@@ -470,9 +539,9 @@ class Wall extends PlaceableObject {
   identifyInteriorState() {
     this.roof = null;
     for ( const tile of canvas.tiles.roofs ) {
-      if ( tile.document.hidden || !tile.mesh ) continue;
+      if ( tile.document.hidden ) continue;
       const [x1, y1, x2, y2] = this.document.c;
-      const isInterior = tile.mesh.containsPixel(x1, y1) && tile.mesh.containsPixel(x2, y2);
+      const isInterior = tile.containsPixel(x1, y1) && tile.containsPixel(x2, y2);
       if ( isInterior ) this.roof = tile;
     }
   }
@@ -483,7 +552,7 @@ class Wall extends PlaceableObject {
    * Update any intersections with this wall.
    */
   updateIntersections() {
-    this.#removeIntersections();
+    this._removeIntersections();
     for ( let other of canvas.walls.placeables ) {
       this._identifyIntersectionsWith(other);
     }
@@ -523,8 +592,9 @@ class Wall extends PlaceableObject {
 
   /**
    * Remove this wall's intersections.
+   * @private
    */
-  #removeIntersections() {
+  _removeIntersections() {
     for ( const other of this.intersectsWith.keys() ) {
       other.intersectsWith.delete(this);
     }
@@ -532,248 +602,64 @@ class Wall extends PlaceableObject {
   }
 
   /* -------------------------------------------- */
-  /*  Incremental Refresh                         */
-  /* -------------------------------------------- */
-
-  /** @override */
-  _applyRenderFlags(flags) {
-    if ( flags.refreshLine ) this.#refreshLine();
-    if ( flags.refreshEndpoints ) this.#refreshEndpoints();
-    if ( flags.refreshDirection ) this.#refreshDirection();
-    if ( flags.refreshHighlight ) this.#refreshHighlight();
-    if ( flags.refreshState ) this.#refreshState();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the displayed position of the wall which refreshes when the wall coordinates or type changes.
-   */
-  #refreshLine() {
-    const c = this.document.c;
-    const wc = this._getWallColor();
-    const lw = Wall.#getLineWidth();
-
-    // Draw line
-    this.line.clear()
-      .lineStyle(lw * 3, 0x000000, 1.0)  // Background black
-      .moveTo(c[0], c[1])
-      .lineTo(c[2], c[3]);
-    this.line.lineStyle(lw, wc, 1.0)  // Foreground color
-      .lineTo(c[0], c[1]);
-
-    // Tint direction icon
-    if ( this.directionIcon ) {
-      this.directionIcon.position.set((c[0] + c[2]) / 2, (c[1] + c[3]) / 2);
-      this.directionIcon.tint = wc;
-    }
-
-    // Re-position door control icon
-    if ( this.doorControl ) this.doorControl.reposition();
-
-    // Update hit area for interaction
-    this.line.hitArea = this.#getHitPolygon(lw * 3);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the display of wall endpoints which refreshes when the wall position or state changes.
-   */
-  #refreshEndpoints() {
-    const c = this.coords;
-    const wc = this._getWallColor();
-    const lw = Wall.#getLineWidth();
-    const cr = (this.hover || this.layer.highlightObjects) ? lw * 4 : lw * 3;
-    this.endpoints.clear()
-      .lineStyle(lw, 0x000000, 1.0)
-      .beginFill(wc, 1.0)
-      .drawCircle(c[0], c[1], cr)
-      .drawCircle(c[2], c[3], cr)
-      .endFill();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Draw a directional prompt icon for one-way walls to illustrate their direction of effect.
-   * @returns {PIXI.Sprite|null}   The drawn icon
-   */
-  #refreshDirection() {
-    if ( !this.document.dir ) return this.directionIcon.visible = false;
-
-    // Set icon state and rotation
-    const icon = this.directionIcon;
-    const iconAngle = -Math.PI / 2;
-    const angle = this.direction;
-    icon.rotation = iconAngle + angle;
-    icon.visible = true;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the appearance of the wall control highlight graphic. Occurs when wall control or position changes.
-   */
-  #refreshHighlight() {
-
-    // Remove highlight
-    if ( !this.controlled ) {
-      if ( this.highlight ) {
-        this.removeChild(this.highlight).destroy();
-        this.highlight = undefined;
-      }
-      return;
-    }
-
-    // Add highlight
-    if ( !this.highlight ) {
-      this.highlight = this.addChildAt(new PIXI.Graphics(), 0);
-      this.highlight.eventMode = "none";
-    }
-    else this.highlight.clear();
-
-    // Configure highlight
-    const c = this.coords;
-    const lw = Wall.#getLineWidth();
-    const cr = lw * 2;
-    let cr2 = cr * 2;
-    let cr4 = cr * 4;
-
-    // Draw highlight
-    this.highlight.lineStyle({width: cr, color: 0xFF9829})
-      .drawRoundedRect(c[0] - cr2, c[1] - cr2, cr4, cr4, cr)
-      .drawRoundedRect(c[2] - cr2, c[3] - cr2, cr4, cr4, cr)
-      .lineStyle({width: cr2, color: 0xFF9829})
-      .moveTo(c[0], c[1]).lineTo(c[2], c[3]);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the displayed state of the Wall.
-   */
-  #refreshState() {
-    this.alpha = this._getTargetAlpha();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Given the properties of the wall - decide upon a color to render the wall for display on the WallsLayer
-   * @returns {number}
-   * @protected
-   */
-  _getWallColor() {
-    const senses = CONST.WALL_SENSE_TYPES;
-
-    // Invisible Walls
-    if ( this.document.sight === senses.NONE ) return 0x77E7E8;
-
-    // Terrain Walls
-    else if ( this.document.sight === senses.LIMITED ) return 0x81B90C;
-
-    // Windows (Sight Proximity)
-    else if ( [senses.PROXIMITY, senses.DISTANCE].includes(this.document.sight) ) return 0xc7d8ff;
-
-    // Ethereal Walls
-    else if ( this.document.move === senses.NONE ) return 0xCA81FF;
-
-    // Doors
-    else if ( this.document.door === CONST.WALL_DOOR_TYPES.DOOR ) {
-      let ds = this.document.ds || CONST.WALL_DOOR_STATES.CLOSED;
-      if ( ds === CONST.WALL_DOOR_STATES.CLOSED ) return 0x6666EE;
-      else if ( ds === CONST.WALL_DOOR_STATES.OPEN ) return 0x66CC66;
-      else if ( ds === CONST.WALL_DOOR_STATES.LOCKED ) return 0xEE4444;
-    }
-
-    // Secret Doors
-    else if ( this.document.door === CONST.WALL_DOOR_TYPES.SECRET ) {
-      let ds = this.document.ds || CONST.WALL_DOOR_STATES.CLOSED;
-      if ( ds === CONST.WALL_DOOR_STATES.CLOSED ) return 0xA612D4;
-      else if ( ds === CONST.WALL_DOOR_STATES.OPEN ) return 0x7C1A9b;
-      else if ( ds === CONST.WALL_DOOR_STATES.LOCKED ) return 0xEE4444;
-    }
-
-    // Standard Walls
-    return 0xFFFFBB;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Adapt the width that the wall should be rendered based on the grid size.
-   * @returns {number}
-   */
-  static #getLineWidth() {
-    const s = canvas.dimensions.size;
-    if ( s > 150 ) return 4;
-    else if ( s > 100 ) return 3;
-    return 2;
-  }
-
-  /* -------------------------------------------- */
   /*  Socket Listeners and Handlers               */
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onCreate(data, options, userId) {
-    super._onCreate(data, options, userId);
+  _onCreate(...args) {
+    super._onCreate(...args);
     this.layer._cloneType = this.document.toJSON();
     this.updateIntersections();
     this.identifyInteriorState();
-    this.#onModifyWall(this.document.door !== CONST.WALL_DOOR_TYPES.NONE);
+    this._onModifyWall(this.document.door !== CONST.WALL_DOOR_TYPES.NONE);
   }
 
   /* -------------------------------------------- */
 
-  /** @override */
-  _onUpdate(data, options, userId) {
-    super._onUpdate(data, options, userId);
+  /** @inheritdoc */
+  _onUpdate(data, ...args) {
+    super._onUpdate(data, ...args);
 
-    // Incremental Refresh
-    const changed = new Set(Object.keys(data));
-    this.renderFlags.set({
-      refreshLine: ["c", "sight", "move", "door", "ds"].some(k => changed.has(k)),
-      refreshDirection: changed.has("dir")
-    });
+    // Re-draw if we have a direction marker
+    const redraw = ("dir" in data) || this.document.dir;
+    if ( redraw ) this.draw();
 
-    // Update the clone tool wall data
+    // If the wall is controlled, update the highlighted segments
+    if ( this.controlled ) {
+      canvas.addPendingOperation("WallsLayer.highlightControlledSegments", this.layer.highlightControlledSegments, this.layer);
+    }
+
+    // Downstream layer operations
     this.layer._cloneType = this.document.toJSON();
 
-    // Handle wall changes which require perception changes.
-    const rebuildEndpoints = changed.has("c") || CONST.WALL_RESTRICTION_TYPES.some(k => changed.has(k));
-    const doorChange = ["door", "ds"].some(k => changed.has(k));
+    // // If the type of door or door state has changed also modify the door icon
+    const rebuildEndpoints = ("c" in data) || CONST.WALL_RESTRICTION_TYPES.some(k => k in data);
+    const doorChange = ("door" in data) || ("ds" in data) || (this.isDoor && redraw);
     if ( rebuildEndpoints ) {
       this.#initializeVertices();
       this.updateIntersections();
       this.identifyInteriorState();
     }
-    if ( rebuildEndpoints || doorChange || ("threshold" in data) ) this.#onModifyWall(doorChange);
-
-    // Trigger door interaction sounds
-    if ( "ds" in data ) {
-      const states = CONST.WALL_DOOR_STATES;
-      let interaction;
-      if ( data.ds === states.LOCKED ) interaction = "lock";
-      else if ( data.ds === states.OPEN ) interaction = "open";
-      else if ( data.ds === states.CLOSED ) {
-        if ( this.#priorDoorState === states.OPEN ) interaction = "close";
-        else if ( this.#priorDoorState === states.LOCKED ) interaction = "unlock";
-      }
-      if ( options.sound !== false ) this._playDoorSound(interaction);
-      this.#priorDoorState = data.ds;
-    }
+    if ( rebuildEndpoints || doorChange ) this._onModifyWall(doorChange);
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onDelete(options, userId) {
-    super._onDelete(options, userId);
+  _onDelete(...args) {
+    super._onDelete(...args);
+    const wasControlled = this.controlled;
+
+    // Release the deleted wall and update highlighted segments
+    this.release();
+    if ( wasControlled ) {
+      canvas.addPendingOperation("WallsLayer.highlightControlledSegments", this.layer.highlightControlledSegments, this.layer);
+    }
+
+    // Refresh the display
     this.clearDoorControl();
-    this.#removeIntersections();
-    this.#onModifyWall(false);
+    this._removeIntersections();
+    this._onModifyWall(false);
   }
 
   /* -------------------------------------------- */
@@ -781,19 +667,20 @@ class Wall extends PlaceableObject {
   /**
    * Callback actions when a wall that contains a door is moved or its state is changed
    * @param {boolean} doorChange   Update vision and sound restrictions
+   * @private
    */
-  #onModifyWall(doorChange=false) {
+  _onModifyWall(doorChange=false) {
 
-    // Re-initialize perception
-    canvas.perception.update({
+    const perceptionUpdate = {
       initializeLighting: true,
       initializeVision: true,
       initializeSounds: true,
       refreshTiles: true
-    });
+    };
 
     // Re-draw door icons
     if ( doorChange ) {
+      perceptionUpdate.forceUpdateFog = true;
       const dt = this.document.door;
       const hasCtrl = (dt === CONST.WALL_DOOR_TYPES.DOOR) || ((dt === CONST.WALL_DOOR_TYPES.SECRET) && game.user.isGM);
       if ( hasCtrl ) {
@@ -802,63 +689,17 @@ class Wall extends PlaceableObject {
       }
       else this.clearDoorControl();
     }
+
+    // Re-initialize perception
+    canvas.perception.update(perceptionUpdate, true);
   }
 
   /* -------------------------------------------- */
-
-  /**
-   * Play a door interaction sound.
-   * This plays locally, each client independently applies this workflow.
-   * @param {string} interaction      The door interaction: "open", "close", "lock", "unlock", or "test".
-   * @protected
-   * @internal
-   */
-  _playDoorSound(interaction) {
-    if ( !CONST.WALL_DOOR_INTERACTIONS.includes(interaction) ) {
-      throw new Error(`"${interaction}" is not a valid door interaction type`);
-    }
-    if ( !this.isDoor ) return;
-    const doorSound = CONFIG.Wall.doorSounds[this.document.doorSound];
-    let sounds = doorSound?.[interaction];
-    if ( sounds && !Array.isArray(sounds) ) sounds = [sounds];
-    else if ( !sounds?.length ) {
-      if ( interaction !== "test" ) return;
-      sounds = [CONFIG.sounds.lock];
-    }
-    const src = sounds[Math.floor(Math.random() * sounds.length)];
-    AudioHelper.play({src});
-  }
-
-  /* -------------------------------------------- */
-  /*  Interactivity                               */
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  _createInteractionManager() {
-    const mgr = super._createInteractionManager();
-    mgr.options.target = "endpoints";
-    return mgr;
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  activateListeners() {
-    super.activateListeners();
-    this.line.eventMode = "static";
-    this.line.cursor = "pointer";
-    this.line.on("pointerdown", this.mouseInteractionManager.handleEvent, this.mouseInteractionManager)
-      .on("pointerup", this.mouseInteractionManager.handleEvent, this.mouseInteractionManager)
-      .on("mouseupoutside", this.mouseInteractionManager.handleEvent, this.mouseInteractionManager)
-      .on("pointerout", this.mouseInteractionManager.handleEvent, this.mouseInteractionManager)
-      .on("pointerover", this._onMouseOverLine, this);
-  }
-
+  /*  Interaction Event Callbacks                 */
   /* -------------------------------------------- */
 
   /** @inheritdoc */
   _canControl(user, event) {
-    if ( !this.layer.active || this.isPreview ) return false;
     // If the User is chaining walls, we don't want to control the last one
     const isChain = this.hover && (game.keyboard.downKeys.size === 1)
       && game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.CONTROL);
@@ -869,13 +710,13 @@ class Wall extends PlaceableObject {
 
   /** @inheritdoc */
   _onHoverIn(event, options) {
-    // contrary to hover out, hover in is prevented in chain mode to avoid distracting the user
-    if ( this.layer._chain ) return false;
     this.zIndex = 1;
-    const dest = event.getLocalPosition(this.layer);
-    this.layer.last = {
-      point: WallsLayer.getClosestEndpoint(dest, this)
-    };
+    if ( !this.layer._chain && event.data ) {
+      const dest = event.data.getLocalPosition(this.layer);
+      this.layer.last = {
+        point: WallsLayer.getClosestEndpoint(dest, this)
+      };
+    }
     return super._onHoverIn(event, options);
   }
 
@@ -884,8 +725,7 @@ class Wall extends PlaceableObject {
   /** @inheritdoc */
   _onHoverOut(event) {
     this.zIndex = 0;
-    const mgr = canvas.mouseInteractionManager;
-    if ( this.hover && !this.layer._chain && (mgr.state < mgr.states.CLICKED) ) this.layer.last = {point: null};
+    if ( this.hover && !this.layer._chain ) this.layer.last = {point: null};
     return super._onHoverOut(event);
   }
 
@@ -893,14 +733,12 @@ class Wall extends PlaceableObject {
 
   /**
    * Handle mouse-hover events on the line segment itself, pulling the Wall to the front of the container stack
-   * @param {PIXI.FederatedEvent} event
-   * @protected
+   * @param {object} event
+   * @private
    */
   _onMouseOverLine(event) {
-    if ( this.layer._chain ) return false;
     event.stopPropagation();
     if ( this.layer.preview.children.length ) return;
-    this.mouseInteractionManager.handleEvent(event);
     this.zIndex = 1;
   }
 
@@ -908,31 +746,17 @@ class Wall extends PlaceableObject {
 
   /** @inheritdoc */
   _onClickLeft(event) {
-    if ( this.layer._chain ) return false;
-    event.stopPropagation();
-    const alt = game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.ALT);
-    const shift = game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.SHIFT);
-    if ( this.controlled && !alt ) {
-      if ( shift ) return this.release();
-      else if ( this.layer.controlled.length > 1 ) return this.layer._onDragLeftStart(event);
+    const oe = event.data.originalEvent;
+    if ( this.controlled ) {
+      if ( oe.shiftKey ) return this.release();
     }
-    return this.control({releaseOthers: !shift, chain: alt});
+    else return this.control({releaseOthers: !oe.shiftKey, chain: oe.altKey});
   }
 
   /* -------------------------------------------- */
 
-  /** @override */
+  /** @inheritdoc */
   _onClickLeft2(event) {
-    event.stopPropagation();
-    const sheet = this.sheet;
-    sheet.render(true, {walls: this.layer.controlled});
-  }
-
-  /* -------------------------------------------- */
-
-  /** @override */
-  _onClickRight2(event) {
-    event.stopPropagation();
     const sheet = this.sheet;
     sheet.render(true, {walls: this.layer.controlled});
   }
@@ -940,35 +764,34 @@ class Wall extends PlaceableObject {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
+  _onClickRight2(event) {
+    return this._onClickLeft2(event);
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
   _onDragLeftStart(event) {
-    const origin = event.interactionData.origin;
+    const { origin } = event.data;
     const dLeft = Math.hypot(origin.x - this.coords[0], origin.y - this.coords[1]);
     const dRight = Math.hypot(origin.x - this.coords[2], origin.y - this.coords[3]);
-    event.interactionData.fixed = dLeft < dRight ? 1 : 0; // Affix the opposite point
+    event.data.fixed = dLeft < dRight ? 1 : 0; // Affix the opposite point
     return super._onDragLeftStart(event);
   }
 
   /* -------------------------------------------- */
 
-  /** @override */
+  /** @inheritdoc */
   _onDragLeftMove(event) {
+    const {clones, destination, fixed, origin, originalEvent} = event.data;
+
     // Pan the canvas if the drag event approaches the edge
-    canvas._onDragCanvasPan(event);
+    canvas._onDragCanvasPan(originalEvent);
 
     // Group movement
-    const {destination, fixed, origin} = event.interactionData;
-    let clones = event.interactionData.clones || [];
-
     if ( clones.length > 1 ) {
-      // Drag a group of walls - snap to the end point maintaining relative positioning
-      const p0 = fixed ? this.coords.slice(0, 2) : this.coords.slice(2, 4);
-      // Get the snapped final point
-      const pt = this.layer._getWallEndpointCoordinates({
-        x: destination.x + (p0[0] - origin.x),
-        y: destination.y + (p0[1] - origin.y)
-      }, {snap: false});
-      const dx = pt[0] - p0[0];
-      const dy = pt[1] - p0[1];
+      const dx = destination.x - origin.x;
+      const dy = destination.y - origin.y;
       for ( let c of clones ) {
         c.document.c = c._original.document.c.map((p, i) => i % 2 ? p + dy : p + dx);
       }
@@ -977,7 +800,7 @@ class Wall extends PlaceableObject {
     // Single-wall pivot
     else if ( clones.length === 1 ) {
       const w = clones[0];
-      const pt = this.layer._getWallEndpointCoordinates(destination, {snap: false});
+      const pt = [destination.x, destination.y];
       w.document.c = fixed ? pt.concat(this.coords.slice(2, 4)) : this.coords.slice(0, 2).concat(pt);
     }
 
@@ -987,53 +810,34 @@ class Wall extends PlaceableObject {
 
   /* -------------------------------------------- */
 
-  /** @override */
+  /** @inheritdoc */
   async _onDragLeftDrop(event) {
-    const {origin, destination, fixed} = event.interactionData;
-    event.interactionData.clearPreviewContainer = false;
-    let clones = event.interactionData.clones || [];
-
+    const {clones, destination, fixed, originalEvent} = event.data;
     const layer = this.layer;
-    const snap = layer._forceSnap || !event.shiftKey;
+    const snap = layer._forceSnap || !originalEvent.shiftKey;
+
+    // Get the snapped final point
+    const pt = this.layer._getWallEndpointCoordinates(destination, {snap});
 
     // Pivot a single wall
     if ( clones.length === 1 ) {
-      // Get the snapped final point
-      const pt = this.layer._getWallEndpointCoordinates(destination, {snap});
       const p0 = fixed ? this.coords.slice(2, 4) : this.coords.slice(0, 2);
       const coords = fixed ? pt.concat(p0) : p0.concat(pt);
-      try {
-
-        // If we collapsed the wall, delete it
-        if ( (coords[0] === coords[2]) && (coords[1] === coords[3]) ) {
-          return this.document.delete();
-        }
-
-        // Otherwise shift the last point
-        this.layer.last.point = pt;
-        return this.document.update({c: coords});
-      } finally {
-        this.layer.clearPreviewContainer();
+      if ( (coords[0] === coords[2]) && (coords[1] === coords[3]) ) {
+        return this.document.delete(); // If we collapsed the wall, delete it
       }
+      this.layer.last.point = pt;
+      return this.document.update({c: coords});
     }
 
     // Drag a group of walls - snap to the end point maintaining relative positioning
     const p0 = fixed ? this.coords.slice(0, 2) : this.coords.slice(2, 4);
-    // Get the snapped final point
-    const pt = this.layer._getWallEndpointCoordinates({
-      x: destination.x + (p0[0] - origin.x),
-      y: destination.y + (p0[1] - origin.y)
-    }, {snap});
     const dx = pt[0] - p0[0];
     const dy = pt[1] - p0[1];
     const updates = clones.map(w => {
       const c = w._original.document.c;
       return {_id: w._original.id, c: [c[0]+dx, c[1]+dy, c[2]+dx, c[3]+dy]};
     });
-    try {
-      return await canvas.scene.updateEmbeddedDocuments("Wall", updates);
-    } finally {
-      this.layer.clearPreviewContainer();
-    }
+    return canvas.scene.updateEmbeddedDocuments("Wall", updates);
   }
 }

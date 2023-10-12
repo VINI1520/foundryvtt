@@ -12,7 +12,6 @@ class DetectionMode extends foundry.abstract.DataModel {
       label: new fields.StringField({blank: false}),
       tokenConfig: new fields.BooleanField({initial: true}),       // If this DM is available in Token Config UI
       walls: new fields.BooleanField({initial: true}),             // If this DM is constrained by walls
-      angle: new fields.BooleanField({initial: true}),             // If this DM is constrained by the vision angle
       type: new fields.NumberField({
         initial: this.DETECTION_TYPES.SIGHT,
         choices: Object.values(this.DETECTION_TYPES)
@@ -103,8 +102,8 @@ class DetectionMode extends foundry.abstract.DataModel {
    * @protected
    */
   _testPoint(visionSource, mode, target, test) {
-    if ( !this._testRange(visionSource, mode, target, test) ) return false;
-    return this._testLOS(visionSource, mode, target, test);
+    if ( !this._testLOS(visionSource, mode, target, test) ) return false;
+    return this._testRange(visionSource, mode, target, test);
   }
 
   /* -------------------------------------------- */
@@ -121,47 +120,13 @@ class DetectionMode extends foundry.abstract.DataModel {
    * @protected
    */
   _testLOS(visionSource, mode, target, test) {
-    if ( !this.walls ) return this._testAngle(visionSource, mode, target, test);
-    if ( !this.angle && (visionSource.data.angle < 360) ) {
-      // Constrained by walls but not by vision angle
-      const type = visionSource.constructor.sourceType;
-      return !CONFIG.Canvas.polygonBackends[type].testCollision(
-        { x: visionSource.x, y: visionSource.y },
-        test.point,
-        { type, mode: "any", source: visionSource, useThreshold: true }
-      );
-    }
-    // Constrained by walls and vision angle
+    if ( !this.walls ) return true;
     let hasLOS = test.los.get(visionSource);
     if ( hasLOS === undefined ) {
       hasLOS = visionSource.los.contains(test.point.x, test.point.y);
       test.los.set(visionSource, hasLOS);
     }
     return hasLOS;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Test whether the target is within the vision angle.
-   * @param {VisionSource} visionSource       The vision source being tested
-   * @param {TokenDetectionMode} mode         The detection mode configuration
-   * @param {PlaceableObject} target          The target object being tested
-   * @param {CanvasVisibilityTest} test       The test case being evaluated
-   * @returns {boolean}                       Is the point within the vision angle?
-   * @protected
-   */
-  _testAngle(visionSource, mode, target, test) {
-    if ( !this.angle ) return true;
-    const { angle, rotation, externalRadius } = visionSource.data;
-    if ( angle >= 360 ) return true;
-    const point = test.point;
-    const dx = point.x - visionSource.x;
-    const dy = point.y - visionSource.y;
-    if ( (dx * dx) + (dy * dy) <= (externalRadius * externalRadius) ) return true;
-    const aMin = rotation + 90 - (angle / 2);
-    const a = Math.toDegrees(Math.atan2(dy, dx));
-    return (((a - aMin) % 360) + 360) % 360 <= angle;
   }
 
   /* -------------------------------------------- */
@@ -198,8 +163,8 @@ class DetectionModeBasicSight extends DetectionMode {
     if ( !this._testLOS(visionSource, mode, target, test) ) return false;
     if ( this._testRange(visionSource, mode, target, test) ) return true;
     for ( const lightSource of canvas.effects.lightSources.values() ) {
-      if ( !lightSource.active ) continue;
-      if ( lightSource.shape.contains(test.point.x, test.point.y) ) return true;
+      if ( !lightSource.active || lightSource.disabled ) continue;
+      if ( lightSource.los.contains(test.point.x, test.point.y) ) return true;
     }
     return false;
   }

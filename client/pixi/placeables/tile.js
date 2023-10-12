@@ -15,18 +15,15 @@ class Tile extends PlaceableObject {
   /** @inheritdoc */
   static embeddedName = "Tile";
 
-  /** @override */
-  static RENDER_FLAGS = {
-    redraw: {propagate: ["refresh"]},
-    refresh: {propagate: ["refreshState", "refreshShape", "refreshElevation", "refreshVideo"],
-      alias: true},
-    refreshState: {propagate: ["refreshFrame"]},
-    refreshShape: {propagate: ["refreshMesh", "refreshPerception", "refreshFrame"]},
-    refreshMesh: {},
-    refreshFrame: {},
-    refreshElevation: {propagate: ["refreshMesh"]},
-    refreshPerception: {},
-    refreshVideo: {},
+  /**
+   * Roof types
+   * @enum {number}
+   */
+  static ROOF_TYPES = {
+    OCCLUSION: 0,
+    BACKGROUND: 1,
+    ILLUMINATION: 2,
+    COLORATION: 3
   };
 
   /**
@@ -56,17 +53,39 @@ class Tile extends PlaceableObject {
   bg;
 
   /**
+   * Contains :
+   * - the bounds of the tile data
+   * - the cached mapping of non-transparent pixels (if roof)
+   * - the filtered render texture (if roof)
+   * @type {{minX: number, minY: number, maxX: number, maxY: number, pixels: Uint8Array, texture: PIXI.RenderTexture}}
+   * @private
+   */
+  _textureData;
+
+  /**
+   * A map of all linked sprite(s) to this tile
+   * @type {Map<number,PIXI.Sprite>}
+   * @private
+   */
+  _linkedSprites = new Map();
+
+  /**
+   * A flag which tracks whether the overhead tile is currently in an occluded state
+   * @type {boolean}
+   */
+  occluded = false;
+
+  /**
+   * A flag which tracks occluded state change for roof
+   * @type {boolean}
+   */
+  _prevOccludedState = false;
+
+  /**
    * A flag which tracks if the Tile is currently playing
    * @type {boolean}
    */
-  playing = false;
-
-  /**
-   * The true computed bounds of the Tile.
-   * These true bounds are padded when the Tile is controlled to assist with interaction.
-   * @type {PIXI.Rectangle}
-   */
-  #bounds;
+  playing = this.document.video.autoplay;
 
   /**
    * A flag to capture whether this Tile has an unlinked video texture
@@ -75,19 +94,17 @@ class Tile extends PlaceableObject {
   #unlinkedVideo = false;
 
   /**
-   * Video options passed by the HUD
-   * @type {object}
+   * Debounce assignment of the Tile occluded state to avoid cases like animated token movement which can rapidly
+   * change Tile appearance.
+   * Uses a 100ms debounce threshold.
+   * @type {function(occluded: boolean): void}
    */
-  #hudVideoOptions = {
-    playVideo: undefined,
-    offset: undefined
-  };
-
-  /**
-   * Keep track the roof state so that we know when it has changed.
-   * @type {boolean}
-   */
-  #wasRoof = this.isRoof;
+  debounceSetOcclusion = foundry.utils.debounce(occluded => {
+    this.occluded = occluded;
+    this.#refreshOcclusion();
+    // This hook is called here redundantly as a special case to allow modules to react when rendered occlusion changes
+    Hooks.callAll("refreshTile", this);
+  }, 50);
 
   /* -------------------------------------------- */
 
@@ -160,16 +177,6 @@ class Tile extends PlaceableObject {
   /* -------------------------------------------- */
 
   /**
-   * Is this tile occluded?
-   * @returns {boolean}
-   */
-  get occluded() {
-    return this.mesh?.occluded ?? false;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
    * The effective volume at which this Tile should be playing, including the global ambient volume modifier
    * @type {number}
    */
@@ -179,13 +186,6 @@ class Tile extends PlaceableObject {
 
   /* -------------------------------------------- */
   /*  Rendering                                   */
-  /* -------------------------------------------- */
-
-  /**
-   * Debounce assignment of the Tile occluded state to avoid cases like animated token movement which can rapidly
-   */
-  debounceSetOcclusion = occluded => this.mesh?.debounceOcclusion(occluded);
-
   /* -------------------------------------------- */
 
   /**
@@ -214,32 +214,37 @@ class Tile extends PlaceableObject {
   /* -------------------------------------------- */
 
   /** @override */
-  async _draw(options={}) {
+  async _draw() {
+    let texture = null;
 
-    // Load Tile texture
-    let texture;
-    if ( this._original ) texture = this._original.texture?.clone();
+    // Copy tile texture from its original
+    if ( this.isPreview ) texture = this._original.texture?.clone();
+
+    // Load tile texture
     else if ( this.document.texture.src ) {
       texture = await loadTexture(this.document.texture.src, {fallback: "icons/svg/hazard.svg"});
-    }
 
-    // Manage video playback and clone texture for unlinked video
-    let video = game.video.getVideoSource(texture);
-    this.#unlinkedVideo = !!video && !this._original;
-    if ( this.#unlinkedVideo ) {
-      texture = await game.video.cloneTexture(video);
-      video = game.video.getVideoSource(texture);
-      if ( (this.document.getFlag("core", "randomizeVideo") !== false) && Number.isFinite(video.duration) ) {
-        video.currentTime = Math.random() * video.duration;
+      // Manage video playback
+      let video = game.video.getVideoSource(texture);
+      this.#unlinkedVideo = video && !this._original;
+      if ( video ) {
+        const playOptions = foundry.utils.deepClone(this.document.video);
+        playOptions.playing = this.playing;
+        if ( this.#unlinkedVideo ) {  // Unlink video playback
+          texture = await game.video.cloneTexture(video);
+          video = game.video.getVideoSource(texture);
+          if ( playOptions.autoplay ) playOptions.offset = Math.random() * video.duration;
+        }
+        game.video.play(video, playOptions);
       }
     }
-    if ( !video ) this.#hudVideoOptions.playVideo = undefined;
-    this.#hudVideoOptions.offset = undefined;
     this.texture = texture;
 
     // Draw the Token mesh
     if ( this.texture ) {
       this.mesh = canvas.primary.addTile(this);
+      this.mesh.setShaderClass(InverseOcclusionSamplerShader);
+      this.mesh.shader.enabled = false;
       this.bg = undefined;
     }
 
@@ -255,17 +260,21 @@ class Tile extends PlaceableObject {
     this.frame.border = this.frame.addChild(new PIXI.Graphics());
     this.frame.handle = this.frame.addChild(new ResizeHandle([1, 1]));
 
-    // Interactivity
-    this.cursor = "pointer";
-  }
+    // Refresh perception
+    this._refreshPerception();
 
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  clear(options) {
-    if ( this.#unlinkedVideo ) this.texture?.baseTexture?.destroy(); // Base texture destroyed for non preview video
-    this.#unlinkedVideo = false;
-    super.clear(options);
+    // The following options do not apply to preview tiles
+    if ( this.id && this.parent ) {
+      // Special preparation for overhead tiles
+      if ( this.document.overhead && this.mesh ) {
+        this._createTextureData();
+        this.mesh.shader.enabled = true;
+      }
+      // Special preparation for background tiles
+      else if ( this.mesh ) {
+        this.mesh.shader.enabled = false;
+      }
+    }
   }
 
   /* -------------------------------------------- */
@@ -273,124 +282,117 @@ class Tile extends PlaceableObject {
   /** @inheritdoc */
   _destroy(options) {
     canvas.primary.removeTile(this);
-    if ( this.texture ) {
-      if ( this.#unlinkedVideo ) this.texture?.baseTexture?.destroy(); // Base texture destroyed for non preview video
-      this.texture = undefined;
-      this.#unlinkedVideo = false;
-    }
-    canvas.perception.update({
-      refreshTiles: true,
-      identifyInteriorWalls: (this.isRoof || this.#wasRoof) && !this.isPreview
-    });
+    // Handling disposal of an hypothetical texture
+    if ( !this.texture ) return;
+    this.texture.destroy(this.#unlinkedVideo); // Base texture destroyed for non preview video
+    this.texture = undefined;
+    this.#unlinkedVideo = false;
   }
 
   /* -------------------------------------------- */
-  /*  Incremental Refresh                         */
+
+  /**
+   * Refresh the appearance of the occlusion state for tiles which are affected by a Token beneath them.
+   * @private
+   */
+  #refreshOcclusion() {
+    if ( !this.mesh ) return;
+    const {alpha, elevation, hidden, occlusion, overhead} = this.document;
+    this.mesh.shader.enabled = true;
+    const alphaOverhead = canvas.tiles.displayRoofs ? alpha : 0.5;
+    const alphaNormal = hidden ? 0.25 : (overhead ? alphaOverhead : alpha);
+    const alphaOccluded = this.occluded ? occlusion.alpha : 1.0;
+
+    // Tracking if roof has an occlusion state change to initialize vision
+    if ( this._prevOccludedState !== this.occluded ) {
+      canvas.perception.update({initializeVision: true}, true);
+      this._prevOccludedState = this.occluded;
+    }
+
+    // Other modes
+    const mode = occlusion.mode;
+    const modes = CONST.TILE_OCCLUSION_MODES;
+    switch ( mode ) {
+
+      // Tile Always Visible
+      case modes.NONE:
+        this.mesh.shader.enabled = false;
+        this.mesh.alpha = alphaNormal;
+        break;
+
+      // Fade Entire Tile
+      case modes.FADE:
+        this.mesh.shader.enabled = false;
+        this.mesh.alpha = Math.min(alphaNormal, alphaOccluded);
+        break;
+
+      // Radial Occlusion
+      case modes.RADIAL:
+        this.mesh.shader.enabled = this.occluded && !hidden;
+        this.mesh.shader.uniforms.alpha = alphaNormal;
+        this.mesh.shader.uniforms.alphaOcclusion = alphaOccluded;
+        this.mesh.shader.uniforms.depthElevation = canvas.primary.mapElevationAlpha(elevation);
+        this.mesh.alpha = this.occluded ? 1.0 : alphaNormal;
+        break;
+
+      // Vision-Based Occlusion
+      case modes.VISION:
+        const visionEnabled = !hidden && (canvas.effects.visionSources.size > 0);
+        this.mesh.shader.enabled = visionEnabled;
+        this.mesh.shader.uniforms.alpha = alphaNormal;
+        this.mesh.shader.uniforms.alphaOcclusion = occlusion.alpha;
+        this.mesh.shader.uniforms.depthElevation = canvas.primary.mapElevationAlpha(elevation);
+        this.mesh.alpha = this.occluded ? (visionEnabled ? 1.0 : alphaOccluded) : alphaNormal;
+        break;
+    }
+  }
+
   /* -------------------------------------------- */
 
   /** @override */
-  _applyRenderFlags(flags) {
-    if ( flags.refreshShape ) this.#refreshShape();
-    if ( flags.refreshFrame ) this.#refreshFrame();
-    if ( flags.refreshElevation ) this.#refreshElevation();
-    if ( flags.refreshVideo ) this.#refreshVideo();
-    if ( flags.refreshState ) this.#refreshState();
-    if ( flags.refreshMesh ) this.#refreshMesh();
-    if ( flags.refreshPerception ) this.#refreshPerception();
-  }
+  _refresh(options) {
+    const aw = Math.abs(this.document.width);
+    const ah = Math.abs(this.document.height);
+    const r = Math.toRadians(this.document.rotation);
 
-  /* -------------------------------------------- */
+    // Update tile appearance
+    this.position.set(this.document.x, this.document.y);
 
-  /**
-   * Refresh the Primary Canvas Object associated with this tile.
-   */
-  #refreshMesh() {
-    if ( !this.mesh ) return;
-    this.mesh.initialize(this.document);
-    this.mesh.alpha = Math.min(this.mesh.alpha, this.alpha);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the displayed state of the Tile.
-   * Updated when the tile interaction state changes, when it is hidden, or when it changes overhead state.
-   */
-  #refreshState() {
-    const {hidden, locked} = this.document;
-    this.visible = !hidden || game.user.isGM;
-    this.alpha = this._getTargetAlpha();
-    this.frame.border.visible = this.controlled || this.hover || this.layer.highlightObjects;
-    this.frame.handle.visible = this.controlled && !locked;
-    this.mesh?.initialize({hidden});
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the displayed shape and bounds of the Tile.
-   * Called when the tile location, size, rotation, or other visible attributes are modified.
-   */
-  #refreshShape() {
-    const {x, y, width, height, rotation} = this.document;
-
-    // Compute true bounds
-    const aw = Math.abs(width);
-    const ah = Math.abs(height);
-    const r = Math.toRadians(rotation);
-    this.#bounds = (aw === ah)
-      ? new PIXI.Rectangle(0, 0, aw, ah)                // Square tiles
-      : PIXI.Rectangle.fromRotation(0, 0, aw, ah, r);   // Non-square tiles
-    this.#bounds.normalize();
-
-    // TODO: Temporary FIX for the quadtree (The HitArea need a local bound => w and h, while the quadtree need global bounds)
-    // TODO: We need an easy way to get local and global bounds for every placeable object
-    const globalBounds = new PIXI.Rectangle(x, y, aw + x, ah + y);
-
-    // Set position
-    this.position.set(x, y);
-
-    // Refresh hit area
-    this.hitArea = this.#bounds.clone().pad(20);
+    // Refresh the Tile mesh
+    if ( this.mesh ) this.mesh.refresh();
 
     // Refresh temporary background
-    if ( !this.mesh && this.bg ) this.bg.clear().beginFill(0xFFFFFF, 0.5).drawRect(0, 0, aw, ah).endFill();
+    else if ( this.bg ) this.bg.clear().beginFill(0xFFFFFF, 0.5).drawRect(0, 0, aw, ah).endFill();
+
+    // Refresh occlusion appearance
+    if ( this.mesh ) {
+      this.#refreshOcclusion();
+    }
+
+    // Define bounds and update the border frame
+    let bounds = (aw === ah) ? new PIXI.Rectangle(0, 0, aw, ah) // Square tiles
+      : PIXI.Rectangle.fromRotation(0, 0, aw, ah, r);           // Non-square tiles
+    bounds.normalize();
+    this.hitArea = this.controlled ? bounds.clone().pad(20) : bounds;
+    if ( this.frame ) {
+      const {scaleX, scaleY} = this.document.texture;
+      this._refreshBorder(bounds);
+      this._refreshHandle(bounds, {scaleX, scaleY});
+    }
+
+    // Set visibility
+    this.visible = !this.document.hidden || game.user.isGM;
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Update sorting of this Tile relative to other PrimaryCanvasGroup siblings.
-   * Called when the elevation or sort order for the Tile changes.
+   * Refresh the display of the Tile border
+   * @param {PIXI.Rectangle} b      The bounds.
+   * @private
    */
-  #refreshElevation() {
-    this.zIndex = this.document.sort;
-    this.parent.sortDirty = true;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Update interior wall states.
-   * Refresh lighting and vision to reflect changes in overhead tiles.
-   */
-  #refreshPerception() {
-    const wasRoof = this.#wasRoof;
-    const isRoof = this.#wasRoof = this.isRoof;
-    canvas.perception.update({
-      refreshTiles: true,
-      identifyInteriorWalls: (isRoof || wasRoof) && !this.isPreview
-    });
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Refresh the border frame that encloses the Tile.
-   */
-  #refreshFrame() {
+  _refreshBorder(b) {
     const border = this.frame.border;
-    const b = this.#bounds;
 
     // Determine border color
     const colors = CONFIG.Canvas.dispositionColors;
@@ -406,93 +408,314 @@ class Tile extends PlaceableObject {
     border.clear()
       .lineStyle(t, 0x000000, 1.0).drawRoundedRect(b.x - o, b.y - o, b.width + h, b.height + h, 3)
       .lineStyle(h, bc, 1.0).drawRoundedRect(b.x - o, b.y - o, b.width + h, b.height + h, 3);
-
-    // Refresh drag handle
-    this._refreshHandle();
+    border.visible = this.hover || this.controlled;
   }
 
+  /* -------------------------------------------- */
+  /*  Methods                                     */
   /* -------------------------------------------- */
 
   /**
    * Refresh the display of the Tile resizing handle.
-   * Shift the position of the drag handle from the bottom-right (default) depending on which way we are dragging.
+   * @param {PIXI.Rectangle} b         The bounds.
+   * @param {object} [options]
+   * @param {number} [options.scaleX]
+   * @param {number} [options.scaleY]
    * @protected
    */
-  _refreshHandle() {
-    let b = this.#bounds.clone();
+  _refreshHandle(b, {scaleX=1, scaleY=1}={}) {
     if ( this._dragHandle ) {
-      const {scaleX, scaleY} = this.document.texture;
+      // When resizing
       if ( Math.sign(scaleX) === Math.sign(this._dragScaleX) ) b.width = b.x;
       if ( Math.sign(scaleY) === Math.sign(this._dragScaleY) ) b.height = b.y;
     }
     this.frame.handle.refresh(b);
+    this.frame.handle.visible = this.controlled && !this.document.locked;
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Refresh changes to the video playback state.
+   * Test whether a specific Token occludes this overhead tile.
+   * Occlusion is tested against 9 points, the center, the four corners-, and the four cardinal directions
+   * @param {Token} token       The Token to test
+   * @param {object} [options]  Additional options that affect testing
+   * @param {boolean} [options.corners=true]  Test corners of the hit-box in addition to the token center?
+   * @returns {boolean}         Is the Token occluded by the Tile?
    */
-  #refreshVideo() {
-    if ( !this.texture || !this.#unlinkedVideo ) return;
-    const video = game.video.getVideoSource(this.texture);
-    if ( !video ) return;
-    const playOptions = {...this.document.video};
-    playOptions.playing = this.playing = (this.#hudVideoOptions.playVideo ?? playOptions.autoplay);
-    playOptions.offset = this.#hudVideoOptions.offset;
-    this.#hudVideoOptions.offset = undefined;
-    game.video.play(video, playOptions);
-
-    // Refresh HUD if necessary
-    if ( this.layer.hud.object === this ) this.layer.hud.render();
+  testOcclusion(token, {corners=true}={}) {
+    const {elevation, occlusion} = this.document;
+    if ( occlusion.mode === CONST.TILE_OCCLUSION_MODES.NONE ) return false;
+    if ( token.document.elevation >= elevation ) return false;
+    const {x, y, w, h} = token;
+    let testPoints = [[w / 2, h / 2]];
+    if ( corners ) {
+      const pad = 2;
+      const cornerPoints = [
+        [pad, pad],
+        [w / 2, pad],
+        [w - pad, pad],
+        [w - pad, h / 2],
+        [w - pad, h - pad],
+        [w / 2, h - pad],
+        [pad, h - pad],
+        [pad, h / 2]
+      ];
+      testPoints = testPoints.concat(cornerPoints);
+    }
+    for ( const [tx, ty] of testPoints ) {
+      if ( this.containsPixel(x + tx, y + ty) ) return true;
+    }
+    return false;
   }
 
   /* -------------------------------------------- */
-  /*  Document Event Handlers                     */
+
+  /**
+   * Test whether the Tile pixel data contains a specific point in canvas space
+   * @param {number} x
+   * @param {number} y
+   * @param {number} alphaThreshold     Value from which the pixel is taken into account, in the range [0, 1].
+   * @returns {boolean}
+   */
+  containsPixel(x, y, alphaThreshold = 0.75) {
+    return this.getPixelAlpha(x, y) > (alphaThreshold * 255);
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Get alpha value at specific canvas coordinate.
+   * @param {number} x
+   * @param {number} y
+   * @returns {number|null}    The alpha value (-1 if outside of the bounds) or null if no mesh or texture is present.
+   */
+  getPixelAlpha(x, y) {
+    if ( !this._textureData?.pixels || !this.mesh ) return null;
+    const textureCoord = this.#getTextureCoordinate(x, y);
+    return this.#getPixelAlpha(textureCoord.x, textureCoord.y);
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Get tile alpha map texture coordinate with canvas coordinate
+   * @param {number} testX               Canvas x coordinate.
+   * @param {number} testY               Canvas y coordinate.
+   * @returns {object}          The texture {x, y} coordinates, or null if not able to do the conversion.
+   */
+  #getTextureCoordinate(testX, testY) {
+    const {x, y, width, height, rotation, texture} = this.document;
+    const mesh = this.mesh;
+
+    // Save scale properties
+    const sscX = Math.sign(texture.scaleX);
+    const sscY = Math.sign(texture.scaleY);
+    const ascX = Math.abs(texture.scaleX);
+    const ascY = Math.abs(texture.scaleY);
+
+    // Adjusting point by taking scale into account
+    testX -= (x - ((width / 2) * sscX * (ascX - 1)));
+    testY -= (y - ((height / 2) * sscY * (ascY - 1)));
+
+    // Mirroring the point on x/y axis if scale is negative
+    if ( sscX < 0 ) testX = (width - testX);
+    if ( sscY < 0 ) testY = (height - testY);
+
+    // Account for tile rotation and scale
+    if ( rotation !== 0 ) {
+      // Anchor is recomputed with scale and document dimensions
+      const anchor = {
+        x: mesh.anchor.x * width * ascX,
+        y: mesh.anchor.y * height * ascY
+      };
+      let r = new Ray(anchor, {x: testX, y: testY});
+      r = r.shiftAngle(-mesh.rotation * sscX * sscY); // Reverse rotation if scale is negative for just one axis
+      testX = r.B.x;
+      testY = r.B.y;
+    }
+
+    // Convert to texture data coordinates
+    testX *= (this._textureData.aw / mesh.width);
+    testY *= (this._textureData.ah / mesh.height);
+
+    return {x: testX, y: testY};
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Get alpha value at specific texture coordinate.
+   * @param {number} x
+   * @param {number} y
+   * @returns {number}   The alpha value (or -1 if outside of the bounds).
+   */
+  #getPixelAlpha(x, y) {
+    // First test against the bounding box
+    if ( (x < this._textureData.minX) || (x >= this._textureData.maxX) ) return -1;
+    if ( (y < this._textureData.minY) || (y >= this._textureData.maxY) ) return -1;
+
+    // Next test a specific pixel
+    const px = (Math.floor(y) * Math.roundFast(Math.abs(this._textureData.aw))) + Math.floor(x);
+    return this._textureData.pixels[px];
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Process the tile texture :
+   * Use the texture to create a cached mapping of pixel alpha for this Tile with real base texture size.
+   * Cache the bounding box of non-transparent pixels for the un-rotated shape.
+   * @returns {{minX: number, minY: number, maxX: number, maxY: number, pixels: Uint8Array|undefined}}
+   * @private
+   */
+  _createTextureData() {
+    const aw = Math.abs(this.document.width);
+    const ah = Math.abs(this.document.height);
+
+    // If no tile texture is present or if non overhead tile.
+    if ( !this.texture || this.document.overhead === false ) {
+      return this._textureData = {minX: 0, minY: 0, maxX: aw, maxY: ah};
+    }
+
+    // If texture date exists for this texture, we return it
+    this._textureData = canvas.tiles.textureDataMap.get(this.document.texture.src);
+    if ( this._textureData ) return this._textureData;
+    else this._textureData = {
+      pixels: undefined,
+      minX: undefined,
+      maxX: undefined,
+      minY: undefined,
+      maxY: undefined
+    };
+    // Else, we are preparing the texture data creation
+    const map = this._textureData;
+
+    // Create a temporary Sprite using the Tile texture
+    const sprite = new PIXI.Sprite(this.texture);
+    sprite.width = map.aw = this.texture.baseTexture.realWidth / 4;
+    sprite.height = map.ah = this.texture.baseTexture.realHeight / 4;
+    sprite.anchor.set(0.5, 0.5);
+    sprite.position.set(map.aw / 2, map.ah / 2);
+
+    // Create or update the alphaMap render texture
+    const tex = PIXI.RenderTexture.create({width: map.aw, height: map.ah});
+
+    // Render the sprite to the texture and extract its pixels
+    // Destroy sprite and texture when they are no longer needed
+    canvas.app.renderer.render(sprite, tex);
+    sprite.destroy(false);
+    const pixels = map.pixels = canvas.app.renderer.extract.pixels(tex);
+    tex.destroy(true);
+
+    // Map the alpha pixels
+    for ( let i = 0; i < pixels.length; i += 4 ) {
+      const n = i / 4;
+      const a = map.pixels[n] = pixels[i + 3];
+      if ( a > 0 ) {
+        const x = n % map.aw;
+        const y = Math.floor(n / map.aw);
+        if ( (map.minX === undefined) || (x < map.minX) ) map.minX = x;
+        else if ( (map.maxX === undefined) || (x + 1 > map.maxX) ) map.maxX = x + 1;
+        if ( (map.minY === undefined) || (y < map.minY) ) map.minY = y;
+        else if ( (map.maxY === undefined) || (y + 1 > map.maxY) ) map.maxY = y + 1;
+      }
+    }
+
+    // Saving the texture data
+    canvas.tiles.textureDataMap.set(this.document.texture.src, map);
+    return this._textureData;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Compute the alpha-based bounding box for the tile, including an angle of rotation.
+   * @returns {PIXI.Rectangle}
+   * @private
+   */
+  _getAlphaBounds() {
+    const m = this._textureData;
+    const r = Math.toRadians(this.document.rotation);
+    return PIXI.Rectangle.fromRotation(m.minX, m.minY, m.maxX - m.minX, m.maxY - m.minY, r).normalize();
+  }
+
+  /* -------------------------------------------- */
+  /*  Event Handlers                              */
   /* -------------------------------------------- */
 
   /** @override */
-  _onUpdate(data, options, userId) {
-    super._onUpdate(data, options, userId);
-
-    if ( this.layer.hud.object === this ) this.layer.hud.render();
-
-    // Video options from the HUD
-    this.#hudVideoOptions.playVideo = options.playVideo;
-    this.#hudVideoOptions.offset = options.offset;
-
+  _onUpdate(data, options={}, userId) {
     const keys = Object.keys(foundry.utils.flattenObject(data));
     const changed = new Set(keys);
 
-    // Full re-draw
-    if ( changed.has("texture.src") ) return this.renderFlags.set({redraw: true});
+    // Re-draw the image
+    if ( changed.has("texture.src") ) return this.draw();
 
-    // Incremental Refresh
-    const shapeChange = ["width", "height", "texture.scaleX", "texture.scaleY"].some(k => changed.has(k));
+    // Prepare texture if change in overhead data
+    const overheadChange = changed.has("overhead");
+    if ( overheadChange ) this._createTextureData();
+
+    // Update quadtree position
     const positionChange = ["x", "y", "rotation"].some(k => changed.has(k));
-    const overheadChange = ["overhead", "roof", "z"].some(k => changed.has(k));
-    this.renderFlags.set({
-      refreshState: ["hidden", "locked"].some(k => changed.has(k)),
-      refreshShape: positionChange || shapeChange,
-      refreshMesh: ("texture" in data) || ("alpha" in data) || overheadChange || ("occlusion" in data),
-      refreshElevation: overheadChange,
-      refreshPerception: overheadChange || changed.has("occlusion.mode") || changed.has("hidden"),
-      refreshVideo: ("video" in data) || ("playVideo" in options) || ("offset" in options)
-    });
+    const shapeChange = ["width", "height"].some(k => changed.has(k));
+    if ( shapeChange || positionChange ) this.layer.quadtree.update({r: this.bounds, t: this});
+
+    // Refresh the tile display
+    this.refresh();
+
+    // Elevation and sorting changes
+    if ( overheadChange || changed.has("z") ) {
+      this.parent.sortDirty = canvas.primary.sortDirty = true;
+    }
+
+    // Refresh tile occlusion
+    const occlusionChange = ["overhead", "occlusion.mode"].some(k => changed.has(k));
+    const textureChange = overheadChange || changed.has("hidden") || shapeChange || occlusionChange;
+    if ( textureChange || (this.isRoof && positionChange) ) this._refreshPerception();
+
+    // Start or Stop Video
+    if ( ("video" in data) || ("playVideo" in options) ) {
+      const video = game.video.getVideoSource(this.texture);
+      if ( video ) {
+        const playOptions = this.document.video;
+        this.playing = playOptions.playing = options.playVideo ?? playOptions.autoplay;
+        playOptions.offset = this.playing ? options.offset : null;
+        game.video.play(video, playOptions);
+      }
+      if ( this.layer.hud.object === this ) this.layer.hud.render();
+    }
   }
 
   /* -------------------------------------------- */
   /*  Interactivity                               */
   /* -------------------------------------------- */
 
+  /**
+   * Update wall states and refresh lighting and vision when a tile becomes a roof, or when an existing roof tile's
+   * state changes.
+   * @private
+   */
+  _refreshPerception() {
+    canvas.walls.identifyInteriorWalls();
+    canvas.perception.update({
+      initializeLighting: true,
+      initializeVision: true,
+      forceUpdateFog: true,
+      refreshTiles: true
+    }, true);
+  }
+
+  /* -------------------------------------------- */
+
   /** @inheritdoc */
   activateListeners() {
     super.activateListeners();
-    this.frame.handle.off("pointerover").off("pointerout").off("pointerdown")
-      .on("pointerover", this._onHandleHoverIn.bind(this))
-      .on("pointerout", this._onHandleHoverOut.bind(this))
-      .on("pointerdown", this._onHandleMouseDown.bind(this));
-    this.frame.handle.eventMode = "static";
+    this.frame.handle.off("mouseover").off("mouseout").off("mousedown")
+      .on("mouseover", this._onHandleHoverIn.bind(this))
+      .on("mouseout", this._onHandleHoverOut.bind(this))
+      .on("mousedown", this._onHandleMouseDown.bind(this));
+    this.frame.handle.interactive = true;
   }
 
   /* -------------------------------------------- */
@@ -506,8 +729,17 @@ class Tile extends PlaceableObject {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
+  _onHoverOut(event) {
+    // Force resize handle to normal size
+    if ( event.data.handle ) this._onHandleHoverOut(event);
+    return super._onHoverOut(event);
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritdoc */
   _onClickLeft(event) {
-    if ( this._dragHandle ) return event.stopPropagation();
+    if ( this._dragHandle ) return;
     return super._onClickLeft(event);
   }
 
@@ -533,7 +765,7 @@ class Tile extends PlaceableObject {
   _onDragLeftMove(event) {
     if ( this._dragHandle ) return this._onHandleDragMove(event);
     if ( this._dragPassthrough ) return canvas._onDragLeftMove(event);
-    const {clones, destination, origin} = event.interactionData;
+    const {clones, destination, origin} = event.data;
     const dx = destination.x - origin.x;
     const dy = destination.y - origin.y;
     for ( let c of clones || [] ) {
@@ -547,9 +779,26 @@ class Tile extends PlaceableObject {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  async _onDragLeftDrop(event) {
-    if ( this._dragHandle ) return await this._onHandleDragDrop(event);
-    return await super._onDragLeftDrop(event);
+  _onDragLeftDrop(event) {
+    if ( this._dragHandle ) return this._onHandleDragDrop(event);
+    return super._onDragLeftDrop(event);
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritDoc */
+  _onDragStart() {
+    super._onDragStart();
+    const o = this._original;
+    if ( o.mesh ) o.mesh.alpha = o.alpha;
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritDoc */
+  _onDragEnd() {
+    super._onDragEnd();
+    this._original?.mesh?.refresh();
   }
 
   /* -------------------------------------------- */
@@ -566,31 +815,32 @@ class Tile extends PlaceableObject {
 
   /**
    * Handle mouse-over event on a control handle
-   * @param {PIXI.FederatedEvent} event   The mouseover event
+   * @param {PIXI.InteractionEvent} event   The mouseover event
    * @protected
    */
   _onHandleHoverIn(event) {
     const handle = event.target;
-    handle?.scale.set(1.5, 1.5);
+    handle.scale.set(1.5, 1.5);
+    event.data.handle = event.target;
   }
 
   /* -------------------------------------------- */
 
   /**
    * Handle mouse-out event on a control handle
-   * @param {PIXI.FederatedEvent} event   The mouseout event
+   * @param {PIXI.InteractionEvent} event   The mouseout event
    * @protected
    */
   _onHandleHoverOut(event) {
-    const handle = event.target;
-    handle?.scale.set(1.0, 1.0);
+    const {handle} = event.data;
+    handle.scale.set(1.0, 1.0);
   }
 
   /* -------------------------------------------- */
 
   /**
-   * When clicking the resize handle, initialize the handle properties.
-   * @param {PIXI.FederatedEvent} event   The mousedown event
+   * When we start a drag event - create a preview copy of the Tile for re-positioning
+   * @param {PIXI.InteractionEvent} event   The mousedown event
    * @protected
    */
   _onHandleMouseDown(event) {
@@ -604,29 +854,31 @@ class Tile extends PlaceableObject {
   /* -------------------------------------------- */
 
   /**
-   * Handle the beginning of a drag event on a resize handle.
-   * @param {PIXI.FederatedEvent} event   The mousedown event
+   * Handle the beginning of a drag event on a resize handle
+   * @param {PIXI.InteractionEvent} event   The mousedown event
    * @protected
    */
   _onHandleDragStart(event) {
-    const handle = this.frame.handle;
+    const {handle} = event.data;
     const aw = this.document.width;
     const ah = this.document.height;
     const x0 = this.document.x + (handle.offset[0] * aw);
     const y0 = this.document.y + (handle.offset[1] * ah);
-    event.interactionData.origin = {x: x0, y: y0, width: aw, height: ah};
+    event.data.origin = {x: x0, y: y0, width: aw, height: ah};
   }
 
   /* -------------------------------------------- */
 
   /**
    * Handle mousemove while dragging a tile scale handler
-   * @param {PIXI.FederatedEvent} event   The mousemove event
+   * @param {PIXI.InteractionEvent} event   The mousemove event
    * @protected
    */
   _onHandleDragMove(event) {
-    canvas._onDragCanvasPan(event);
-    const d = this.#getResizedDimensions(event);
+    const {destination, origin, originalEvent} = event.data;
+
+    canvas._onDragCanvasPan(originalEvent);
+    const d = this._getResizedDimensions(originalEvent, origin, destination);
     this.document.x = d.x;
     this.document.y = d.y;
     this.document.width = d.width;
@@ -636,24 +888,23 @@ class Tile extends PlaceableObject {
     // Mirror horizontally or vertically
     this.document.texture.scaleX = d.sx;
     this.document.texture.scaleY = d.sy;
-    this.renderFlags.set({refreshShape: true});
+    this.refresh();
   }
 
   /* -------------------------------------------- */
 
   /**
    * Handle mouseup after dragging a tile scale handler
-   * @param {PIXI.FederatedEvent} event   The mouseup event
+   * @param {PIXI.InteractionEvent} event   The mouseup event
    * @protected
    */
   _onHandleDragDrop(event) {
-    event.interactionData.resetDocument = false;
-    if ( !event.shiftKey ) {
-      const destination = event.interactionData.destination;
-      event.interactionData.destination =
-        canvas.grid.getSnappedPosition(destination.x, destination.y, this.layer.gridPrecision);
+    let {destination, origin, originalEvent} = event.data;
+    if ( !originalEvent.shiftKey ) {
+      destination = canvas.grid.getSnappedPosition(destination.x, destination.y, this.layer.gridPrecision);
     }
-    const d = this.#getResizedDimensions(event);
+
+    const d = this._getResizedDimensions(originalEvent, origin, destination);
     return this.document.update({
       x: d.x, y: d.y, width: d.width, height: d.height, "texture.scaleX": d.sx, "texture.scaleY": d.sy
     });
@@ -663,12 +914,11 @@ class Tile extends PlaceableObject {
 
   /**
    * Get resized Tile dimensions
-   * @param {PIXI.FederatedEvent} event
    * @returns {Rectangle}
+   * @private
    */
-  #getResizedDimensions(event) {
+  _getResizedDimensions(event, origin, destination) {
     const o = this.document._source;
-    const {origin, destination} = event.interactionData;
 
     // Identify the new width and height as positive dimensions
     const dx = destination.x - origin.x;
@@ -694,15 +944,12 @@ class Tile extends PlaceableObject {
 
   /**
    * Handle cancellation of a drag event for one of the resizing handles
-   * @param {PIXI.FederatedEvent} event   The mouseup event
    * @protected
    */
-  _onHandleDragCancel(event) {
+  _onHandleDragCancel() {
+    this.document.reset();
     this._dragHandle = false;
-    if ( event.interactionData.resetDocument !== false ) {
-      this.document.reset();
-      this.renderFlags.set({refreshShape: true});
-    }
+    this.refresh();
   }
 
   /* -------------------------------------------- */
@@ -713,57 +960,8 @@ class Tile extends PlaceableObject {
    * @deprecated since v10
    * @ignore
    */
-  // eslint-disable-next-line no-dupe-class-members
   get tile() {
     foundry.utils.logCompatibilityWarning("Tile#tile has been renamed to Tile#mesh.", {since: 10, until: 12});
     return this.mesh;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  testOcclusion(...args) {
-    const msg = "Tile#testOcclusion has been deprecated in favor of PrimaryCanvasObject#testOcclusion"
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return this.mesh?.testOcclusion(...args) ?? false;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  containsPixel(...args) {
-    const msg = "Tile#containsPixel has been deprecated in favor of PrimaryCanvasObject#containsPixel"
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return this.mesh?.containsPixel(...args) ?? false;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  getPixelAlpha(...args) {
-    const msg = "Tile#getPixelAlpha has been deprecated in favor of PrimaryCanvasObject#getPixelAlpha"
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return this.mesh?.getPixelAlpha(...args) ?? null;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  _getAlphaBounds() {
-    const msg = "Tile#_getAlphaBounds has been deprecated in favor of PrimaryCanvasObject#_getAlphaBounds"
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return this.mesh?._getAlphaBounds();
   }
 }

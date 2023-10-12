@@ -75,6 +75,17 @@ class BaseMeasuredTemplate extends Document {
     }
   }
 
+  /** @inheritdoc */
+  _validateModel(data) {
+    const scene = this.parent;
+    if ( !scene ) return;
+    const max = Math.hypot(scene.width, scene.height);
+    for ( let f of ["distance", "width"] ) {
+      const px = data[f] * (scene.grid.size / scene.grid.distance);
+      if ( px > max ) throw new Error(`Invalid MeasuredTemplate ${f} which exceeds maximum dimensions for the Scene`);
+    }
+  }
+
   /* ---------------------------------------- */
 
   /**

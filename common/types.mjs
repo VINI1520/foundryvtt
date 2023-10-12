@@ -155,7 +155,8 @@
  * @property {string} [type]          The type of object being modified
  * @property {RequestData} [data]     Data applied to the operation
  * @property {string} [pack]          A Compendium pack name
- * @property {string} [parentUuid]    The UUID of a parent document
+ * @property {string} [parentType]    The type of parent document
+ * @property {string} [parentId]      The ID of a parent document
  * @property {object} [options]       Additional options applied to the request
  */
 

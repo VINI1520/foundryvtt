@@ -54,7 +54,7 @@ class ToursManagement extends PackageConfiguration {
           });
           tourData.canBePlayed = tour.canStart;
           tourData.canBeReset = true;
-          tourData.startOrResume = game.i18n.localize(`TOURS.${tour.config.canBeResumed ? "Resume" : "Restart"}`);
+          tourData.startOrResume = game.i18n.localize(`TOURS.${tour.canBeResumed ? "Resume" : "Restart"}`);
           break;
         }
         case Tour.STATUS.COMPLETED: {

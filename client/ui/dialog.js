@@ -93,7 +93,7 @@ class Dialog extends Application {
   getData(options={}) {
     let buttons = Object.keys(this.data.buttons).reduce((obj, key) => {
       let b = this.data.buttons[key];
-      b.cssClass = (this.data.default === key ? [key, "default", "bright"] : [key]).join(" ");
+      b.cssClass = [key, this.data.default === key ? "default" : ""].filterJoin(" ");
       if ( b.condition !== false ) obj[key] = b;
       return obj;
     }, {});
@@ -205,9 +205,8 @@ class Dialog extends Application {
    * @private
    */
   submit(button, event) {
-    const target = this.options.jQuery ? this.element : this.element[0];
     try {
-      if ( button.callback ) button.callback.call(this, target, event);
+      if ( button.callback ) button.callback(this.options.jQuery ? this.element : this.element[0], event);
       this.close();
     } catch(err) {
       ui.notifications.error(err);
@@ -316,28 +315,25 @@ class Dialog extends Application {
    */
   static async wait(data={}, options={}, renderOptions={}) {
     return new Promise((resolve, reject) => {
-
       // Wrap buttons with Promise resolution.
-      const buttons = foundry.utils.deepClone(data.buttons);
-      for ( const [id, button] of Object.entries(buttons) ) {
+      for ( const [id, button] of Object.entries(data.buttons) ) {
         const cb = button.callback;
-        function callback(html, event) {
-          const result = cb instanceof Function ? cb.call(this, html, event) : undefined;
+        button.callback = html => {
+          const result = cb instanceof Function ? cb(html) : undefined;
           resolve(result === undefined ? id : result);
-        }
-        button.callback = callback;
+        };
       }
 
       // Wrap close with Promise resolution or rejection.
-      const originalClose = data.close;
-      const close = () => {
-        const result = originalClose instanceof Function ? originalClose() : undefined;
+      const close = data.close;
+      data.close = () => {
+        const result = close instanceof Function ? close() : undefined;
         if ( result !== undefined ) resolve(result);
         else reject(new Error("The Dialog was closed without a choice being made."));
       };
 
       // Construct the dialog.
-      const dialog = new this({ ...data, buttons, close }, options);
+      const dialog = new this(data, options);
       dialog.render(true, renderOptions);
     });
   }

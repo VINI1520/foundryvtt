@@ -41,7 +41,7 @@ class BaseMacro extends Document {
     name: "Macro",
     collection: "macros",
     indexed: true,
-    compendiumIndexFields: ["_id", "name", "img", "sort", "folder"],
+    compendiumIndexFields: ["_id", "name", "img", "sort"],
     label: "DOCUMENT.Macro",
     labelPlural: "DOCUMENT.Macros",
     coreTypes: Array.from(Object.values(CONST.MACRO_TYPES)),
@@ -52,7 +52,7 @@ class BaseMacro extends Document {
   static defineSchema() {
     return {
       _id: new fields.DocumentIdField(),
-      name: new fields.StringField({required: true, blank: false, label: "Name", textSearch: true}),
+      name: new fields.StringField({required: true, blank: false, label: "Name"}),
       type: new fields.StringField({required: true, choices: Object.values(CONST.MACRO_TYPES),
         initial: CONST.MACRO_TYPES.CHAT, validationError: "must be a value in CONST.MACRO_TYPES", label: "Type"}),
       author: new fields.ForeignDocumentField(documents.BaseUser, {initial: () => game?.user?.id}),

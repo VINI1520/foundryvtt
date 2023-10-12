@@ -22,18 +22,6 @@ class JournalEntry extends ClientDocumentMixin(foundry.documents.BaseJournalEntr
 
   /* -------------------------------------------- */
 
-  /** @inheritdoc */
-  getUserLevel(user) {
-    // Upgrade to OBSERVER ownership if the journal entry is in a LIMITED compendium, as LIMITED has no special meaning
-    // for journal entries in this context.
-    if ( this.pack && (this.compendium.getUserLevel(user) === CONST.DOCUMENT_OWNERSHIP_LEVELS.LIMITED) ) {
-      return CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER;
-    }
-    return super.getUserLevel(user);
-  }
-
-  /* -------------------------------------------- */
-
   /**
    * Return a reference to the Note instance for this Journal Entry in the current Scene, if any.
    * If multiple notes are placed for this Journal Entry, only the first will be returned.

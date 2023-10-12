@@ -109,16 +109,6 @@ export function fromString(n) {
   return Number(n);
 }
 
-// Define properties on the Number environment
-Object.defineProperties(Number.prototype, {
-  almostEqual: {value: almostEqual},
-  between: {value: between},
-  ordinalString: {value: ordinalString},
-  paddedString: {value: paddedString},
-  signedString: {value: signedString},
-  toNearest: {value: toNearest}
-});
-Object.defineProperties(Number, {
-  isNumeric: {value: isNumeric},
-  fromString: {value: fromString}
-});
+// Assign primitives to the Number prototype
+Object.assign(Number.prototype, {almostEqual, ordinalString, paddedString, signedString, toNearest, between});
+Object.assign(Number, {isNumeric, fromString});

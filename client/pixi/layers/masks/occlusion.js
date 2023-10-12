@@ -8,12 +8,6 @@ class CanvasOcclusionMask extends CachedContainer {
     this.#createOcclusion();
   }
 
-  /** @override */
-  static textureConfiguration = {
-    scaleMode: PIXI.SCALE_MODES.NEAREST,
-    format: PIXI.FORMATS.RGB
-  };
-
   /**
    * Graphics in which token radial and vision occlusion shapes are drawn.
    * @type {PIXI.LegacyGraphics}
@@ -60,8 +54,8 @@ class CanvasOcclusionMask extends CachedContainer {
 
   /**
    * Draw occlusion shapes to the Tile occlusion mask.
-   * Radial occlusion draws to the green channel with varying intensity from [1/255, 1] based on elevation.
-   * Vision occlusion draws to the blue channel with varying intensity from [1/255, 1] based on elevation.
+   * Radial occlusion draws to the green channel with varying intensity from [0.2, 1] based on elevation.
+   * Vision occlusion draws to the blue channel with varying intensity from [0.2, 1] based on elevation.
    * @param {Token[]} tokens      An array of currently controlled or observed tokens
    */
   #drawTokenOcclusion(tokens) {
@@ -69,17 +63,18 @@ class CanvasOcclusionMask extends CachedContainer {
     const g = canvas.masks.occlusion.tokens;
     g.clear();
     for ( const token of tokens ) {
-      const a = canvas.primary.mapElevationToDepth(token.document.elevation);
+      const a = canvas.primary.mapElevationAlpha(token.document.elevation);
       const c = token.center;
 
       // The token has a flag with an occlusion radius?
-      const o = Number(token.document.flags.core?.occlusionRadius) || 0;
-      const r = Math.max(token.externalRadius, token.getLightRadius(o));
+      const o = Number(token.document.getFlag("core", "occlusionRadius")) || null;
+      const m = Math.max(token.mesh.width, token.mesh.height);
+      const r = Number.isFinite(o) ? Math.max(m, token.getLightRadius(o)) : m;
 
       // Token has vision and a fov?
       const hasVisionLOS = !!(token.hasSight && token.vision.los);
-      g.beginFill([1, a, !hasVisionLOS ? a : 1]).drawCircle(c.x, c.y, r).endFill();
-      if ( hasVisionLOS ) g.beginFill([1, 1, a]).drawShape(token.vision.los).endFill();
+      g.beginFill(Color.fromRGB([1, a, !hasVisionLOS ? a : 1]).valueOf(), 1).drawCircle(c.x, c.y, r).endFill();
+      if ( hasVisionLOS ) g.beginFill(Color.fromRGB([1, 1, a]).valueOf(), 1).drawShape(token.vision.los).endFill();
     }
   }
 
@@ -90,48 +85,29 @@ class CanvasOcclusionMask extends CachedContainer {
    * @param {Token[]} tokens     The set of currently controlled Token objects
    */
   #updateTileOcclusion(tokens) {
-    const occluded = this._identifyOccludedObjects(tokens);
-    for ( const pco of canvas.primary.children ) {
-      const isOccludable = pco.isOccludable;
-      if ( (isOccludable === undefined) || (!isOccludable && !pco.occluded) ) continue;
-      pco.debounceSetOcclusion(occluded.has(pco));
+    const occluded = this._identifyOccludedTiles(tokens);
+    for ( const tile of canvas.tiles.placeables ) {
+      tile.debounceSetOcclusion(occluded.has(tile));
     }
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Determine the set of objects which should be currently occluded by a Token.
-   * @param {Token[]} tokens                   The set of currently controlled Token objects
-   * @returns {Set<PrimaryCanvasObjectMixin>}  The PCO objects which should be currently occluded
+   * Determine the set of Tiles which should be currently occluded by a Token.
+   * @param {Token[]} tokens      The set of currently controlled Token objects
+   * @returns {Set<Tile>}         The Tile objects which should be currently occluded
    * @protected
    */
-  _identifyOccludedObjects(tokens) {
+  _identifyOccludedTiles(tokens) {
     const occluded = new Set();
     for ( const token of tokens ) {
-      // Get the occludable primary canvas objects (PCO) according to the token bounds
-      const matchingPCO = canvas.primary.quadtree.getObjects(token.bounds);
-      for ( const pco of matchingPCO ) {
-        // Don't bother re-testing a PCO or an object which is not occludable
-        if ( !pco.isOccludable || occluded.has(pco) ) continue;
-        if ( pco.testOcclusion(token, {corners: pco.data.roof}) ) occluded.add(pco);
+      const tiles = canvas.tiles.quadtree.getObjects(token.bounds);
+      for ( const tile of tiles ) {
+        if ( occluded.has(tile) ) continue;  // Don't bother re-testing a tile
+        if ( tile.testOcclusion(token, {corners: tile.isRoof}) ) occluded.add(tile);
       }
     }
     return occluded;
-  }
-
-  /* -------------------------------------------- */
-  /*  Deprecation and compatibility               */
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  _identifyOccludedTiles() {
-    const msg = "CanvasOcclusionMask#_identifyOccludedTiles has been deprecated in " +
-      "favor of CanvasOcclusionMask#_identifyOccludedObjects.";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return this._identifyOccludedObjects();
   }
 }

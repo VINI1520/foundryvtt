@@ -1,16 +1,4 @@
 /**
- * @typedef {EffectDurationData} ActiveEffectDuration
- * @property {string} type            The duration type, either "seconds", "turns", or "none"
- * @property {number|null} duration   The total effect duration, in seconds of world time or as a decimal
- *                                    number with the format {rounds}.{turns}
- * @property {number|null} remaining  The remaining effect duration, in seconds of world time or as a decimal
- *                                    number with the format {rounds}.{turns}
- * @property {string} label           A formatted string label that represents the remaining duration
- * @property {number} [_worldTime]    An internal flag used determine when to recompute seconds-based duration
- * @property {number} [_combatTime]   An internal flag used determine when to recompute turns-based duration
- */
-
-/**
  * The client-side ActiveEffect document which extends the common BaseActiveEffect model.
  * Each ActiveEffect belongs to the effects collection of its parent Document.
  * Each ActiveEffect contains a ActiveEffectData object which provides its source data.
@@ -20,10 +8,21 @@
  *
  * @see {@link documents.Actor}                     The Actor document which contains ActiveEffect embedded documents
  * @see {@link documents.Item}                      The Item document which contains ActiveEffect embedded documents
- *
- * @property {ActiveEffectDuration} duration        Expanded effect duration data.
  */
 class ActiveEffect extends ClientDocumentMixin(foundry.documents.BaseActiveEffect) {
+
+  /**
+   * A cached reference to the source name to avoid recurring database lookups
+   * @type {string|null}
+   */
+  _sourceName = null;
+
+  /**
+   * Does this ActiveEffect correspond to a significant status effect ID?
+   * @type {string|null}
+   * @private
+   */
+  _statusId = null;
 
   /* -------------------------------------------- */
   /*  Properties                                  */
@@ -37,120 +36,29 @@ class ActiveEffect extends ClientDocumentMixin(foundry.documents.BaseActiveEffec
     return false;
   }
 
-  /**
-   * Provide forward-compatibility with other Document types which use img as their primary image or icon.
-   * We are likely to formally migrate this in the future, but for now this getter provides compatible read access.
-   * @type {string}
-   */
-  get img() {
-    return this.icon;
-  }
-
   /* --------------------------------------------- */
-
-  /**
-   * Retrieve the Document that this ActiveEffect targets for modification.
-   * @type {Document|null}
-   */
-  get target() {
-    if ( this.parent instanceof Actor ) return this.parent;
-    if ( CONFIG.ActiveEffect.legacyTransferral ) return this.transfer ? null : this.parent;
-    return this.transfer ? (this.parent.parent ?? null) : this.parent;
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Whether the Active Effect currently applying its changes to the target.
-   * @type {boolean}
-   */
-  get active() {
-    return !this.disabled && !this.isSuppressed;
-  }
-
-  /* -------------------------------------------- */
 
   /**
    * Does this Active Effect currently modify an Actor?
    * @type {boolean}
    */
   get modifiesActor() {
-    if ( !this.active ) return false;
-    if ( CONFIG.ActiveEffect.legacyTransferral ) return this.parent instanceof Actor;
-    return this.target instanceof Actor;
-  }
-
-  /* --------------------------------------------- */
-
-  /** @inheritdoc */
-  prepareBaseData() {
-    /** @deprecated since v11 */
-    const statusId = this.flags.core?.statusId;
-    if ( (typeof statusId === "string") && (statusId !== "") ) this.statuses.add(statusId);
+    return (this.parent instanceof Actor) && !this.disabled && !this.isSuppressed;
   }
 
   /* --------------------------------------------- */
 
   /** @inheritdoc */
   prepareDerivedData() {
-    this.updateDuration();
+    const statusId = this.flags.core?.statusId;
+    this._statusId = Object.values(CONFIG.specialStatusEffects).includes(statusId) ? statusId : null;
+    this._prepareDuration();
   }
 
   /* --------------------------------------------- */
 
   /**
-   * Update derived Active Effect duration data.
-   * Configure the remaining and label properties to be getters which lazily recompute only when necessary.
-   * @returns {ActiveEffectDuration}
-   */
-  updateDuration() {
-    const {remaining, label, ...durationData} = this._prepareDuration();
-    Object.assign(this.duration, durationData);
-    const getOrUpdate = (attr, value) => this._requiresDurationUpdate() ? this.updateDuration()[attr] : value;
-    Object.defineProperties(this.duration, {
-      remaining: {
-        get: getOrUpdate.bind(this, "remaining", remaining),
-        configurable: true
-      },
-      label: {
-        get: getOrUpdate.bind(this, "label", label),
-        configurable: true
-      }
-    });
-    return this.duration;
-  }
-
-  /* --------------------------------------------- */
-
-  /**
-   * Determine whether the ActiveEffect requires a duration update.
-   * True if the worldTime has changed for an effect whose duration is tracked in seconds.
-   * True if the combat turn has changed for an effect tracked in turns where the effect target is a combatant.
-   * @returns {boolean}
-   * @protected
-   */
-  _requiresDurationUpdate() {
-    const {_worldTime, _combatTime, type} = this.duration;
-    if ( type === "seconds" ) return game.time.worldTime !== _worldTime;
-    if ( (type === "turns") && game.combat ) {
-      const ct = this._getCombatTime(game.combat.round, game.combat.turn);
-      return (ct !== _combatTime) && !!game.combat.getCombatantByActor(this.target);
-    }
-    return false;
-  }
-
-  /* --------------------------------------------- */
-
-  /**
-   * Compute derived data related to active effect duration.
-   * @returns {{
-   *   type: string,
-   *   duration: number|null,
-   *   remaining: number|null,
-   *   label: string,
-   *   [_worldTime]: number,
-   *   [_combatTime]: number}
-   * }
+   * Prepare derived data related to active effect duration
    * @internal
    */
   _prepareDuration() {
@@ -158,67 +66,58 @@ class ActiveEffect extends ClientDocumentMixin(foundry.documents.BaseActiveEffec
 
     // Time-based duration
     if ( Number.isNumeric(d.seconds) ) {
-      const wt = game.time.worldTime;
-      const start = (d.startTime || wt);
-      const elapsed = wt - start;
+      const start = (d.startTime || game.time.worldTime);
+      const elapsed = game.time.worldTime - start;
       const remaining = d.seconds - elapsed;
-      return {
+      return foundry.utils.mergeObject(d, {
         type: "seconds",
         duration: d.seconds,
         remaining: remaining,
-        label: `${remaining} ${game.i18n.localize("Seconds")}`,
-        _worldTime: wt
-      };
+        label: `${remaining} Seconds`
+      });
     }
 
     // Turn-based duration
-    else if ( d.rounds || d.turns ) {
-      const cbt = game.combat;
-      if ( !cbt ) return {
-        type: "turns",
-        _combatTime: undefined
-      };
+    else if ( (d.rounds || d.turns) && game.combat ) {
 
       // Determine the current combat duration
+      const cbt = game.combat;
       const c = {round: cbt.round ?? 0, turn: cbt.turn ?? 0, nTurns: cbt.turns.length || 1};
       const current = this._getCombatTime(c.round, c.turn);
       const duration = this._getCombatTime(d.rounds, d.turns);
       const start = this._getCombatTime(d.startRound, d.startTurn, c.nTurns);
 
       // If the effect has not started yet display the full duration
-      if ( current <= start ) return {
-        type: "turns",
-        duration: duration,
-        remaining: duration,
-        label: this._getDurationLabel(d.rounds, d.turns),
-        _combatTime: current
-      };
+      if ( current <= start ) {
+        return foundry.utils.mergeObject(d, {
+          type: "turns",
+          duration: duration,
+          remaining: duration,
+          label: this._getDurationLabel(d.rounds, d.turns)
+        });
+      }
 
       // Some number of remaining rounds and turns (possibly zero)
       const remaining = Math.max(((start + duration) - current).toNearest(0.01), 0);
       const remainingRounds = Math.floor(remaining);
-      let remainingTurns = 0;
-      if ( remaining > 0 ) {
-        let nt = c.turn - d.startTurn;
-        while ( nt < 0 ) nt += c.nTurns;
-        remainingTurns = nt > 0 ? c.nTurns - nt : 0;
-      }
-      return {
+      let nt = c.turn - d.startTurn;
+      while ( nt < 0 ) nt += c.nTurns;
+      const remainingTurns = nt > 0 ? c.nTurns - nt : 0;
+      return foundry.utils.mergeObject(d, {
         type: "turns",
         duration: duration,
         remaining: remaining,
-        label: this._getDurationLabel(remainingRounds, remainingTurns),
-        _combatTime: current
-      };
+        label: this._getDurationLabel(remainingRounds, remainingTurns)
+      });
     }
 
     // No duration
-    return {
+    return foundry.utils.mergeObject(d, {
       type: "none",
       duration: null,
       remaining: null,
       label: game.i18n.localize("None")
-    };
+    });
   }
 
   /* -------------------------------------------- */
@@ -263,24 +162,18 @@ class ActiveEffect extends ClientDocumentMixin(foundry.documents.BaseActiveEffec
    */
   get isTemporary() {
     const duration = this.duration.seconds ?? (this.duration.rounds || this.duration.turns) ?? 0;
-    return (duration > 0) || this.statuses.size;
+    return (duration > 0) || this.getFlag("core", "statusId");
   }
 
   /* -------------------------------------------- */
 
   /**
-   * The source name of the Active Effect. The source is retrieved synchronously.
-   * Therefore "Unknown" (localized) is returned if the origin points to a document inside a compendium.
-   * Returns "None" (localized) if it has no origin, and "Unknown" (localized) if the origin cannot be resolved.
+   * A cached property for obtaining the source name
    * @type {string}
    */
   get sourceName() {
-    if ( !this.origin ) return game.i18n.localize("None");
-    let name;
-    try {
-      name = fromUuidSync(this.origin)?.name;
-    } catch(e) {}
-    return name || game.i18n.localize("Unknown");
+    if ( this._sourceName === null ) this._getSourceName();
+    return this._sourceName ?? "Unknown";
   }
 
   /* -------------------------------------------- */
@@ -529,6 +422,16 @@ class ActiveEffect extends ClientDocumentMixin(foundry.documents.BaseActiveEffec
    */
   _applyCustom(actor, change, current, delta, changes) {
     const preHook = foundry.utils.getProperty(actor, change.key);
+    /**
+     * A hook event that fires when a custom active effect is applied.
+     * @function applyActiveEffect
+     * @memberof hookEvents
+     * @param {Actor} actor                   The actor the active effect is being applied to
+     * @param {EffectChangeData} change       The change data being applied
+     * @param {*} current                     The current value being modified
+     * @param {*} delta                       The parsed value of the change object
+     * @param {object} changes                An object which accumulates changes to be applied
+     */
     Hooks.call("applyActiveEffect", actor, change, current, delta, changes);
     const postHook = foundry.utils.getProperty(actor, change.key);
     if ( postHook !== preHook ) changes[change.key] = postHook;
@@ -537,29 +440,14 @@ class ActiveEffect extends ClientDocumentMixin(foundry.documents.BaseActiveEffec
   /* -------------------------------------------- */
 
   /**
-   * Retrieve the initial duration configuration.
-   * @returns {{duration: {startTime: number, [startRound]: number, [startTurn]: number}}}
+   * Get the name of the source of the Active Effect
+   * @type {string}
    */
-  static getInitialDuration() {
-    const data = {duration: {startTime: game.time.worldTime}};
-    if ( game.combat ) {
-      data.duration.startRound = game.combat.round;
-      data.duration.startTurn = game.combat.turn ?? 0;
-    }
-    return data;
-  }
-
-  /* -------------------------------------------- */
-  /*  Flag Operations                             */
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  getFlag(scope, key) {
-    if ( (scope === "core") && (key === "statusId") ) {
-      foundry.utils.logCompatibilityWarning("You are setting flags.core.statusId on an Active Effect. This flag is"
-        + " deprecated in favor of the statuses set.", {since: 11, until: 13});
-    }
-    return super.getFlag(scope, key);
+  async _getSourceName() {
+    if ( this._sourceName ) return this._sourceName;
+    if ( !this.origin ) return this._sourceName = game.i18n.localize("None");
+    const source = await fromUuid(this.origin);
+    return this._sourceName = source?.name ?? "Unknown";
   }
 
   /* -------------------------------------------- */
@@ -569,18 +457,14 @@ class ActiveEffect extends ClientDocumentMixin(foundry.documents.BaseActiveEffec
   /** @inheritdoc */
   async _preCreate(data, options, user) {
     await super._preCreate(data, options, user);
-    if ( hasProperty(data, "flags.core.statusId") ) {
-      foundry.utils.logCompatibilityWarning("You are setting flags.core.statusId on an Active Effect. This flag is"
-        + " deprecated in favor of the statuses set.", {since: 11, until: 13});
-    }
 
     // Set initial duration data for Actor-owned effects
     if ( this.parent instanceof Actor ) {
-      const updates = this.constructor.getInitialDuration();
-      for ( const k of Object.keys(updates.duration) ) {
-        if ( Number.isNumeric(data.duration?.[k]) ) delete updates.duration[k]; // Prefer user-defined duration data
+      const updates = {duration: {startTime: game.time.worldTime}, transfer: false};
+      if ( game.combat ) {
+        updates.duration.startRound = game.combat.round;
+        updates.duration.startTurn = game.combat.turn ?? 0;
       }
-      updates.transfer = false;
       this.updateSource(updates);
     }
   }
@@ -590,21 +474,10 @@ class ActiveEffect extends ClientDocumentMixin(foundry.documents.BaseActiveEffec
   /** @inheritdoc */
   _onCreate(data, options, userId) {
     super._onCreate(data, options, userId);
-    if ( this.modifiesActor && (options.animate !== false) ) this._displayScrollingStatus(true);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  async _preUpdate(data, options, userId) {
-    if ( hasProperty(data, "flags.core.statusId") || hasProperty(data, "flags.core.-=statusId") ) {
-      foundry.utils.logCompatibilityWarning("You are setting flags.core.statusId on an Active Effect. This flag is"
-        + " deprecated in favor of the statuses set.", {since: 11, until: 13});
+    if ( this.modifiesActor ) {
+      this._displayScrollingStatus(true);
+      if ( this._statusId ) this.#dispatchTokenStatusChange(this._statusId, true);
     }
-    if ( ("statuses" in data) && (this._source.flags.core?.statusId !== undefined) ) {
-      setProperty(data, "flags.core.-=statusId", null);
-    }
-    return super._preUpdate(data, options, userId);
   }
 
   /* -------------------------------------------- */
@@ -612,9 +485,10 @@ class ActiveEffect extends ClientDocumentMixin(foundry.documents.BaseActiveEffec
   /** @inheritdoc */
   _onUpdate(data, options, userId) {
     super._onUpdate(data, options, userId);
-    if ( !(this.target instanceof Actor) ) return;
-    const activeChanged = "disabled" in data;
-    if ( activeChanged && (options.animate !== false) ) this._displayScrollingStatus(this.active);
+    if ( ("disabled" in data) && this.modifiesActor ) {
+      this._displayScrollingStatus(!data.disabled);
+      if ( this._statusId ) this.#dispatchTokenStatusChange(this._statusId, !data.disabled);
+    }
   }
 
   /* -------------------------------------------- */
@@ -622,7 +496,22 @@ class ActiveEffect extends ClientDocumentMixin(foundry.documents.BaseActiveEffec
   /** @inheritdoc */
   _onDelete(options, userId) {
     super._onDelete(options, userId);
-    if ( this.modifiesActor && (options.animate !== false) ) this._displayScrollingStatus(false);
+    if ( this.modifiesActor ) {
+      this._displayScrollingStatus(false);
+      if ( this._statusId ) this.#dispatchTokenStatusChange(this._statusId, false);
+    }
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Dispatch changes to a significant status effect to active Tokens on the Scene.
+   * @param {string} statusId       The status effect ID being applied, from CONFIG.specialStatusEffects
+   * @param {boolean} active        Is the special status effect now active?
+   */
+  #dispatchTokenStatusChange(statusId, active) {
+    const tokens = this.parent.getActiveTokens();
+    for ( const token of tokens ) token._onApplyStatusEffect(statusId, active);
   }
 
   /* -------------------------------------------- */
@@ -630,16 +519,16 @@ class ActiveEffect extends ClientDocumentMixin(foundry.documents.BaseActiveEffec
   /**
    * Display changes to active effects as scrolling Token status text.
    * @param {boolean} enabled     Is the active effect currently enabled?
-   * @protected
+   * @private
    */
   _displayScrollingStatus(enabled) {
-    if ( !(this.statuses.size || this.changes.length) ) return;
-    const actor = this.target;
-    const tokens = actor.getActiveTokens(true);
-    const text = `${enabled ? "+" : "-"}(${this.name})`;
+    if ( !(this.flags.core?.statusId || this.changes.length) ) return;
+    const actor = this.parent;
+    const tokens = actor.isToken ? [actor.token?.object] : actor.getActiveTokens(true);
+    const label = `${enabled ? "+" : "-"}(${this.label})`;
     for ( let t of tokens ) {
       if ( !t.visible || !t.renderable ) continue;
-      canvas.interface.createScrollingText(t.center, text, {
+      canvas.interface.createScrollingText(t.center, label, {
         anchor: CONST.TEXT_ANCHOR_POINTS.CENTER,
         direction: enabled ? CONST.TEXT_ANCHOR_POINTS.TOP : CONST.TEXT_ANCHOR_POINTS.BOTTOM,
         distance: (2 * t.h),
@@ -649,23 +538,5 @@ class ActiveEffect extends ClientDocumentMixin(foundry.documents.BaseActiveEffec
         jitter: 0.25
       });
     }
-  }
-
-  /* -------------------------------------------- */
-  /*  Deprecations and Compatibility              */
-  /* -------------------------------------------- */
-
-  /**
-   * Get the name of the source of the Active Effect
-   * @type {string}
-   * @deprecated since v11
-   * @ignore
-   */
-  async _getSourceName() {
-    const warning = "You are accessing ActiveEffect._getSourceName which is deprecated.";
-    foundry.utils.logCompatibilityWarning(warning, {since: 11, until: 13});
-    if ( !this.origin ) return game.i18n.localize("None");
-    const source = await fromUuid(this.origin);
-    return source?.name ?? game.i18n.localize("Unknown");
   }
 }

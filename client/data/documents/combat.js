@@ -1,12 +1,4 @@
 /**
- * @typedef {Object} CombatHistoryData
- * @property {number|null} round
- * @property {number|null} turn
- * @property {string|null} tokenId
- * @property {string|null} combatantId
- */
-
-/**
  * The client-side Combat document which extends the common BaseCombat model.
  *
  * @extends documents.BaseCombat
@@ -28,7 +20,8 @@ class Combat extends ClientDocumentMixin(foundry.documents.BaseCombat) {
 
     /**
      * Record the current round, turn, and tokenId to understand changes in the encounter state
-     * @type {CombatHistoryData}
+     * @type {{round: number|null, turn: number|null, tokenId: string|null, combatantId: string|null}}
+     * @private
      */
     this.current = this.current || {
       round: null,
@@ -39,9 +32,15 @@ class Combat extends ClientDocumentMixin(foundry.documents.BaseCombat) {
 
     /**
      * Track the previous round, turn, and tokenId to understand changes in the encounter state
-     * @type {CombatHistoryData}
+     * @type {{round: number|null, turn: number|null, tokenId: string|null, combatantId: string|null}}
+     * @private
      */
-    this.previous = this.previous || undefined;
+    this.previous = this.previous || {
+      round: null,
+      turn: null,
+      tokenId: null,
+      combatantId: null
+    };
   }
 
   /**
@@ -151,14 +150,12 @@ class Combat extends ClientDocumentMixin(foundry.documents.BaseCombat) {
   /* -------------------------------------------- */
 
   /**
-   * Get a Combatant that represents the given Actor or Actor ID.
-   * @param {string|Actor} actorOrId An Actor ID or an Actor instance.
+   * Get a Combatant using its Actor id
+   * @param {string} actorId The id of the Actor for which to acquire the combatant
    * @returns {Combatant}
    */
-  getCombatantByActor(actorOrId) {
-    const isActor = actorOrId instanceof getDocumentClass(Actor.documentName);
-    if ( isActor && actorOrId.isToken ) return this.getCombatantByToken(actorOrId.token.id);
-    return this.combatants.find(c => c.actorId === (isActor ? actorOrId.id : actorOrId));
+  getCombatantByActor(actorId) {
+    return this.combatants.find(c => c.actorId === actorId);
   }
 
   /* -------------------------------------------- */
@@ -443,9 +440,6 @@ class Combat extends ClientDocumentMixin(foundry.documents.BaseCombat) {
       tokenId: c ? c.tokenId : null
     };
 
-    // One-time initialization of the previous state
-    if ( !this.previous ) this.previous = this.current;
-
     // Return the array of prepared turns
     return this.turns = turns;
   }
@@ -453,24 +447,17 @@ class Combat extends ClientDocumentMixin(foundry.documents.BaseCombat) {
   /* -------------------------------------------- */
 
   /**
-   * Debounce changes to the composition of the Combat encounter to de-duplicate multiple concurrent Combatant changes.
-   * If this is the currently viewed encounter, re-render the CombatTracker application.
-   * @type {Function}
-   */
-  debounceSetup = foundry.utils.debounce(() => {
-    this.current.round = this.round;
-    this.current.turn = this.turn;
-    this.setupTurns();
-    if ( ui.combat.viewed === this ) ui.combat.render();
-  }, 50);
-
-  /* -------------------------------------------- */
-
-  /**
    * Update active effect durations for all actors present in this Combat encounter.
    */
-  updateCombatantActors() {
-    for ( const combatant of this.combatants ) combatant.actor?.render(false, {renderContext: "updateCombat"});
+  updateEffectDurations() {
+    for ( const combatant of this.combatants ) {
+      const actor = combatant.actor;
+      if ( !actor?.effects.size ) continue;
+      for ( const effect of actor.effects ) {
+        effect._prepareDuration();
+      }
+      actor.render(false);
+    }
   }
 
   /* -------------------------------------------- */
@@ -478,20 +465,28 @@ class Combat extends ClientDocumentMixin(foundry.documents.BaseCombat) {
   /**
    * Loads the registered Combat Theme (if any) and plays the requested type of sound.
    * If multiple exist for that type, one is chosen at random.
-   * @param {string} announcement     The announcement that should be played: "startEncounter", "nextUp", or "yourTurn".
-   * @protected
+   * @param {string} type     One of [ "startEncounter", "nextUp", "yourTurn" ]
+   * @private
    */
-  _playCombatSound(announcement) {
-    if ( !CONST.COMBAT_ANNOUNCEMENTS.includes(announcement) ) {
-      throw new Error(`"${announcement}" is not a valid Combat announcement type`);
-    }
+  _playCombatSound(type) {
     const theme = CONFIG.Combat.sounds[game.settings.get("core", "combatTheme")];
     if ( !theme || theme === "none" ) return;
-    const sounds = theme[announcement];
-    if ( !sounds ) return;
-    const src = sounds[Math.floor(Math.random() * sounds.length)];
-    const volume = game.settings.get("core", "globalInterfaceVolume");
-    game.audio.play(src, {volume});
+    const options = theme[type];
+    if ( !options ) return;
+    const src = options[Math.floor(Math.random() * options.length)];
+    try {
+      const volume = AudioHelper.volumeToInput(game.settings.get("core", "globalInterfaceVolume"));
+      game.audio.create({
+        src: src,
+        preload: true,
+        autoplay: true,
+        singleton: false,
+        autoplayOptions: {volume}
+      });
+    }
+    catch(e) {
+      console.error(e);
+    }
   }
 
   /* -------------------------------------------- */
@@ -511,17 +506,6 @@ class Combat extends ClientDocumentMixin(foundry.documents.BaseCombat) {
   }
 
   /* -------------------------------------------- */
-
-  /**
-   * Refresh the Token HUD under certain circumstances.
-   * @param {Combatant[]} documents  A list of Combatant documents that were added or removed.
-   * @protected
-   */
-  _refreshTokenHUD(documents) {
-    if ( documents.some(doc => doc.token?.object?.hasActiveHUD) ) canvas.tokens.hud.render();
-  }
-
-  /* -------------------------------------------- */
   /*  Event Handlers                              */
   /* -------------------------------------------- */
 
@@ -529,7 +513,6 @@ class Combat extends ClientDocumentMixin(foundry.documents.BaseCombat) {
   _onCreate(data, options, userId) {
     super._onCreate(data, options, userId);
     if ( !this.collection.viewed ) ui.combat.initialize({combat: this, render: false});
-    this._manageTurnEvents();
   }
 
   /* -------------------------------------------- */
@@ -538,31 +521,29 @@ class Combat extends ClientDocumentMixin(foundry.documents.BaseCombat) {
   _onUpdate(data, options, userId) {
     super._onUpdate(data, options, userId);
 
-    // Update turn order
-    const priorState = foundry.utils.deepClone(this.current);
-    if ( "combatants" in data ) this.setupTurns();    // Update all combatants
-    else {                                            // Update turn or round
-      const combatant = this.combatant;
-      this.current = {
-        round: this.round,
-        turn: this.turn,
-        combatantId: combatant?.id || null,
-        tokenId: combatant?.tokenId || null
-      };
-    }
-    this.#recordPreviousState(priorState);
+    // Set up turn data
+    if ( ["combatants", "round", "turn"].some(k => data.hasOwnProperty(k)) ) {
+      if ( data.combatants ) this.setupTurns();
+      else {
+        const c = this.combatant;
+        this.previous = this.current;
+        this.current = {
+          round: this.round,
+          turn: this.turn,
+          combatantId: c ? c.id : null,
+          tokenId: c ? c.tokenId : null
+        };
 
-    // Update rendering for actors involved in the Combat
-    this.updateCombatantActors();
+        // Update effect durations
+        this.updateEffectDurations();
 
-    // Dispatch Turn Events
-    if ( options.turnEvents !== false ) this._manageTurnEvents();
-
-    // Trigger combat sound cues in the active encounter
-    if ( this.active && this.started && priorState.round ) {
-      const play = c => c && (game.user.isGM ? !c.hasPlayerOwner : c.isOwner);
-      if ( play(this.combatant) ) this._playCombatSound("yourTurn");
-      else if ( play(this.nextCombatant) ) this._playCombatSound("nextUp");
+        // Play sounds
+        if ( game.user.character ) {
+          if ( this.combatant?.actorId === game.user.character._id ) this._playCombatSound("yourTurn");
+          else if ( this.nextCombatant?.actorId === game.user.character._id ) this._playCombatSound("nextUp");
+        }
+      }
+      return ui.combat.scrollToTurn();
     }
 
     // Render the sidebar
@@ -582,57 +563,49 @@ class Combat extends ClientDocumentMixin(foundry.documents.BaseCombat) {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onCreateDescendantDocuments(parent, collection, documents, data, options, userId) {
-    super._onCreateDescendantDocuments(parent, collection, documents, data, options, userId);
-    if ( parent === this ) this._refreshTokenHUD(documents);
+  _onCreateEmbeddedDocuments(type, documents, result, options, userId) {
+    super._onCreateEmbeddedDocuments(type, documents, result, options, userId);
 
-    // Update turn order
-    const priorState = foundry.utils.deepClone(this.current);
-    const combatant = this.combatant;
+    // Update the turn order and adjust the combat to keep the combatant the same
+    const current = this.combatant;
     this.setupTurns();
-    this.#recordPreviousState(priorState);
 
-    // Adjust turn order to keep the current Combatant the same
-    const adjustedTurn = combatant ? Math.max(this.turns.findIndex(t => t.id === combatant.id), 0) : undefined;
-    if ( options.turnEvents !== false ) this._manageTurnEvents(adjustedTurn);
+    // Keep the current Combatant the same after adding new Combatants to the Combat
+    if ( current ) {
+      let turn = Math.max(this.turns.findIndex(t => t.id === current.id), 0);
+      if ( game.user.id === userId ) this.update({turn});
+      else this.updateSource({turn});
+    }
 
-    // Render the Collection
+    // Render the collection
     if ( this.active && (options.render !== false) ) this.collection.render();
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onUpdateDescendantDocuments(parent, collection, documents, changes, options, userId) {
-    super._onUpdateDescendantDocuments(parent, collection, documents, changes, options, userId);
-
-    // Update the turn order
-    const priorState = foundry.utils.deepClone(this.current);
-    const combatant = this.combatant;
+  _onUpdateEmbeddedDocuments(embeddedName, documents, result, options, userId) {
+    super._onUpdateEmbeddedDocuments(embeddedName, documents, result, options, userId);
+    const current = this.combatant;
     this.setupTurns();
-    this.#recordPreviousState(priorState);
-
-    // Adjust turn order to keep the current Combatant the same
-    const sameTurn = combatant ? this.turns.findIndex(t => t.id === combatant.id) : this.turn;
-    const adjustedTurn = sameTurn !== this.turn ? sameTurn : undefined;
-    if ( options.turnEvents !== false ) this._manageTurnEvents(adjustedTurn);
-
-    // Render the Collection
+    const turn = current ? this.turns.findIndex(t => t.id === current.id) : this.turn;
+    if ( turn !== this.turn ) {
+      if ( game.user.id === userId ) this.update({turn});
+      else this.updateSource({turn});
+    }
     if ( this.active && (options.render !== false) ) this.collection.render();
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onDeleteDescendantDocuments(parent, collection, documents, ids, options, userId) {
-    super._onDeleteDescendantDocuments(parent, collection, documents, ids, options, userId);
-    if ( parent === this ) this._refreshTokenHUD(documents);
+  _onDeleteEmbeddedDocuments(embeddedName, documents, result, options, userId) {
+    super._onDeleteEmbeddedDocuments(embeddedName, documents, result, options, userId);
 
-    // Update the turn order, taking note of which surviving combatants remain
-    const priorState = foundry.utils.deepClone(this.current);
-    const combatant = this.combatant;
+    // Update the turn order and adjust the combat to keep the combatant the same (unless they were deleted)
+    const current = this.combatant;
     const {prevSurvivor, nextSurvivor} = this.turns.reduce((obj, t, i) => {
-      let valid = !ids.includes(t.id);
+      let valid = !result.includes(t.id);
       if ( this.settings.skipDefeated ) valid &&= !t.isDefeated;
       if ( !valid ) return obj;
       if ( i < this.turn ) obj.prevSurvivor = t;
@@ -640,152 +613,25 @@ class Combat extends ClientDocumentMixin(foundry.documents.BaseCombat) {
       return obj;
     }, {});
     this.setupTurns();
-    this.#recordPreviousState(priorState);
 
-    // If the current combatant was removed progress to the next survivor
-    // Otherwise, keep the combatant the same
-    let adjustedTurn;
-    if ( ids.includes(combatant?.id) ) {
+    // If the current combatant was removed, update the turn order to the next survivor
+    let turn = this.turn;
+    if ( result.includes(current?.id) ) {
       const survivor = nextSurvivor || prevSurvivor;
-      if ( survivor ) adjustedTurn = this.turns.findIndex(t => t.id === survivor.id);
+      if ( survivor ) turn = this.turns.findIndex(t => t.id === survivor.id);
     }
-    else if ( combatant ) {
-      const sameTurn = this.turns.findIndex(t => t.id === combatant.id);
-      adjustedTurn = sameTurn !== this.turn ? sameTurn : undefined;
-    }
-    if ( options.turnEvents !== false ) this._manageTurnEvents(adjustedTurn);
 
-    // Render the Collection
+    // Otherwise, keep the combatant the same
+    else turn = this.turns.findIndex(t => t.id === current?.id);
+
+    // Update database or perform a local override
+    turn = Math.max(turn, 0);
+    if ( current ) {
+      if ( game.user.id === userId ) this.update({turn});
+      else this.updateSource({turn});
+    }
+
+    // Render the collection
     if ( this.active && (options.render !== false) ) this.collection.render();
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Update the previous turn data.
-   * Compare the state with the new current state. Only update the previous state if there is a difference.
-   * @param {CombatHistoryData} priorState      A cloned copy of the current history state before changes
-   */
-  #recordPreviousState(priorState) {
-    const current = this.current;
-    const hasChanged = (current.combatantId !== priorState.combatantId) || (current.round !== priorState.round)
-      || (current.turn !== priorState.turn);
-    if ( hasChanged ) this.previous = priorState;
-  }
-
-  /* -------------------------------------------- */
-  /*  Turn Events                                 */
-  /* -------------------------------------------- */
-
-  /**
-   * Manage the execution of Combat lifecycle events.
-   * This method orchestrates the execution of four events in the following order, as applicable:
-   * 1. End Turn
-   * 2. End Round
-   * 3. Begin Round
-   * 4. Begin Turn
-   * Each lifecycle event is an async method, and each is awaited before proceeding.
-   * @param {number} [adjustedTurn]   Optionally, an adjusted turn to commit to the Combat.
-   * @returns {Promise<void>}
-   * @protected
-   */
-  async _manageTurnEvents(adjustedTurn) {
-    if ( !game.users.activeGM?.isSelf ) return;
-    const prior = this.combatants.get(this.previous.combatantId);
-
-    // Adjust the turn order before proceeding. Used for embedded document workflows
-    if ( Number.isNumeric(adjustedTurn) ) await this.update({turn: adjustedTurn}, {turnEvents: false});
-    if ( !this.started ) return;
-
-    // Identify what progressed
-    const advanceRound = this.current.round > (this.previous.round ?? -1);
-    const advanceTurn = this.current.turn > (this.previous.turn ?? -1);
-    if ( !(advanceTurn || advanceRound) ) return;
-
-    // Conclude prior turn
-    if ( prior ) await this._onEndTurn(prior);
-
-    // Conclude prior round
-    if ( advanceRound && (this.previous.round !== null) ) await this._onEndRound();
-
-    // Begin new round
-    if ( advanceRound ) await this._onStartRound();
-
-    // Begin a new turn
-    await this._onStartTurn(this.combatant);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * A workflow that occurs at the end of each Combat Turn.
-   * This workflow occurs after the Combat document update, prior round information exists in this.previous.
-   * This can be overridden to implement system-specific combat tracking behaviors.
-   * This method only executes for one designated GM user. If no GM users are present this method will not be called.
-   * @param {Combatant} combatant     The Combatant whose turn just ended
-   * @returns {Promise<void>}
-   * @protected
-   */
-  async _onEndTurn(combatant) {
-    if ( CONFIG.debug.combat ) {
-      console.debug(`${vtt} | Combat End Turn: ${this.combatants.get(this.previous.combatantId).name}`);
-    }
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * A workflow that occurs at the end of each Combat Round.
-   * This workflow occurs after the Combat document update, prior round information exists in this.previous.
-   * This can be overridden to implement system-specific combat tracking behaviors.
-   * This method only executes for one designated GM user. If no GM users are present this method will not be called.
-   * @returns {Promise<void>}
-   * @protected
-   */
-  async _onEndRound() {
-    if ( CONFIG.debug.combat ) console.debug(`${vtt} | Combat End Round: ${this.previous.round}`);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * A workflow that occurs at the start of each Combat Round.
-   * This workflow occurs after the Combat document update, new round information exists in this.current.
-   * This can be overridden to implement system-specific combat tracking behaviors.
-   * This method only executes for one designated GM user. If no GM users are present this method will not be called.
-   * @returns {Promise<void>}
-   * @protected
-   */
-  async _onStartRound() {
-    if ( CONFIG.debug.combat ) console.debug(`${vtt} | Combat Start Round: ${this.round}`);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * A workflow that occurs at the start of each Combat Turn.
-   * This workflow occurs after the Combat document update, new turn information exists in this.current.
-   * This can be overridden to implement system-specific combat tracking behaviors.
-   * This method only executes for one designated GM user. If no GM users are present this method will not be called.
-   * @param {Combatant} combatant     The Combatant whose turn just started
-   * @returns {Promise<void>}
-   * @protected
-   */
-  async _onStartTurn(combatant) {
-    if ( CONFIG.debug.combat ) console.debug(`${vtt} | Combat Start Turn: ${this.combatant.name}`);
-  }
-
-  /* -------------------------------------------- */
-  /*  Deprecations and Compatibility              */
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  updateEffectDurations() {
-    const msg = "Combat#updateEffectDurations is renamed to Combat#updateCombatantActors";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return this.updateCombatantActors();
   }
 }

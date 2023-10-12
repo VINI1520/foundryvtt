@@ -222,7 +222,7 @@ class TokenLayer extends PlaceablesLayer {
           sceneId: t.scene.id,
           actorId: t.document.actorId,
           hidden: t.document.hidden
-        };
+        }
       });
       return combat.createEmbeddedDocuments("Combatant", createData);
     }
@@ -231,7 +231,7 @@ class TokenLayer extends PlaceablesLayer {
     if ( !game.user.isGM ) return [];
     const tokenIds = new Set(tokens.map(t => t.id));
     const combatantIds = combat.combatants.reduce((ids, c) => {
-      if ( tokenIds.has(c.tokenId) ) ids.push(c.id);
+      if (tokenIds.has(c.tokenId)) ids.push(c.id);
       return ids;
     }, []);
     return combat.deleteEmbeddedDocuments("Combatant", combatantIds);
@@ -263,7 +263,7 @@ class TokenLayer extends PlaceablesLayer {
     this.placeables.filter(t => t._animation).forEach(t => {
       t.stopAnimation();
       t.document.reset();
-      t.renderFlags.set({refreshSize: true, refreshPosition: true, refreshMesh: true});
+      t.refresh();
     });
     canvas.app.ticker.remove(this._animateTargets, this);
   }
@@ -310,20 +310,7 @@ class TokenLayer extends PlaceablesLayer {
    * @protected
    */
   _getOccludableTokens() {
-    return game.user.isGM ? canvas.tokens.controlled : canvas.tokens.ownedTokens.filter(t => !t.document.hidden);
-  }
-
-  /* -------------------------------------------- */
-
-  /** @inheritdoc */
-  storeHistory(type, data) {
-    super.storeHistory(type, data.map(d => {
-      // Clean actorData and delta updates from the history so changes to those fields are not undone.
-      d = foundry.utils.deepClone(d);
-      delete d.actorData;
-      delete d.delta;
-      return d;
-    }));
+    return game.user.isGM ? canvas.tokens.controlled : canvas.tokens.ownedTokens;
   }
 
   /* -------------------------------------------- */
@@ -352,7 +339,7 @@ class TokenLayer extends PlaceablesLayer {
     }
 
     // Prepare the Token document
-    const td = await actor.getTokenDocument({x: data.x, y: data.y, hidden: game.user.isGM && event.altKey});
+    const td = await actor.getTokenDocument({x: data.x, y: data.y, hidden: event.altKey});
 
     // Bypass snapping
     if ( event.shiftKey ) td.updateSource({
@@ -395,21 +382,10 @@ class TokenLayer extends PlaceablesLayer {
       // Place Ruler waypoints
       case "ruler":
         return canvas.controls.ruler._onClickLeft(event);
+        break;
     }
 
     // If we don't explicitly return from handling the tool, use the default behavior
     super._onClickLeft(event);
-  }
-
-  /* -------------------------------------------- */
-
-  /**
-   * Reset canvas and tokens mouse manager.
-   */
-  onClickTokenTools() {
-    canvas.mouseInteractionManager?.reset({state: false});
-    for ( const token of this.placeables ) {
-      token.mouseInteractionManager?.reset();
-    }
   }
 }

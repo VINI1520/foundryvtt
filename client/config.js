@@ -13,13 +13,9 @@ const CONFIG = globalThis.CONFIG = {
    * Configure debugging flags to display additional information
    */
   debug: {
-    combat: false,
     dice: false,
     documents: false,
-    fog: {
-      extractor: false,
-      manager: false
-    },
+    fog: false,
     hooks: false,
     av: false,
     avclient: false,
@@ -85,12 +81,10 @@ const CONFIG = globalThis.CONFIG = {
     documentClass: Actor,
     collection: Actors,
     compendiumIndexFields: [],
-    compendiumBanner: "ui/banners/actor-banner.webp",
     sidebarIcon: "fas fa-user",
-    dataModels: {},
+    systemDataModels: {},
     typeLabels: {},
     typeIcons: {},
-    trackableAttributes: {}
   },
 
   /**
@@ -101,8 +95,7 @@ const CONFIG = globalThis.CONFIG = {
   Adventure: {
     documentClass: Adventure,
     compendiumIndexFields: [],
-    compendiumBanner: "ui/banners/adventure-banner.webp",
-    sidebarIcon: "fa-solid fa-treasure-chest"
+    sidebarIcon: "fa-solid fa-folder-tree"
   },
 
   /**
@@ -111,10 +104,9 @@ const CONFIG = globalThis.CONFIG = {
   Cards: {
     collection: CardStacks,
     compendiumIndexFields: [],
-    compendiumBanner: "ui/banners/cards-banner.webp",
     documentClass: Cards,
     sidebarIcon: "fa-solid fa-cards",
-    dataModels: {},
+    systemDataModels: {},
     presets: {
       pokerDark: {
         type: "deck",
@@ -127,7 +119,11 @@ const CONFIG = globalThis.CONFIG = {
         src: "cards/poker-deck-light.json"
       }
     },
-    typeLabels: {},
+    typeLabels: {
+      deck: "CARDS.CardsDeck",
+      hand: "CARDS.CardsHand",
+      pile: "CARDS.CardsPile",
+    },
     typeIcons: {
       deck: "fas fa-cards",
       hand: "fa-duotone fa-cards",
@@ -174,43 +170,23 @@ const CONFIG = globalThis.CONFIG = {
   },
 
   /**
-   * Configuration for dice rolling behaviors in the Foundry Virtual Tabletop client.
+   * Configuration for dicecoin rolling behaviors in the Foundry VTT client
    * @type {object}
    */
   Dice: {
-    /**
-     * The Dice types which are supported.
-     * @type {Array<typeof DiceTerm>}
-     */
     types: [Die, FateDie],
     rollModes: Object.entries(CONST.DICE_ROLL_MODES).reduce((obj, e) => {
       let [k, v] = e;
       obj[v] = `CHAT.Roll${k.titleCase()}`;
       return obj;
     }, {}),
-    /**
-     * Configured Roll class definitions
-     * @type {Array<typeof Roll>}
-     */
     rolls: [Roll],
-    /**
-     * Configured DiceTerm class definitions
-     * @type {Object<typeof RollTerm>}
-     */
     termTypes: {DiceTerm, MathTerm, NumericTerm, OperatorTerm, ParentheticalTerm, PoolTerm, StringTerm},
-    /**
-     * Configured roll terms and the classes they map to.
-     * @enum {typeof DiceTerm}
-     */
     terms: {
       c: Coin,
       d: Die,
       f: FateDie
     },
-    /**
-     * A function used to provide random uniform values.
-     * @type {function():number}
-     */
     randomUniform: MersenneTwister.random
   },
 
@@ -238,9 +214,8 @@ const CONFIG = globalThis.CONFIG = {
     documentClass: Item,
     collection: Items,
     compendiumIndexFields: [],
-    compendiumBanner: "ui/banners/item-banner.webp",
     sidebarIcon: "fas fa-suitcase",
-    dataModels: {},
+    systemDataModels: {},
     typeLabels: {},
     typeIcons: {}
   },
@@ -252,7 +227,6 @@ const CONFIG = globalThis.CONFIG = {
     documentClass: JournalEntry,
     collection: Journal,
     compendiumIndexFields: [],
-    compendiumBanner: "ui/banners/journalentry-banner.webp",
     noteIcons: {
       Anchor: "icons/svg/anchor.svg",
       Barrel: "icons/svg/barrel.svg",
@@ -292,7 +266,6 @@ const CONFIG = globalThis.CONFIG = {
     documentClass: Macro,
     collection: Macros,
     compendiumIndexFields: [],
-    compendiumBanner: "ui/banners/macro-banner.webp",
     sidebarIcon: "fas fa-code"
   },
 
@@ -303,7 +276,6 @@ const CONFIG = globalThis.CONFIG = {
     documentClass: Playlist,
     collection: Playlists,
     compendiumIndexFields: [],
-    compendiumBanner: "ui/banners/playlist-banner.webp",
     sidebarIcon: "fas fa-music",
     autoPreloadSeconds: 20
   },
@@ -315,7 +287,6 @@ const CONFIG = globalThis.CONFIG = {
     documentClass: RollTable,
     collection: RollTables,
     compendiumIndexFields: ["formula"],
-    compendiumBanner: "ui/banners/rolltable-banner.webp",
     sidebarIcon: "fas fa-th-list",
     resultIcon: "icons/svg/d20-black.svg",
     resultTemplate: "templates/dice/table-result.html"
@@ -328,7 +299,6 @@ const CONFIG = globalThis.CONFIG = {
     documentClass: Scene,
     collection: Scenes,
     compendiumIndexFields: [],
-    compendiumBanner: "ui/banners/scene-banner.webp",
     sidebarIcon: "fas fa-map"
   },
 
@@ -359,15 +329,13 @@ const CONFIG = globalThis.CONFIG = {
     daylightColor: 0xEEEEEE,
     brightestColor: 0xFFFFFF,
     darknessLightPenalty: 0.25,
-    videoPremultiplyRgx: /Edg|Firefox|Electron/,
     dispositionColors: {
       HOSTILE: 0xE72124,
       NEUTRAL: 0xF1D836,
       FRIENDLY: 0x43DFDF,
       INACTIVE: 0x555555,
       PARTY: 0x33BC4E,
-      CONTROLLED: 0xFF9829,
-      SECRET: 0xA612D4
+      CONTROLLED: 0xFF9829
     },
     exploredColor: 0x000000,
     unexploredColor: 0x000000,
@@ -395,10 +363,6 @@ const CONFIG = globalThis.CONFIG = {
       interface: {
         groupClass: InterfaceCanvasGroup,
         parent: "rendered"
-      },
-      overlay: {
-        groupClass: OverlayCanvasGroup,
-        parent: "stage"
       }
     },
     layers: {
@@ -455,21 +419,11 @@ const CONFIG = globalThis.CONFIG = {
     },
     fogManager: FogManager,
     colorManager: CanvasColorManager,
-    /**
-     * @enum {typeof PointSourcePolygon}
-     */
-    polygonBackends: {
-      sight: ClockwiseSweepPolygon,
-      light: ClockwiseSweepPolygon,
-      sound: ClockwiseSweepPolygon,
-      move: ClockwiseSweepPolygon
-    },
-    visibilityFilter: VisibilityFilter,
+    losBackend: ClockwiseSweepPolygon,
     rulerClass: Ruler,
     globalLightConfig: {
       luminosity: 0
     },
-    dragSpeedModifier: 0.8,
     maxZoom: 3.0,
     objectBorderThickness: 4,
     lightAnimations: {
@@ -484,17 +438,6 @@ const CONFIG = globalThis.CONFIG = {
         animation: LightSource.prototype.animateTorch,
         illuminationShader: TorchIlluminationShader,
         colorationShader: TorchColorationShader
-      },
-      revolving: {
-        label: "LIGHT.AnimationRevolving",
-        animation: LightSource.prototype.animateTime,
-        colorationShader: RevolvingColorationShader
-      },
-      siren: {
-        label: "LIGHT.AnimationSiren",
-        animation: LightSource.prototype.animateTorch,
-        illuminationShader: SirenIlluminationShader,
-        colorationShader: SirenColorationShader
       },
       pulse: {
         label: "LIGHT.AnimationPulse",
@@ -804,14 +747,12 @@ const CONFIG = globalThis.CONFIG = {
         id: "senseInvisibility",
         label: "DETECTION.SenseInvisibility",
         walls: false,
-        angle: false,
         type: DetectionMode.DETECTION_TYPES.OTHER
       }),
       feelTremor: new DetectionModeTremor({
         id: "feelTremor",
         label: "DETECTION.FeelTremor",
         walls: false,
-        angle: false,
         type: DetectionMode.DETECTION_TYPES.MOVE
       }),
       seeAll: new DetectionModeAll({
@@ -823,7 +764,6 @@ const CONFIG = globalThis.CONFIG = {
         id: "senseAll",
         label: "DETECTION.SenseAll",
         walls: false,
-        angle: false,
         type: DetectionMode.DETECTION_TYPES.OTHER
       })
     }
@@ -853,151 +793,14 @@ const CONFIG = globalThis.CONFIG = {
 
   /**
    * Available Weather Effects implementations
-   * @typedef {Object} WeatherAmbienceConfiguration
-   * @param {string} id
-   * @param {string} label
-   * @param {{enabled: boolean, blendMode: PIXI.BLEND_MODES}} filter
-   * @param {WeatherEffectConfiguration[]} effects
-   *
-   * @typedef {Object} WeatherEffectConfiguration
-   * @param {string} id
-   * @param {typeof ParticleEffect|WeatherShaderEffect} effectClass
-   * @param {PIXI.BLEND_MODES} blendMode
-   * @param {object} config
+   * @type {object}
    */
   weatherEffects: {
-    leaves: {
-      id: "leaves",
-      label: "WEATHER.AutumnLeaves",
-      effects: [{
-        id: "leavesParticles",
-        effectClass: AutumnLeavesWeatherEffect
-      }]
-    },
-    rain: {
-      id: "rain",
-      label: "WEATHER.Rain",
-      filter: {
-        enabled: false
-      },
-      effects: [{
-        id: "rainShader",
-        effectClass: WeatherShaderEffect,
-        shaderClass: RainShader,
-        blendMode: PIXI.BLEND_MODES.SCREEN,
-        config: {
-          opacity: 0.25,
-          tint: [0.7, 0.9, 1.0],
-          intensity: 1,
-          strength: 1,
-          rotation: 0.2618,
-          speed: 0.2,
-        }
-      }]
-    },
-    rainStorm: {
-      id: "rainStorm",
-      label: "WEATHER.RainStorm",
-      filter: {
-        enabled: false
-      },
-      effects: [{
-        id: "fogShader",
-        effectClass: WeatherShaderEffect,
-        shaderClass: FogShader,
-        blendMode: PIXI.BLEND_MODES.SCREEN,
-        performanceLevel: 2,
-        config: {
-          slope: 1.5,
-          intensity: 0.050,
-          speed: -55.0,
-          scale: 25,
-        }
-      },
-      {
-        id: "rainShader",
-        effectClass: WeatherShaderEffect,
-        shaderClass: RainShader,
-        blendMode: PIXI.BLEND_MODES.SCREEN,
-        config: {
-          opacity: 0.45,
-          tint: [0.7, 0.9, 1.0],
-          intensity: 1.5,
-          strength: 1.5,
-          rotation: 0.5236,
-          speed: 0.30,
-        }
-      }]
-    },
-    fog: {
-      id: "fog",
-      label: "WEATHER.Fog",
-      filter: {
-        enabled: false
-      },
-      effects: [{
-        id: "fogShader",
-        effectClass: WeatherShaderEffect,
-        shaderClass: FogShader,
-        blendMode: PIXI.BLEND_MODES.SCREEN,
-        config: {
-          slope: 0.45,
-          intensity: 0.4,
-          speed: 0.4,
-        }
-      }]
-    },
-    snow: {
-      id: "snow",
-      label: "WEATHER.Snow",
-      filter: {
-        enabled: false
-      },
-      effects: [{
-        id: "snowShader",
-        effectClass: WeatherShaderEffect,
-        shaderClass: SnowShader,
-        blendMode: PIXI.BLEND_MODES.SCREEN,
-        config: {
-          tint: [0.85, 0.95, 1],
-          direction: 0.5,
-          speed: 2,
-          scale: 2.5,
-        }
-      }]
-    },
-    blizzard: {
-      id: "blizzard",
-      label: "WEATHER.Blizzard",
-      filter: {
-        enabled: false
-      },
-      effects: [{
-        id: "snowShader",
-        effectClass: WeatherShaderEffect,
-        shaderClass: SnowShader,
-        blendMode: PIXI.BLEND_MODES.SCREEN,
-        config: {
-          tint: [0.95, 1, 1],
-          direction: 0.80,
-          speed: 8,
-          scale: 2.5,
-        }
-      },
-      {
-        id: "fogShader",
-        effectClass: WeatherShaderEffect,
-        shaderClass: FogShader,
-        blendMode: PIXI.BLEND_MODES.SCREEN,
-        performanceLevel: 2,
-        config: {
-          slope: 1.0,
-          intensity: 0.15,
-          speed: -4.0,
-        }
-      }]
-    }
+    leaves: AutumnLeavesWeatherEffect,
+    rain: RainWeatherEffect,
+    snow: SnowWeatherEffect
   },
+
 
   /**
    * The control icons used for rendering common HUD operations
@@ -1019,8 +822,7 @@ const CONFIG = globalThis.CONFIG = {
     doorClosed: "icons/svg/door-closed-outline.svg",
     doorOpen: "icons/svg/door-open-outline.svg",
     doorSecret: "icons/svg/door-secret-outline.svg",
-    doorLocked: "icons/svg/door-locked-outline.svg",
-    wallDirection: "icons/svg/wall-direction.svg"
+    doorLocked: "icons/svg/door-locked-outline.svg"
   },
 
   /**
@@ -1042,16 +844,6 @@ const CONFIG = globalThis.CONFIG = {
    */
   fontDefinitions: {
     Arial: {editor: true, fonts: []},
-    Amiri: {
-      editor: true,
-      fonts: [
-        {urls: ["fonts/amiri/amiri-regular.woff2"]},
-        {urls: ["fonts/amiri/amiri-bold.woff2"], weight: 700}
-      ]
-    },
-    "Bruno Ace": {editor: true, fonts: [
-      {urls: ["fonts/bruno-ace/bruno-ace.woff2"]}
-    ]},
     Courier: {editor: true, fonts: []},
     "Courier New": {editor: true, fonts: []},
     "Modesto Condensed": {
@@ -1091,173 +883,165 @@ const CONFIG = globalThis.CONFIG = {
   statusEffects: [
     {
       id: "dead",
-      name: "EFFECT.StatusDead",
+      label: "EFFECT.StatusDead",
       icon: "icons/svg/skull.svg"
     },
     {
       id: "unconscious",
-      name: "EFFECT.StatusUnconscious",
+      label: "EFFECT.StatusUnconscious",
       icon: "icons/svg/unconscious.svg"
     },
     {
       id: "sleep",
-      name: "EFFECT.StatusAsleep",
+      label: "EFFECT.StatusAsleep",
       icon: "icons/svg/sleep.svg"
     },
     {
       id: "stun",
-      name: "EFFECT.StatusStunned",
+      label: "EFFECT.StatusStunned",
       icon: "icons/svg/daze.svg"
     },
     {
       id: "prone",
-      name: "EFFECT.StatusProne",
+      label: "EFFECT.StatusProne",
       icon: "icons/svg/falling.svg"
     },
     {
       id: "restrain",
-      name: "EFFECT.StatusRestrained",
+      label: "EFFECT.StatusRestrained",
       icon: "icons/svg/net.svg"
     },
     {
       id: "paralysis",
-      name: "EFFECT.StatusParalysis",
+      label: "EFFECT.StatusParalysis",
       icon: "icons/svg/paralysis.svg"
     },
     {
       id: "fly",
-      name: "EFFECT.StatusFlying",
+      label: "EFFECT.StatusFlying",
       icon: "icons/svg/wing.svg"
     },
     {
       id: "blind",
-      name: "EFFECT.StatusBlind",
+      label: "EFFECT.StatusBlind",
       icon: "icons/svg/blind.svg"
     },
     {
       id: "deaf",
-      name: "EFFECT.StatusDeaf",
+      label: "EFFECT.StatusDeaf",
       icon: "icons/svg/deaf.svg"
     },
     {
       id: "silence",
-      name: "EFFECT.StatusSilenced",
+      label: "EFFECT.StatusSilenced",
       icon: "icons/svg/silenced.svg"
     },
     {
       id: "fear",
-      name: "EFFECT.StatusFear",
+      label: "EFFECT.StatusFear",
       icon: "icons/svg/terror.svg"
     },
     {
       id: "burning",
-      name: "EFFECT.StatusBurning",
+      label: "EFFECT.StatusBurning",
       icon: "icons/svg/fire.svg"
     },
     {
       id: "frozen",
-      name: "EFFECT.StatusFrozen",
+      label: "EFFECT.StatusFrozen",
       icon: "icons/svg/frozen.svg"
     },
     {
       id: "shock",
-      name: "EFFECT.StatusShocked",
+      label: "EFFECT.StatusShocked",
       icon: "icons/svg/lightning.svg"
     },
     {
       id: "corrode",
-      name: "EFFECT.StatusCorrode",
+      label: "EFFECT.StatusCorrode",
       icon: "icons/svg/acid.svg"
     },
     {
       id: "bleeding",
-      name: "EFFECT.StatusBleeding",
+      label: "EFFECT.StatusBleeding",
       icon: "icons/svg/blood.svg"
     },
     {
       id: "disease",
-      name: "EFFECT.StatusDisease",
+      label: "EFFECT.StatusDisease",
       icon: "icons/svg/biohazard.svg"
     },
     {
       id: "poison",
-      name: "EFFECT.StatusPoison",
+      label: "EFFECT.StatusPoison",
       icon: "icons/svg/poison.svg"
     },
     {
       id: "curse",
-      name: "EFFECT.StatusCursed",
+      label: "EFFECT.StatusCursed",
       icon: "icons/svg/sun.svg"
     },
     {
       id: "regen",
-      name: "EFFECT.StatusRegen",
+      label: "EFFECT.StatusRegen",
       icon: "icons/svg/regen.svg"
     },
     {
       id: "degen",
-      name: "EFFECT.StatusDegen",
+      label: "EFFECT.StatusDegen",
       icon: "icons/svg/degen.svg"
     },
     {
       id: "upgrade",
-      name: "EFFECT.StatusUpgrade",
+      label: "EFFECT.StatusUpgrade",
       icon: "icons/svg/upgrade.svg"
     },
     {
       id: "downgrade",
-      name: "EFFECT.StatusDowngrade",
+      label: "EFFECT.StatusDowngrade",
       icon: "icons/svg/downgrade.svg"
     },
     {
       id: "invisible",
-      name: "EFFECT.StatusInvisible",
+      label: "EFFECT.StatusInvisible",
       icon: "icons/svg/invisible.svg"
     },
     {
       id: "target",
-      name: "EFFECT.StatusTarget",
+      label: "EFFECT.StatusTarget",
       icon: "icons/svg/target.svg"
     },
     {
       id: "eye",
-      name: "EFFECT.StatusMarked",
+      label: "EFFECT.StatusMarked",
       icon: "icons/svg/eye.svg"
     },
     {
       id: "bless",
-      name: "EFFECT.StatusBlessed",
+      label: "EFFECT.StatusBlessed",
       icon: "icons/svg/angel.svg"
     },
     {
       id: "fireShield",
-      name: "EFFECT.StatusFireShield",
+      label: "EFFECT.StatusFireShield",
       icon: "icons/svg/fire-shield.svg"
     },
     {
       id: "coldShield",
-      name: "EFFECT.StatusIceShield",
+      label: "EFFECT.StatusIceShield",
       icon: "icons/svg/ice-shield.svg"
     },
     {
       id: "magicShield",
-      name: "EFFECT.StatusMagicShield",
+      label: "EFFECT.StatusMagicShield",
       icon: "icons/svg/mage-shield.svg"
     },
     {
       id: "holyShield",
-      name: "EFFECT.StatusHolyShield",
+      label: "EFFECT.StatusHolyShield",
       icon: "icons/svg/holy-shield.svg"
     }
-  ].map(s => {
-    /** @deprecated since v11 */
-    return Object.defineProperty(s, "label", {
-      get() { return this.name; },
-      set(value) { this.name = value; },
-      enumerable: false,
-      configurable: true
-    });
-  }),
+  ],
 
   /**
    * A mapping of status effect IDs which provide some additional mechanical integration.
@@ -1289,19 +1073,6 @@ const CONFIG = globalThis.CONFIG = {
   },
 
   /**
-   * Localization constants.
-   * @type {object}
-   */
-  i18n: {
-    /**
-     * In operations involving the document index, search prefixes must have at least this many characters to avoid too
-     * large a search space. Languages that have hundreds or thousands of characters will typically have very shallow
-     * search trees, so it should be safe to lower this number in those cases.
-     */
-    searchMinimumCharacterLength: 4
-  },
-
-  /**
    * Configuration for time tracking
    * @type {{turnTime: number}}
    */
@@ -1318,23 +1089,7 @@ const CONFIG = globalThis.CONFIG = {
    * Configuration for the ActiveEffect embedded document type
    */
   ActiveEffect: {
-    documentClass: ActiveEffect,
-
-    /**
-     * If true, Active Effects on Items will be copied to the Actor when the Item is created on the Actor if the
-     * Active Effect's transfer property is true, and will be deleted when that Item is deleted from the Actor.
-     * If false, Active Effects are never copied to the Actor, but will still apply to the Actor from within the Item
-     * if the transfer property on the Active Effect is true.
-     * @deprecated since v11
-     */
-    legacyTransferral: true
-  },
-
-  /**
-   * Configuration for the ActorDelta embedded document type.
-   */
-  ActorDelta: {
-    documentClass: ActorDelta
+    documentClass: ActiveEffect
   },
 
   /**
@@ -1342,7 +1097,7 @@ const CONFIG = globalThis.CONFIG = {
    */
   Card: {
     documentClass: Card,
-    dataModels: {}
+    systemDataModels: {}
   },
 
   /**
@@ -1357,8 +1112,12 @@ const CONFIG = globalThis.CONFIG = {
    */
   JournalEntryPage: {
     documentClass: JournalEntryPage,
-    dataModels: {},
-    typeLabels: {},
+    typeLabels: {
+      image: "JOURNALENTRYPAGE.TypeImage",
+      pdf: "JOURNALENTRYPAGE.TypePDF",
+      text: "JOURNALENTRYPAGE.TypeText",
+      video: "JOURNALENTRYPAGE.TypeVideo"
+    },
     typeIcons: {
       image: "fas fa-file-image",
       pdf: "fas fa-file-pdf",
@@ -1463,163 +1222,17 @@ const CONFIG = globalThis.CONFIG = {
     documentClass: TokenDocument,
     objectClass: Token,
     layerClass: TokenLayer,
-    prototypeSheetClass: TokenConfig,
-    adjectivesPrefix: "TOKEN.Adjectives"
+    prototypeSheetClass: TokenConfig
   },
 
   /**
-   * @typedef {Object} WallDoorSound
-   * @property {string} label     A localization string label
-   * @property {string} close     A sound path when the door is closed
-   * @property {string} lock      A sound path when the door becomes locked
-   * @property {string} open      A sound path when opening the door
-   * @property {string} test      A sound path when attempting to open a locked door
-   * @property {string} unlock    A sound path when the door becomes unlocked
-   */
-
-  /**
    * Configuration for the Wall embedded document type and its representation on the game Canvas
-   * @property {typeof ClientDocument} documentClass
-   * @property {typeof PlaceableObject} objectClass
-   * @property {typeof CanvasLayer} layerClass
-   * @property {number} thresholdAttenuationMultiplier
-   * @property {WallDoorSound[]} doorSounds
+   * @enum {Function}
    */
   Wall: {
     documentClass: WallDocument,
     objectClass: Wall,
-    layerClass: WallsLayer,
-    thresholdAttenuationMultiplier: 1,
-    doorSounds: {
-      futuristicFast: {
-        label: "WALLS.DoorSound.FuturisticFast",
-        close: "sounds/doors/futuristic/close-fast.ogg",
-        lock: "sounds/doors/futuristic/lock.ogg",
-        open: "sounds/doors/futuristic/open-fast.ogg",
-        test: "sounds/doors/futuristic/test.ogg",
-        unlock: "sounds/doors/futuristic/unlock.ogg"
-      },
-      futuristicHydraulic: {
-        label: "WALLS.DoorSound.FuturisticHydraulic",
-        close: "sounds/doors/futuristic/close-hydraulic.ogg",
-        lock: "sounds/doors/futuristic/lock.ogg",
-        open: "sounds/doors/futuristic/open-hydraulic.ogg",
-        test: "sounds/doors/futuristic/test.ogg",
-        unlock: "sounds/doors/futuristic/unlock.ogg"
-      },
-      futuristicForcefield: {
-        label: "WALLS.DoorSound.FuturisticForcefield",
-        close: "sounds/doors/futuristic/close-forcefield.ogg",
-        lock: "sounds/doors/futuristic/lock.ogg",
-        open: "sounds/doors/futuristic/open-forcefield.ogg",
-        test: "sounds/doors/futuristic/test-forcefield.ogg",
-        unlock: "sounds/doors/futuristic/unlock.ogg"
-      },
-      industrial: {
-        label: "WALLS.DoorSound.Industrial",
-        close: "sounds/doors/industrial/close.ogg",
-        lock: "sounds/doors/industrial/lock.ogg",
-        open: "sounds/doors/industrial/open.ogg",
-        test: "sounds/doors/industrial/test.ogg",
-        unlock: "sounds/doors/industrial/unlock.ogg"
-      },
-      industrialCreaky: {
-        label: "WALLS.DoorSound.IndustrialCreaky",
-        close: "sounds/doors/industrial/close-creaky.ogg",
-        lock: "sounds/doors/industrial/lock.ogg",
-        open: "sounds/doors/industrial/open-creaky.ogg",
-        test: "sounds/doors/industrial/test.ogg",
-        unlock: "sounds/doors/industrial/unlock.ogg"
-      },
-      jail: {
-        label: "WALLS.DoorSound.Jail",
-        close: "sounds/doors/jail/close.ogg",
-        lock: "sounds/doors/jail/lock.ogg",
-        open: "sounds/doors/jail/open.ogg",
-        test: "sounds/doors/jail/test.ogg",
-        unlock: "sounds/doors/jail/unlock.ogg"
-      },
-      metal: {
-        label: "WALLS.DoorSound.Metal",
-        close: "sounds/doors/metal/close.ogg",
-        lock: "sounds/doors/metal/lock.ogg",
-        open: "sounds/doors/metal/open.ogg",
-        test: "sounds/doors/metal/test.ogg",
-        unlock: "sounds/doors/metal/unlock.ogg"
-      },
-      slidingMetal: {
-        label: "WALLS.DoorSound.SlidingMetal",
-        close: "sounds/doors/shutter/close.ogg",
-        lock: "sounds/doors/shutter/lock.ogg",
-        open: "sounds/doors/shutter/open.ogg",
-        test: "sounds/doors/shutter/test.ogg",
-        unlock: "sounds/doors/shutter/unlock.ogg"
-      },
-      slidingModern: {
-        label: "WALLS.DoorSound.SlidingModern",
-        close: "sounds/doors/sliding/close.ogg",
-        lock: "sounds/doors/sliding/lock.ogg",
-        open: "sounds/doors/sliding/open.ogg",
-        test: "sounds/doors/sliding/test.ogg",
-        unlock: "sounds/doors/sliding/unlock.ogg"
-      },
-      slidingWood: {
-        label: "WALLS.DoorSound.SlidingWood",
-        close: "sounds/doors/sliding/close-wood.ogg",
-        lock: "sounds/doors/sliding/lock.ogg",
-        open: "sounds/doors/sliding/open-wood.ogg",
-        test: "sounds/doors/sliding/test.ogg",
-        unlock: "sounds/doors/sliding/unlock.ogg"
-      },
-      stoneBasic: {
-        label: "WALLS.DoorSound.StoneBasic",
-        close: "sounds/doors/stone/close.ogg",
-        lock: "sounds/doors/stone/lock.ogg",
-        open: "sounds/doors/stone/open.ogg",
-        test: "sounds/doors/stone/test.ogg",
-        unlock: "sounds/doors/stone/unlock.ogg"
-      },
-      stoneRocky: {
-        label: "WALLS.DoorSound.StoneRocky",
-        close: "sounds/doors/stone/close-rocky.ogg",
-        lock: "sounds/doors/stone/lock.ogg",
-        open: "sounds/doors/stone/open-rocky.ogg",
-        test: "sounds/doors/stone/test.ogg",
-        unlock: "sounds/doors/stone/unlock.ogg"
-      },
-      stoneSandy: {
-        label: "WALLS.DoorSound.StoneSandy",
-        close: "sounds/doors/stone/close-sandy.ogg",
-        lock: "sounds/doors/stone/lock.ogg",
-        open: "sounds/doors/stone/open-sandy.ogg",
-        test: "sounds/doors/stone/test.ogg",
-        unlock: "sounds/doors/stone/unlock.ogg"
-      },
-      woodBasic: {
-        label: "WALLS.DoorSound.WoodBasic",
-        close: "sounds/doors/wood/close.ogg",
-        lock: "sounds/doors/wood/lock.ogg",
-        open: "sounds/doors/wood/open.ogg",
-        test: "sounds/doors/wood/test.ogg",
-        unlock: "sounds/doors/wood/unlock.ogg"
-      },
-      woodCreaky: {
-        label: "WALLS.DoorSound.WoodCreaky",
-        close: "sounds/doors/wood/close-creaky.ogg",
-        lock: "sounds/doors/wood/lock.ogg",
-        open: "sounds/doors/wood/open-creaky.ogg",
-        test: "sounds/doors/wood/test.ogg",
-        unlock: "sounds/doors/wood/unlock.ogg"
-      },
-      woodHeavy: {
-        label: "WALLS.DoorSound.WoodHeavy",
-        close: "sounds/doors/wood/close-heavy.ogg",
-        lock: "sounds/doors/wood/lock.ogg",
-        open: "sounds/doors/wood/open-heavy.ogg",
-        test: "sounds/doors/wood/test.ogg",
-        unlock: "sounds/doors/wood/unlock.ogg"
-      }
-    }
+    layerClass: WallsLayer
   },
 
   /* -------------------------------------------- */
@@ -1740,42 +1353,5 @@ Object.defineProperty(CONFIG, "fontFamilies", {
     foundry.utils.logCompatibilityWarning(
       "CONFIG.fontFamilies is deprecated. Please use CONFIG.fontDefinitions instead.", {since: 10, until: 12});
     return CONFIG._fontFamilies;
-  }
-});
-
-/**
- * @deprecated since v11
- */
-["Actor", "Item", "JournalEntryPage", "Cards", "Card"].forEach(doc => {
-  const warning = `You are accessing CONFIG.${doc}.systemDataModels which is deprecated. `
-    + `Please use CONFIG.${doc}.dataModels instead.`;
-  Object.defineProperty(CONFIG[doc], "systemDataModels", {
-    enumerable: false,
-    get() {
-      foundry.utils.logCompatibilityWarning(warning, {since: 11, until: 13});
-      return CONFIG[doc].dataModels;
-    },
-    set(models) {
-      foundry.utils.logCompatibilityWarning(warning, {since: 11, until: 13});
-      CONFIG[doc].dataModels = models;
-    }
-  });
-});
-
-/**
- * @deprecated since v11
- */
-Object.defineProperty(CONFIG.Canvas, "losBackend", {
-  get() {
-    const warning = "You are accessing CONFIG.Canvas.losbackend, which is deprecated."
-    + " Use CONFIG.Canvas.polygonBackends.sight instead.";
-    foundry.utils.logCompatibilityWarning(warning, {since: 11, until: 13});
-    return CONFIG.Canvas.polygonBackends.sight;
-  },
-  set(cls) {
-    const warning = "You are setting CONFIG.Canvas.losbackend, which is deprecated."
-      + " Use CONFIG.Canvas.polygonBackends[type] instead.";
-    foundry.utils.logCompatibilityWarning(warning, {since: 11, until: 13});
-    for ( const k of Object.keys(CONFIG.Canvas.polygonBackends) ) CONFIG.Canvas.polygonBackends[k] = cls;
   }
 });

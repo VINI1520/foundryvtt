@@ -53,7 +53,7 @@ class SetupTour extends Tour {
   async _installingASystem() {
     // Activate Systems tab and warm cache
     if ( this.currentStep.id === "systemsTab" ) {
-      ui.setupPackages.activateTab("systems");
+      ui.setup.activateTab("systems");
 
       // noinspection ES6MissingAwait
       Setup.warmPackages({type: "system"});
@@ -61,7 +61,8 @@ class SetupTour extends Tour {
 
     // Render the InstallPackage app with a filter
     else if ( this.currentStep.id === "searching" ) {
-      await Setup.browsePackages("system", {search: "Simple Worldbuilding"});
+      const install = new InstallPackage({packageType: "system", setup: ui.setup, filterValue: "Simple Worldbuilding"});
+      await install._render(true);
     }
   }
 
@@ -76,7 +77,7 @@ class SetupTour extends Tour {
 
     // Activate the World tab
     if ( this.currentStep.id === "worldTab" ) {
-      ui.setupPackages.activateTab("world");
+      ui.setup.activateTab("world");
     }
     else if ( this.currentStep.id === "worldTitle" ) {
       let world = new World({

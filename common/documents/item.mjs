@@ -39,7 +39,7 @@ class BaseItem extends Document {
     name: "Item",
     collection: "items",
     indexed: true,
-    compendiumIndexFields: ["_id", "name", "img", "type", "sort", "folder"],
+    compendiumIndexFields: ["_id", "name", "img", "type", "sort"],
     embedded: {ActiveEffect: "effects"},
     label: "DOCUMENT.Item",
     labelPlural: "DOCUMENT.Items",
@@ -59,11 +59,11 @@ class BaseItem extends Document {
   static defineSchema() {
     return {
       _id: new fields.DocumentIdField(),
-      name: new fields.StringField({required: true, blank: false, textSearch: true}),
+      name: new fields.StringField({required: true, blank: false}),
       type: new fields.StringField({required: true, choices: () => this.TYPES,
         validationError: "must be in the array of Item types defined by the game system"}),
-      img: new fields.FilePathField({categories: ["IMAGE"], initial: data => this.getDefaultArtwork(data).img}),
-      system: new fields.TypeDataField(this),
+      img: new fields.FilePathField({categories: ["IMAGE"], initial: () => this.DEFAULT_ICON}),
+      system: new fields.SystemDataField(this),
       effects: new fields.EmbeddedCollectionField(documents.BaseActiveEffect),
       folder: new fields.ForeignDocumentField(documents.BaseFolder),
       sort: new fields.IntegerSortField(),
@@ -81,17 +81,6 @@ class BaseItem extends Document {
    */
   static DEFAULT_ICON = "icons/svg/item-bag.svg";
 
-  /* -------------------------------------------- */
-
-  /**
-   * Determine default artwork based on the provided item data.
-   * @param {ItemData} itemData  The source item data.
-   * @returns {{img: string}}    Candidate item image.
-   */
-  static getDefaultArtwork(itemData) {
-    return { img: this.DEFAULT_ICON };
-  }
-
   /* ---------------------------------------- */
 
   /**
@@ -99,7 +88,7 @@ class BaseItem extends Document {
    * @type {string[]}
    */
   static get TYPES() {
-    return game.documentTypes.Item;
+    return game.documentTypes?.Item || [];
   }
 
   /* ---------------------------------------- */

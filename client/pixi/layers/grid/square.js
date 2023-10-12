@@ -18,33 +18,26 @@ class SquareGrid extends BaseGrid {
 
     // Vertical lines
     let nx = Math.floor(dimensions.width / dimensions.size);
-    const grid = new PIXI.Graphics();
-    for ( let i = 1; i < nx; i++ ) {
+    for (let i = 1; i < nx; i++) {
       let x = i * dimensions.size;
-      this.#drawLine(grid, [x, 0, x, dimensions.height], color, alpha);
+      this.addChild(this._drawLine([x, 0, x, dimensions.height], color, alpha));
     }
 
     // Horizontal lines
     let ny = Math.ceil(dimensions.height / dimensions.size);
-    for ( let i = 1; i < ny; i++ ) {
+    for (let i = 1; i < ny; i++) {
       let y = i * dimensions.size;
-      this.#drawLine(grid, [0, y, dimensions.width, y], color, alpha);
+      this.addChild(this._drawLine([0, y, dimensions.width, y], color, alpha));
     }
-    this.addChild(grid);
     return this;
   }
 
   /* -------------------------------------------- */
 
-  /**
-   * Draw a line on the square grid.
-   * @param {PIXI.Graphics} grid      The grid on which to draw the line.
-   * @param {number[]} points         A pair of points coordinates.
-   * @param {number} lineColor        The line color.
-   * @param {number} lineAlpha        The line alpha.
-   */
-  #drawLine(grid, points, lineColor, lineAlpha) {
-    grid.lineStyle(1, lineColor, lineAlpha).moveTo(points[0], points[1]).lineTo(points[2], points[3]);
+  _drawLine(points, lineColor, lineAlpha) {
+    let line = new PIXI.Graphics();
+    line.lineStyle(1, lineColor, lineAlpha).moveTo(points[0], points[1]).lineTo(points[2], points[3]);
+    return line;
   }
 
   /* -------------------------------------------- */

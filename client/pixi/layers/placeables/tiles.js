@@ -24,6 +24,14 @@ class TilesLayer extends PlaceablesLayer {
 
   /* -------------------------------------------- */
 
+  /**
+   * A mapping of url to texture data
+   * @type {Map<string,object>}
+   */
+  textureDataMap = new Map();
+
+  /* -------------------------------------------- */
+
   /** @inheritdoc */
   get hookName() {
     return TilesLayer.name;
@@ -63,10 +71,9 @@ class TilesLayer extends PlaceablesLayer {
    * @type {boolean}
    */
   get displayRoofs() {
-    const tilesTool = (ui.controls.activeControl === "tiles");
     const restrictVision = !game.user.isGM
-      || (canvas.tokens.controlled.length > 0) || canvas.effects.visionSources.some(s => s.active);
-    return (this.active && ui.controls.control.foreground) || (restrictVision && !tilesTool);
+      || (canvas.tokens.controlled.length > 0) || (canvas.effects.visionSources.size > 0);
+    return (this.active && ui.controls.control.foreground) || restrictVision;
   }
 
   /* -------------------------------------------- */
@@ -80,16 +87,6 @@ class TilesLayer extends PlaceablesLayer {
   }
 
   /* -------------------------------------------- */
-
-  /** @override */
-  *controllableObjects() {
-    const foreground = ui.controls.control.foreground ?? false;
-    for ( const placeable of super.controllableObjects() ) {
-      if ( placeable.document.overhead === foreground ) yield placeable;
-    }
-  }
-
-  /* -------------------------------------------- */
   /*  Layer Methods                               */
   /* -------------------------------------------- */
 
@@ -97,7 +94,7 @@ class TilesLayer extends PlaceablesLayer {
   _activate() {
     super._activate();
     this._activateSubLayer(!!ui.controls.control.foreground);
-    canvas.perception.update({refreshLighting: true, refreshTiles: true});
+    canvas.perception.update({refreshLighting: true, refreshTiles: true}, true);
   }
 
   /* -------------------------------------------- */
@@ -106,7 +103,7 @@ class TilesLayer extends PlaceablesLayer {
   _deactivate() {
     super._deactivate();
     this.objects.visible = true;
-    canvas.perception.update({refreshLighting: true, refreshTiles: true});
+    canvas.perception.update({refreshLighting: true, refreshTiles: true}, true);
   }
 
   /* -------------------------------------------- */
@@ -118,9 +115,8 @@ class TilesLayer extends PlaceablesLayer {
    */
   _activateSubLayer(foreground=false) {
     for ( const tile of this.tiles ) {
-      tile.eventMode = (tile.document.overhead === foreground) ? "static" : "none";
+      tile.interactive = tile.document.overhead === foreground;
       if ( tile.controlled ) tile.release();
-      else tile.renderFlags.set({refreshShape: true});
     }
   }
 
@@ -128,12 +124,12 @@ class TilesLayer extends PlaceablesLayer {
 
   /** @inheritdoc */
   async _tearDown(options) {
-    for ( const tile of this.tiles ) {
+    for ( let tile of this.tiles ) {
       if ( tile.isVideo ) {
         game.video.stop(tile.sourceElement);
       }
     }
-    TextureLoader.textureBufferDataMap.clear();
+    this.textureDataMap.clear();
     return super._tearDown(options);
   }
 
@@ -144,9 +140,8 @@ class TilesLayer extends PlaceablesLayer {
   /** @inheritdoc */
   async _onDragLeftStart(event) {
     await super._onDragLeftStart(event);
-    const interaction = event.interactionData;
-    const tile = this.constructor.placeableClass.createPreview(interaction.origin);
-    interaction.preview = this.preview.addChild(tile);
+    const tile = this.constructor.placeableClass.createPreview(event.data.origin);
+    event.data.preview = this.preview.addChild(tile);
     this.preview._creating = false;
   }
 
@@ -154,9 +149,8 @@ class TilesLayer extends PlaceablesLayer {
 
   /** @inheritdoc */
   _onDragLeftMove(event) {
-    const interaction = event.interactionData;
-    const {destination, tilesState, preview, origin} = interaction;
-    if ( tilesState === 0 ) return;
+    const { destination, createState, preview, origin, originalEvent } = event.data;
+    if ( createState === 0 ) return;
 
     // Determine the drag distance
     const dx = destination.x - origin.x;
@@ -164,25 +158,25 @@ class TilesLayer extends PlaceablesLayer {
     const dist = Math.min(Math.abs(dx), Math.abs(dy));
 
     // Update the preview object
-    preview.document.width = (event.altKey ? dist * Math.sign(dx) : dx);
-    preview.document.height = (event.altKey ? dist * Math.sign(dy) : dy);
-    if ( !event.shiftKey ) {
+    preview.document.width = (originalEvent.altKey ? dist * Math.sign(dx) : dx);
+    preview.document.height = (originalEvent.altKey ? dist * Math.sign(dy) : dy);
+    if ( !originalEvent.shiftKey ) {
       const half = canvas.dimensions.size / 2;
       preview.document.width = preview.document.width.toNearest(half);
       preview.document.height = preview.document.height.toNearest(half);
     }
-    preview.renderFlags.set({refreshShape: true});
+    preview.refresh();
 
     // Confirm the creation state
-    interaction.tilesState = 2;
+    event.data.createState = 2;
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
   _onDragLeftDrop(event) {
-    const { tilesState, preview } = event.interactionData;
-    if ( tilesState !== 2 ) return;
+    const { createState, preview } = event.data;
+    if ( createState !== 2 ) return;
     const doc = preview.document;
 
     // Re-normalize the dropped shape
@@ -257,19 +251,5 @@ class TilesLayer extends PlaceablesLayer {
     // Create the tile as hidden if the ALT key is pressed
     if ( event.altKey ) data.hidden = true;
     return data;
-  }
-
-  /* -------------------------------------------- */
-  /*  Deprecations and Compatibility              */
-  /* -------------------------------------------- */
-
-  /**
-   * @deprecated since v11
-   * @ignore
-   */
-  get textureDataMap() {
-    const msg = "TilesLayer#textureDataMap has moved to TextureLoader.textureBufferDataMap";
-    foundry.utils.logCompatibilityWarning(msg, {since: 11, until: 13});
-    return TextureLoader.textureBufferDataMap;
   }
 }

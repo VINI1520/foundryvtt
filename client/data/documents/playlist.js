@@ -303,24 +303,24 @@ class Playlist extends ClientDocumentMixin(foundry.documents.BasePlaylist) {
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onCreateDescendantDocuments(parent, collection, documents, data, options, userId) {
-    super._onCreateDescendantDocuments(parent, collection, documents, data, options, userId);
+  _onCreateEmbeddedDocuments(embeddedName, documents, createData, options, userId) {
+    super._onCreateEmbeddedDocuments(embeddedName, documents, createData, options, userId);
     if ( options.render !== false ) this.collection.render();
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onUpdateDescendantDocuments(parent, collection, documents, changes, options, userId) {
-    super._onUpdateDescendantDocuments(parent, collection, documents, changes, options, userId);
+  _onUpdateEmbeddedDocuments(embeddedName, documents, changes, options, userId) {
+    super._onUpdateEmbeddedDocuments(embeddedName, documents, changes, options, userId);
     if ( options.render !== false ) this.collection.render();
   }
 
   /* -------------------------------------------- */
 
   /** @inheritdoc */
-  _onDeleteDescendantDocuments(parent, collection, documents, ids, options, userId) {
-    super._onDeleteDescendantDocuments(parent, collection, documents, ids, options, userId);
+  _onDeleteEmbeddedDocuments(embeddedName, documents, ids, options, userId) {
+    super._onDeleteEmbeddedDocuments(embeddedName, documents, ids, options, userId);
     if ( options.render !== false ) this.collection.render();
   }
 

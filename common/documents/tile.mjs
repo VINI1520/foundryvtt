@@ -78,8 +78,8 @@ class BaseTile extends Document {
       overhead: new fields.BooleanField(),
       roof: new fields.BooleanField(),
       occlusion: new fields.SchemaField({
-        mode: new fields.NumberField({choices: Object.values(CONST.OCCLUSION_MODES),
-          initial: CONST.OCCLUSION_MODES.FADE,
+        mode: new fields.NumberField({choices: Object.values(CONST.TILE_OCCLUSION_MODES),
+          initial: CONST.TILE_OCCLUSION_MODES.FADE,
           validationError: "must be a value in CONST.TILE_OCCLUSION_MODES"}),
         alpha: new fields.AlphaField({initial: 0}),
         radius: new fields.NumberField({positive: true})

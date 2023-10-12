@@ -1,0 +1,107 @@
+{{#*inline "contentTreeNode"}}
+<div class="node">
+    <h4 class="folder {{node.state}}" data-document-id="{{node.id}}">
+        <i class="fa-solid fa-folder-open"></i> {{node.name}}
+        <a class="control" data-action="remove"><i class="fa-solid fa-xmark"></i></a>
+    </h4>
+    {{#each node.children as |child|}}
+    {{> contentTreeNode node=child}}
+    {{/each}}
+    <ol class="document-list">
+        {{#each node.documents as |document|}}
+        <h4 class="document {{document.state}}" data-tooltip="{{localize document.stateLabel}}" data-document-id="{{document.id}}">
+            {{document.name}}
+            <a class="control" data-action="remove"><i class="fa-solid fa-xmark"></i></a>
+        </h4>
+        {{/each}}
+    </ol>
+</div>
+{{/inline}}
+
+<form autocomplete="off">
+    <nav class="tabs sheet-tabs" data-group="primary" aria-role="{{localize 'SHEETS.FormNavLabel'}}">
+        <a class="item" data-tab="summary" data-group="primary">
+            <i class="fa-solid fa-feather-pointed"></i> {{localize "ADVENTURE.ExportTabSummary"}}
+        </a>
+        <a class="item" data-tab="contents" data-group="primary">
+            <i class="fa-solid fa-folder-tree"></i> {{localize "ADVENTURE.ExportTabContents"}}
+        </a>
+    </nav>
+
+    <section class="tab" data-group="primary" data-tab="summary">
+        <div class="form-group">
+            <label>{{localize "ADVENTURE.Name"}}</label>
+            <div class="form-fields">
+                <input type="text" name="name" value="{{adventure.name}}"/>
+            </div>
+            <p class="hint">{{ localize "ADVENTURE.NameHint" }}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{ localize "ADVENTURE.Image" }}:</label>
+            <div class="form-fields">
+                {{filePicker target="img" type="image"}}
+                <input class="image" type="text" name="img" placeholder="path/image.png" value="{{adventure.img}}"/>
+            </div>
+            <p class="hint">{{ localize "ADVENTURE.ImageHint" }}</p>
+        </div>
+
+        <div class="form-group stacked">
+            <label>{{localize "ADVENTURE.Caption"}}</label>
+            <div class="form-fields">
+                <textarea name="caption">{{adventure.caption}}</textarea>
+            </div>
+            <p class="hint">{{ localize "ADVENTURE.CaptionHint" }}</p>
+        </div>
+
+        <div class="form-group stacked">
+            <label>{{localize "ADVENTURE.Description"}}</label>
+            {{editor adventure.description target="description" button=false engine="prosemirror" collaborate=false}}
+            <p class="hint">{{ localize "ADVENTURE.DescriptionHint" }}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize "FOLDER.DocumentSort"}}</label>
+            <div class="form-fields">
+                {{numberInput adventure.sort name="sort" step=1}}
+            </div>
+            <p class="hint">{{ localize "FOLDER.DocumentSortHint" }}</p>
+        </div>
+    </section>
+
+    <section class="tab contents" data-group="primary" data-tab="contents">
+        {{#each contentTree as |root|}}
+        <div class="document-type {{root.cssClass}}" data-document-type="{{root.documentName}}">
+            <h3 class="noborder">
+                <a class="control collapse" data-action="collapse"><i class="{{root.collapseIcon}}"></i></a>
+                <i class="{{root.icon}}"></i> {{root.name}} ({{root.documentCount}})
+                <a class="control clear" data-action="clear"><i class="fa-solid fa-trash"></i></a>
+            </h3>
+            <div class="included-content">
+                {{#each root.children}}
+                {{> contentTreeNode node=this}}
+                {{/each}}
+                <ol class="document-list">
+                    {{#each root.documents as |document|}}
+                    <h4 class="document {{document.state}}" data-tooltip="{{localize document.stateLabel}}" data-document-id="{{document.id}}">
+                        {{document.name}}
+                        <a class="control" data-action="remove"><i class="fa-solid fa-xmark"></i></a>
+                    </h4>
+                    {{/each}}
+                </ol>
+            </div>
+        </div>
+        {{else}}
+        <div class="drop-zone">
+            <label>{{localize "ADVENTURE.ExportDropZone"}}</label>
+        </div>
+        {{/each}}
+    </section>
+
+    <footer class="adventure-footer">
+        <button type="submit">
+            <i class="fas fa-upload"></i>
+            {{localize "ADVENTURE.ExportSubmit"}}
+        </button>
+    </footer>
+</form>

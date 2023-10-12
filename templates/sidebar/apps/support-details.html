@@ -1,0 +1,98 @@
+<article class="flexcol">
+    <!-- Support & Issues Tabs -->
+    <nav class="sheet-tabs tabs" data-group="main">
+        <a class="item" data-tab="support">
+            <i class="fas fa-hands-helping"></i> {{localize "SUPPORT.Title"}}
+        </a>
+        <a class="item" data-tab="documents">
+            <i class="fa-solid fa-file-circle-exclamation"></i> {{localize "SUPPORT.DocumentIssues"}}
+        </a>
+        <a class="item" data-tab="client">
+            <i class="fa-regular fa-window"></i> {{localize "SUPPORT.ClientIssues"}}
+        </a>
+        <a class="item" data-tab="modules">
+            <i class="fa-solid fa-box-open"></i> {{localize "SUPPORT.ModuleIssues"}}
+        </a>
+    </nav>
+
+    <!-- Support Details Report -->
+    <div class="tab" data-group="main" data-tab="support">
+        <h2>{{ localize 'SUPPORT.Places' }}</h2>
+        <p class="notes">
+            {{ localize 'SUPPORT.Discord' }} <a href="https://discord.gg/foundryvtt" target="_blank" rel="nofollow" title="FoundryVTT Discord">https://discord.gg/foundryvtt</a>
+        </p>
+        <p class="notes">
+            {{ localize 'SUPPORT.BugReporting' }} <a href="https://foundryvtt.com/contact-us?category=bug" target="_blank" rel="nofollow" title="FoundryVTT Contact Us">https://foundryvtt.com/contact-us/</a>
+        </p>
+
+        <h2>{{ localize 'SUPPORT.Details' }}</h2>
+        <p class="notes">{{ localize 'SUPPORT.ReportPrelude' }}</p>
+
+        <pre tabindex="0" id="support-report">{{> supportDetailsReport }}</pre>
+        <button type="button" data-action="copy">
+            <i class="fas fa-copy"></i> {{ localize 'SUPPORT.CopyReport' }}
+        </button>
+    </div>
+
+    <!-- Document Issues -->
+    <div class="tab" data-group="main" data-tab="documents">
+        <ul class="summary-tree summary-tree-root">
+            {{#each documentIssues}}
+            <li>
+                <details>
+                    <summary>{{label}}</summary>
+                    <ul>
+                        {{#each documents}}
+                        <li>
+                            <details>
+                                <summary>{{name}}</summary>
+                                {{{validationError}}}
+                            </details>
+                        </li>
+                        {{/each}}
+                    </ul>
+                </details>
+            </li>
+            {{/each}}
+        </ul>
+    </div>
+
+    <!-- Client Issues -->
+    <div class="tab" data-group="main" data-tab="client">
+        <ul class="issues">
+            {{#each clientIssues}}
+            <li class="issue notification {{severity}}">{{{message}}}</li>
+            {{/each}}
+        </ul>
+    </div>
+
+    <!-- Module Issues -->
+    {{#*inline "moduleIssue"}}
+    <li>
+        <details>
+            <summary>{{label}}</summary>
+            <ul>
+                {{#each issues}}
+                <li>
+                    <details>
+                        <summary>{{label}}</summary>
+                        <ul class="issues">
+                            {{#each issues}}
+                            <li class="issue notification {{severity}}">{{message}}</li>
+                            {{/each}}
+                        </ul>
+                    </details>
+                </li>
+                {{/each}}
+            </ul>
+        </details>
+    </li>
+    {{/inline}}
+    <div class="tab" data-group="main" data-tab="modules">
+        <ul>
+            {{#each moduleIssues}}
+                {{> moduleIssue}}
+            {{/each}}
+        </ul>
+    </div>
+</article>

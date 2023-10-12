@@ -1,0 +1,40 @@
+<div id="hotbar" class="flexrow {{#if locked}}locked{{/if}}" data-tooltip-direction="UP">
+    <div id="hotbar-directory-controls" class="bar-controls flexcol">
+        <a id="bar-toggle" aria-label="{{localize 'MACRO.CollapseHotbar'}}" role="button" data-tooltip="MACRO.CollapseHotbar">
+            <i class="fas fa-caret-down"></i>
+        </a>
+        <a id="macro-directory" aria-label="{{localize 'MACRO.Directory'}}" role="button" data-tooltip="MACRO.Directory">
+            <i class="fas fa-folder"></i>
+        </a>
+    </div>
+    <nav id="action-bar" class="flexrow {{barClass}}" aria-label="{{localize 'MACRO.NavLabel'}}">
+        <ol id="macro-list" class="flexrow" data-page="{{page}}">
+            {{#each macros}}
+            <li class="macro {{this.cssClass}}" data-slot="{{this.slot}}"  role="button"
+            {{#if this.macro}}
+            data-macro-id="{{this.macro.id}}" aria-label="{{this.tooltip}}" data-tooltip="{{this.tooltip}}"
+            {{else}}
+            aria-label="{{localize 'MACRO.EmptySlot' slot=slot}}"
+            {{/if}}>
+                <span class="macro-key">{{this.key}}</span>
+                {{#if this.icon}}
+                <img class="macro-icon" src="{{this.icon}}" alt="{{this.tooltip}}" />
+                {{/if}}
+            </li>
+            {{/each}}
+        </ol>
+        <div id="hotbar-lock" class="bar-controls flexcol" data-tooltip-direction="UP">
+            <a class="page-control" data-action="lock" aria-label="{{localize 'MACRO.LockBar'}}" role="button" data-tooltip="MACRO.{{ifThen locked "Unlock" "Lock"}}Bar">
+                <i class="fas fa-lock{{#unless locked}}-open{{/unless}}"></i>
+            </a>
+        </div>
+        <div id="hotbar-page-controls" class="bar-controls flexcol" data-tooltip-direction="UP">
+            <a class="page-control" data-action="page-up" aria-label="{{localize 'MACRO.PageUp'}}" role="button" data-tooltip="MACRO.PageUp" alt="{{localize 'MACRO.PageUp'}}" >
+                <i class="fas fa-caret-up"></i></a>
+            <span class="page-number">{{page}}</span>
+            <a class="page-control" data-action="page-down" aria-label="{{localize 'MACRO.PageDown'}}" role="button" data-tooltip="MACRO.PageDown" alt="{{localize 'MACRO.PageDown'}}">
+                <i class="fas fa-caret-down"></i>
+            </a>
+        </div>
+    </nav>
+</div>

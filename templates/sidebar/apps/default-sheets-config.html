@@ -1,0 +1,11 @@
+<h2 class="border">{{title}}</h2>
+{{#each subTypes}}
+<div class="form-group">
+    <label>{{name}}</label>
+    <div class="form-fields">
+        <select name="{{../id}}.{{type}}">
+            {{selectOptions defaultClasses selected=defaultClass}}
+        </select>
+    </div>
+</div>
+{{/each}}

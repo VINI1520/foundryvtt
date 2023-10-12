@@ -1,0 +1,48 @@
+{{!----------- Outer Form ------------}}
+<form class="flexcol">
+
+    {{!----------- Bulk Actions ------------}}
+    <nav class="bulk-actions flexrow" aria-label="{{ localize "SETUP.BACKUPS.BulkActions" }}">
+        <label class="checkbox">
+            <input type="checkbox" name="select-all" data-action="select-all">
+            {{ localize "SelectAll" }}
+        </label>
+        <a class="button" data-action="delete">{{ localize "DeleteSelected" }}</a>
+    </nav>
+
+    {{!----------- Backup List ------------}}
+    <div class="entry-list flexcol scrollable {{#if progress}}loading{{/if}}">
+
+        {{#if progress}}
+        <div class="progress">
+            <h3 class="divider">{{ localize progress.label }}</h3>
+            <i class="{{ progress.icon }}"></i>
+        </div>
+        {{/if}}
+
+        {{#each entries}}
+        <div class="flexrow checkbox-row" data-backup-id="{{ id }}">
+            <input type="checkbox" name="{{ id }}" aria-label="{{ title }}" {{ disabled inSnapshot }}
+                   {{#if inSnapshot}}data-tooltip="SETUP.BACKUPS.CannotDeleteInSnapshot"{{/if}}>
+            <div class="entry flexcol">
+                <header class="entry-title">
+                    <h3 class="ellipsis">{{ title }}</h3>
+                    <button class="install fas fa-undo" type="button" data-action="restore"
+                            {{#if noRestore}}disabled data-tooltip="SETUP.BACKUPS.CannotRestoreUnusable"{{/if}}>
+                        <span>{{ localize "SETUP.BACKUPS.Restore" }}</span>
+                    </button>
+                </header>
+                {{#if description}}<p class="entry-description ellipsis">{{ description }}</p>{{/if}}
+                <div class="entry-metadata tags flexrow">
+                    {{#each tags}}
+                    <span class="tag {{ type }}" {{#if tooltip}}data-tooltip="{{ tooltip }}"{{/if}}>
+                        {{#if icon}}<i class="{{ icon }}"></i>{{/if}}
+                        {{ label }}
+                    </span>
+                    {{/each}}
+                </div>
+            </div>
+        </div>
+        {{/each}}
+    </div>
+</form>

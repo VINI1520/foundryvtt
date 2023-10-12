@@ -1,0 +1,22 @@
+<header class="journal-header">
+    <input class="title" name="name" type="text" value="{{data.name}}" placeholder="{{localize 'JOURNALENTRYPAGE.PageTitle'}}"/>
+
+    <aside class="page-level flexcol">
+        <div class="heading-level flexrow">
+            <label class="flex0" data-tooltip="{{localize 'JOURNALENTRYPAGE.HeadingLevel'}}">
+                <i class="fa-solid fa-list-tree"></i>
+            </label>
+            <select name="title.level">
+                {{selectOptions headingLevels selected=data.title.level}}
+            </select>
+        </div>
+        <div class="show-title">
+            <label class="checkbox">
+                {{localize "JOURNALENTRYPAGE.ShowTitle"}}
+                <input type="checkbox" name="title.show" {{checked data.title.show}}>
+            </label>
+        </div>
+    </aside>
+</header>
+
+

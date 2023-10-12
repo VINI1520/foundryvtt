@@ -1,0 +1,298 @@
+/* ---------------------------------------- */
+/*  Text Input Fields                       */
+/* ---------------------------------------- */
+
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="date"],
+input[type="time"],
+input[type="search"],
+select {
+  width: 100%;
+  height: var(--input-height);
+  line-height: var(--input-height);
+  padding: 0 0.5rem;
+  background: var(--input-background-color);
+  border: 1px solid var(--input-border-color);
+  border-radius: 4px;
+  outline: 1px solid transparent;
+  color: var(--input-text-color);
+  user-select: text;
+  font-size: var(--font-size-14);
+  transition: outline-color 0.5s;
+
+  // Focused
+  &:focus {
+    outline: 2px solid var(--input-focus-outline-color);
+  }
+
+  // Disabled
+  &:disabled {
+    opacity: 1.0;  // browser sets 0.7
+    pointer-events: none;
+  }
+
+  // Selection
+  &::selection {
+    background: var(--input-text-selection-color);
+  }
+}
+
+// Read-Only Text Inputs
+
+
+// Text input specifically
+input[readonly] {
+  pointer-events: none;
+}
+
+// Select specifically
+select {
+  user-select: none;
+}
+
+
+/** Browser Time/Date Icons */
+::-webkit-calendar-picker-indicator {
+  display: none
+}
+
+/** Placeholder Text */
+::placeholder {
+  color: var(--color-light-5);
+}
+
+/** Icon Decorated Inputs */
+label.username,
+label.password,
+label.search {
+  display: flex;
+  align-items: center;
+  > input {
+    padding-right: 30px; // Space for icon
+  }
+  &::after {
+    flex: 0 0 30px;
+    margin-left: -30px;
+    display: inline-block;
+    line-height: var(--input-height);
+    font-size: 12px;
+    font-family: var(--font-awesome);
+    font-weight: 900;
+    text-align: center;
+    color: var(--color-light-5);
+  }
+}
+label.username::after {
+  content: "\F007";
+}
+label.password::after {
+  content: "\F084";
+}
+label.search::after {
+  content: "\F002";
+}
+
+/** Search Fields */
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: 0.5rem;
+  background: linear-gradient(45deg, transparent 0%, transparent 43%, var(--color-light-5) 45%, var(--color-light-5) 55%, transparent 57%,transparent 100%),
+    linear-gradient(135deg, transparent 0%, transparent 43%, var(--color-light-5) 45%, var(--color-light-5) 55%, transparent 57%, transparent 100%);
+  cursor: pointer;
+}
+
+/** Number Fields */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/** Hint Icons in Labels */
+label.hint {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  > i {
+    cursor: pointer;
+    transition: 0.5s;
+  }
+  > i:hover {
+    color: var(--color-warm-1);
+  }
+}
+
+/* ---------------------------------------- */
+/*  Checkboxes                              */
+/* ---------------------------------------- */
+
+input[type="checkbox"] {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+
+  &:disabled {
+    cursor: initial;
+  }
+  &:focus {
+    color: inherit;
+    outline: none;
+  }
+  &:focus-visible::before {
+    outline: 2px solid var(--input-focus-outline-color);
+  }
+  &:checked:focus-visible::before {
+    outline: 2px solid var(--input-focus-outline-color);
+  }
+  &::before {
+    font-family: var(--font-awesome);
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--checkbox-background-color);
+    content: "\f0c8";
+    border-radius: 3px;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    outline: 1px solid transparent;
+    transition: outline-color .5s;
+  }
+  &:checked::before {
+    color: var(--checkbox-checked-color);
+    font-weight: bold;
+    content: "\f14a";
+  }
+  &:disabled::before {
+    color: var(--checkbox-disabled-color);
+  }
+}
+
+/** Labeled Checkboxes */
+label.checkbox {
+  flex: auto;
+  padding: 0;
+  margin: 0;
+  font-size: var(--font-size-12);
+
+  > input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    position: relative;
+    top: 4px;
+  }
+
+  // Checkbox before label
+  &.before {
+    > input[type="checkbox"] {
+      margin-right: 0.5rem;
+    }
+  }
+
+  // Checkbox after label
+  &.after {
+    > input[type="checkbox"] {
+      margin-left: 0.5rem;
+    }
+  }
+}
+
+/* Text Areas */
+textarea {
+  min-height: 50px;
+  padding: 1rem;
+  background: transparent;
+  border: 1px solid var(--color-cool-4);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-14);
+  color: var(--color-light-2);
+  user-select: text;
+  &:focus {
+    box-shadow: 0 0 6px var(--color-warm-1);
+    outline: 1px solid transparent;
+  }
+  &:read-only {
+    color: var(--color-light-4);
+    box-shadow: none;
+  }
+  &::selection {
+    background: var(--color-cool-3);
+  }
+}
+
+/* ---------------------------------------- */
+/*  Buttons                                 */
+/* ---------------------------------------- */
+
+a.button,
+button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.5rem;
+  background: var(--button-background-color);
+  border: 1px solid var(--button-border-color);
+  border-radius: 4px;
+  color: var(--button-text-color);
+  text-decoration: none;
+  cursor: pointer;
+  font-size: var(--font-size-14);
+
+  // Button Icons
+  > i {
+    pointer-events: none;
+    margin-right: 0.25rem;
+  }
+
+  // Button Labels
+  > label {
+    pointer-events: none;
+  }
+
+  // Disabled Buttons
+  &:disabled {
+    pointer-events: none;
+  }
+
+  // Hovered Buttons
+  &:hover {
+    background: var(--button-hover-background-color);
+    color: var(--button-hover-text-color);
+    border-color: var(--button-hover-border-color);
+    transition: background-color 0.5s, border-color 0.5s;
+  }
+
+  // Focused Buttons
+  &:focus {
+    outline: 1px solid var(--button-focus-outline-color);
+    box-shadow: 0 0 4px var(--button-focus-outline-color);
+  }
+
+  // Icon-Only
+  &.icon {
+    > i {
+      margin: 0;
+    }
+  }
+
+  // Active Buttons - appear as focused
+  &.active {
+    outline: 1px solid var(--button-focus-outline-color);
+    box-shadow: 0 0 4px var(--button-focus-outline-color);
+  }
+}
+
+/** Bright Buttons */
+a.button.bright,
+button.bright {
+  text-transform: uppercase;
+}

@@ -1,0 +1,105 @@
+/* ---------------------------------------- */
+/* Cascade Layers Declaration               */
+/* Reference https://css-tricks.com/css-cascade-layers/
+/* ---------------------------------------- */
+
+@layer reset,           // 1. Browser reset styles
+       variables,       // 2. Declare framework variables
+       elements,        // 3. HTML elements and typography
+       blocks,          // 4. Block styles which are used across applications
+       applications,    // 5. Application-specific rules
+       layouts,         // 6. Page layouts
+       system,          // 7. Default game system styles
+       modules,         // 8. Default module styles
+       exceptions;      // 9. Special exceptions
+
+/* ---------------------------------------- */
+/*  Browser Reset                           */
+/* ---------------------------------------- */
+
+@layer reset {
+  @import "reset.less";
+}
+
+/* ---------------------------------------- */
+/*  Variable Declaration                    */
+/* ---------------------------------------- */
+
+@layer variables {
+  @import "variables.less";
+  @import "themes/fantasy.less";
+  @import "themes/scifi.less";
+}
+
+/* ---------------------------------------- */
+/*  Typography                              */
+/* ---------------------------------------- */
+
+@layer elements.typography {
+  @import "elements/typography.less";
+}
+
+/* ---------------------------------------- */
+/*  Media Elements                          */
+/* ---------------------------------------- */
+
+@layer elements.media {
+  @import "elements/media.less";
+}
+
+/* ---------------------------------------- */
+/*  Forms and Form Elements                 */
+/* ---------------------------------------- */
+
+@layer elements.forms {
+  @import "elements/forms.less";
+}
+
+/* ---------------------------------------- */
+/*  Block-Specific Rules                    */
+/* ---------------------------------------- */
+
+@layer blocks.basic {
+  @import "blocks/basic.less";
+}
+@layer blocks.forms {
+  @import "blocks/forms.less";
+}
+
+/* ---------------------------------------- */
+/*  Application-Specific Rules              */
+/* ---------------------------------------- */
+
+@layer applications {
+  @import "applications/apps.less";
+}
+
+/* ---------------------------------------- */
+/*  Page Layouts                            */
+/* ---------------------------------------- */
+
+@layer layouts.full {
+  @import "layouts/full.less";
+}
+
+@layer layouts.views {
+  @import "views/auth.less";
+  @import "views/setup.less";
+  @import "views/join.less";
+  @import "views/players.less";
+}
+
+@layer layouts.responsive {
+  @import "layouts/1440.less";
+  @import "layouts/960.less";
+  @import "layouts/720.less";
+  @import "layouts/480.less";
+}
+
+/* ---------------------------------------- */
+/*  Special Exceptions                      */
+/* ---------------------------------------- */
+
+@layer exceptions.prosemirror {
+  @import "exceptions/prosemirror.less";
+}

@@ -1,0 +1,18 @@
+<nav id="controls" class="flexrow" data-tooltip-direction="RIGHT" aria-label="{{localize 'CONTROLS.NavLabel'}}">
+    <ol class="main-controls app control-tools flexcol {{ cssClass }}" role="tablist">
+        {{#each controls as |c|}}
+        <li class="scene-control {{c.css}}" data-control="{{c.name}}" data-canvas-layer="{{c.layer}}" aria-label="{{localize c.title}}" role="tab" aria-controls="tools-panel-{{ c.name }}" data-tooltip="{{localize c.title}}">
+            <i class="{{c.icon}}"></i>
+        </li>
+        {{/each}}
+    </ol>
+    {{#each controls as |c|}}
+    <ol id="tools-panel-{{ c.name }}" role="tabpanel" class="sub-controls app control-tools flexcol {{c.css}}">
+        {{#each c.tools as |t|}}
+        <li class="control-tool {{t.css}}" data-tool="{{t.name}}" aria-label="{{localize t.title}}" role="button" data-tooltip="{{t.tooltip}}">
+            <i class="{{t.icon}}"></i>
+        </li>
+        {{/each}}
+    </ol>
+    {{/each}}
+</nav>

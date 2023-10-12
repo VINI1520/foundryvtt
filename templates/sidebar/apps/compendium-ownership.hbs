@@ -1,0 +1,10 @@
+<form class="compendium-ownership-dialog">
+    {{#each roles as |config role|}}
+    <div class="form-group">
+        <label>{{localize config.label}}</label>
+        <select name="{{role}}">
+            {{selectOptions config.levels selected=config.value}}
+        </select>
+    </div>
+    {{/each}}
+</form>

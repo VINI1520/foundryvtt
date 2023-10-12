@@ -1,0 +1,101 @@
+{{#*inline "entryPartial"}}
+<div class="entry flexcol"
+     data-package-title="{{ title }}"
+     {{#if packageId}}data-package-id="{{ packageId }}"{{/if}}
+     {{#if packageType}}data-package-type="{{ packageType }}"{{/if}}
+     {{#if backupId}}data-backup-id="{{ backupId }}"{{/if}}
+     {{#if snapshotId}}data-snapshot-id="{{ snapshotId }}"{{/if}}>
+    <header class="entry-title">
+        <h3 class="ellipsis">{{ title }}</h3>
+        {{#unless snapshotId}}
+        <button class="install" type="button" data-action="manage">
+            <span>{{ localize "SETUP.BACKUPS.Manage" }}</span>
+        </button>
+        {{#if packageExists}}
+        <button class="create fas fa-floppy-disk" type="button" data-action="create">
+            <span>{{ localize "SETUP.BACKUPS.TakeBackup" }}</span>
+        </button>
+        {{/if}}
+        {{/unless}}
+        <button class="install fas fa-undo" type="button" data-action="restore"
+            {{#if noRestore}}disabled data-tooltip="SETUP.BACKUPS.CannotRestoreUnusable"{{/if}}>
+            <span>{{ localize restoreLabel }}</span>
+        </button>
+    </header>
+    {{#if description}}<p class="entry-description ellipsis">{{{ description }}}</p>{{/if}}
+    <div class="entry-metadata tags flexrow">
+        {{#each tags}}
+        <span class="tag {{ type }}" {{#if tooltip}}data-tooltip="{{ tooltip }}"{{/if}}>
+            {{#if icon}}<i class="{{ icon }}"></i>{{/if}}
+            {{ label }}
+        </span>
+        {{/each}}
+    </div>
+</div>
+{{/inline}}
+
+{{!----------- Search Header ------------}}
+<header class="search">
+    <label class="search">
+        <input name="filter" type="search" placeholder="{{ localize "SETUP.PackageName" }}" autocomplete="off"
+               autofocus>
+    </label>
+</header>
+
+{{!----------- Main Body ------------}}
+<section class="body flexrow">
+
+    {{!----------- Left Column - Categories ------------}}
+    <nav class="categories flexcol" aria-label="{{ localize "SHEETS.FormNavLabel" }}">
+        <label>{{ localize "SETUP.BACKUPS.Categories" }}</label>
+        {{#each categories}}
+        <a class="control category {{#if active}}active{{/if}}" data-category="{{ id }}">
+            {{ label }}
+            <span class="count">[{{ count }}]</span>
+        </a>
+        {{/each}}
+        {{#if totalSize}}
+        <footer class="flexrow">
+            <strong>{{ localize "SETUP.BACKUPS.TotalSize" }}</strong>
+            {{ totalSize }}
+        </footer>
+        {{/if}}
+    </nav>
+
+    {{!----------- Right Column - Packages ------------}}
+    <form class="entries flexcol">
+
+        {{!----------- Bulk Actions ------------}}
+        {{#if hasBulkActions}}
+        <nav class="bulk-actions flexrow" aria-label="{{ localize "SETUP.BACKUPS.BulkActions" }}">
+            <label class="checkbox">
+                <input type="checkbox" name="select-all" data-action="select-all">
+                {{ localize "SelectAll" }}
+            </label>
+            <a class="button" data-action="delete">{{ localize "DeleteSelected" }}</a>
+        </nav>
+        {{/if}}
+
+        {{!----------- Packages List ------------}}
+        <div class="entry-list flexcol scrollable {{#if progress}}loading{{/if}}">
+
+            {{#if progress}}
+            <div class="progress">
+                <h3 class="divider">{{ localize progress.label }}</h3>
+                <i class="{{ progress.icon }}"></i>
+            </div>
+            {{/if}}
+
+            {{#each entries}}
+            {{#if @root.hasBulkActions}}
+            <div class="flexrow checkbox-row">
+                <input type="checkbox" name="{{ snapshotId }}" aria-label="{{ title }}">
+                {{> entryPartial}}
+            </div>
+            {{else}}
+            {{> entryPartial}}
+            {{/if}}
+            {{/each}}
+        </div>
+    </form>
+</section>

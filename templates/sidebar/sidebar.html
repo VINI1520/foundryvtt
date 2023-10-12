@@ -1,0 +1,16 @@
+<div id="sidebar" class="app">
+    <nav id="sidebar-tabs" class="tabs" role="tablist" data-tooltip-direction="DOWN" aria-label="{{localize 'SIDEBAR.NavLabel'}}">
+        {{#each tabs as |tab id|}}
+        <a class="item" data-tab="{{id}}" aria-label="{{localize tab.tooltip}}" aria-controls="{{id}}" role="tab" data-tooltip="{{tab.tooltip}}">
+            <i class="{{tab.icon}}"></i>
+            {{{tab.notification}}}
+        </a>
+        {{/each}}
+        <a class="collapse" aria-label="{{localize 'SIDEBAR.CollapseToggle'}}" role="button" data-tooltip="{{localize 'SIDEBAR.CollapseToggle'}}">
+            <i class="fas fa-caret-right"></i>
+        </a>
+    </nav>
+    {{#each tabs as |tab id|}}
+    <template class="tab" role="tabpanel" id="{{id}}" data-tab="{{id}}"></template>
+    {{/each}}
+</div>

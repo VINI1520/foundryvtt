@@ -1,0 +1,56 @@
+<form class="flexrow" autocomplete="off">
+    <nav class="filters" aria-label="{{localize 'TOURS.NavLabel'}}">
+        <h3 class="noborder">{{ localize "TOURS.TourCategories" }}</h3>
+        <div class="category-filter all {{#if allActive}}active{{/if}}">
+            <a class="filter" data-category="all">{{ localize "TOURS.AllTours" }}</a>
+            <span class="count">[{{ total }}]</span>
+        </div>
+        {{#each categories as |category|}}
+            <div class="category-filter {{ category.id }} {{#if category.active}}active{{/if}}">
+                <a class="filter" data-category="{{ category.id }}">{{ category.title }}</a>
+                <span class="count">[{{ category.count }}]</span>
+            </div>
+        {{/each}}
+    </nav>
+
+    <div class="categories flexcol">
+        <div class="tour-filter form-group">
+            <button class="reset-all" type="button">
+                <i class="fas fa-undo" title="{{localize 'SETTINGS.Reset'}}"></i> {{localize 'TOURS.ResetAll'}}
+            </button>
+            <label>{{localize "TOURS.TourFilter"}}</label>
+            <input name="filter" type="search" placeholder="{{localize 'TOURS.TourName'}}" value=""/>
+        </div>
+
+        <div class="category-list">
+        {{#each categories as |category|}}
+            {{#unless category.hidden}}
+            <section class="category" data-category-id="{{category.id}}">
+                <header class="category-header flexrow">
+                    <h3 class="category-title noborder">{{this.title}}</h3>
+                    <span class="category-collapse" title="Collapse"><i class="fas fa-chevron-down"></i></span>
+                    <span class="category-collapse hidden" title="Expand"><i class="fas fa-chevron-up"></i></span>
+                </header>
+                <ol class="tour-list">
+                {{#each this.tours as |tour| }}
+                    <li class="tour {{tour.cssClass}} flexrow" data-tour-id="{{tour.id}}">
+                        <h4 class="tour-title">{{tour.title}}</h4>
+                        <div class="flexrow">
+                            <span>{{tour.status}}</span>
+                            <div class="controls flexrow">
+                                {{#if tour.canBePlayed}}
+                                <a class="control" title="{{startOrResume}}" data-action="play"><i class="fas fa-play"></i></a>
+                                {{/if}}
+                                <a class="control" title="{{localize 'TOURS.Reset'}}" data-action="reset"><i class="fas fa-arrow-rotate-left"></i></a>
+                            </div>
+                        </div>
+                        {{#if tour.description}}<p class="notes">{{{tour.description}}}</p>{{/if}}
+                    </li>
+                {{/each}}
+                </ol>
+            </section>
+            {{/unless}}
+        {{/each}}
+        </div>
+    </div>
+</form>

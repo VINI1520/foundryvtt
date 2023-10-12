@@ -1,0 +1,75 @@
+<form autocomplete="off">
+    <p class="notes">
+        {{#if editable }}
+        {{localize 'MODMANAGE.Instructions'}}
+        {{else}}
+        {{localize 'MODMANAGE.View'}}
+        {{/if}}
+    </p>
+
+    <nav class="list-filters" aria-label="{{localize 'MODMANAGE.NavLabel'}}">
+        <input type="search" name="search" placeholder="{{localize 'MODMANAGE.Search'}}" value=""/>
+        {{#each filters}}
+        <a class="filter" data-filter="{{ this.id }}">{{ this.label }} ({{ this.count }})</a>
+        {{/each}}
+        <button type="button" class="expand">
+            <i class="fa"></i>
+        </button>
+    </nav>
+
+    <ul id="module-list" class="directory-list package-list">
+        {{#each modules}}
+        <li class="package flexcol{{css}}" data-module-id="{{this.id}}">
+            <div class="package-overview flexrow" {{#if this.tooltip}}data-tooltip="{{this.tooltip}}"{{/if}}>
+                <label class="package-title checkbox">
+                    <input type="checkbox" class="active" name="{{this.id}}" data-dtype="Boolean" {{checked this.active}}
+                           {{#if this.disabled}} disabled {{/if}}/>
+                    <div class="title-group">
+                        <div class="title">{{~this.title~}}</div>
+                        {{#if this.documents}}
+                            <div class="subtitle">{{{this.documents}}}</div>
+                        {{/if}}
+                    </div>
+                </label>
+                {{> templates/setup/parts/package-tags.hbs versionLabel="PACKAGE.TagVersion" package=this }}
+            </div>
+            <div class="package-description" >
+                {{{this.description}}}
+                <ul class="package-metadata">
+                    <li><strong>{{labels.authors}}:</strong> <span class="author">{{{authors}}}</span></li>
+                    {{#if this.url}}
+                    <li><strong>{{localize "URL"}}:</strong> <a href="{{this.url}}" target="_blank">{{this.url}}</a></li>
+                    {{/if}}
+                    {{#if this.readme}}
+                    <li><strong>{{localize "MODMANAGE.Readme"}}:</strong> <a href="{{this.readme}}" target="_blank">{{this.readme}}</a></li>
+                    {{/if}}
+                    {{#if this.bugs}}
+                    <li><strong>{{localize "MODMANAGE.Bugs"}}:</strong> <a href="{{this.bugs}}" target="_blank">{{this.bugs}}</a></li>
+                    {{/if}}
+                    {{#if this.relationships.requires}}
+                    <li>
+                        <strong>{{ localize "MODMANAGE.Dependencies" }}:</strong>
+                        {{#each this.relationships.requires}}
+                        <span class="tag {{this.class}}" data-tooltip="{{this.message}}">{{ this.id }}</span>
+                        {{/each}}
+                    </li>
+                    {{/if}}
+                </ul>
+            </div>
+        </li>
+        {{ else }}
+        {{#unless editable}}<p class="notes">{{ localize "MODMANAGE.None" }}</p>{{/unless}}
+        {{/each}}
+    </ul>
+
+    {{#if editable}}
+    <footer class="flexrow">
+        <button type="submit">
+            <i class="far fa-save"></i> {{localize 'MODMANAGE.Submit'}}
+        </button>
+        <button type="button" name="deactivate">
+            <i class="fas fa-ban"></i> {{localize 'MODMANAGE.DeactivateAll'}}
+        </button>
+    </footer>
+    {{/if}}
+</form>

@@ -1,0 +1,278 @@
+
+/* ---------------------------------------- */
+/*  Font Declarations                       */
+/* ---------------------------------------- */
+
+// Modesto
+@font-face {
+  font-family: 'Modesto Condensed';
+  font-style: normal;
+  font-weight: 400;
+  src: url('../fonts/modesto-condensed/modesto-condensed.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Modesto Condensed';
+  font-style: normal;
+  font-weight: 700;
+  src: url('../fonts/modesto-condensed/modesto-condensed-bold.woff2') format('woff2');
+}
+
+// Amiri
+@font-face {
+  font-family: 'Amiri';
+  font-style: normal;
+  font-weight: 400;
+  src: url("../fonts/amiri/amiri-regular.woff2") format('woff2');
+}
+@font-face {
+  font-family: 'Amiri';
+  font-style: normal;
+  font-weight: 700;
+  src: url("../fonts/amiri/amiri-bold.woff2") format('woff2');
+}
+
+// Signika
+@font-face {
+  font-family: 'Signika';
+  src: url('../fonts/signika/signika-regular.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+}
+@font-face {
+  font-family: 'Signika';
+  src: url('../fonts/signika/signika-bold.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 700;
+}
+// Bruno Ace
+@font-face {
+  font-family: 'Bruno Ace';
+  src: url('../fonts/bruno-ace/bruno-ace.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+}
+// Bruno Ace SC
+@font-face {
+  font-family: 'Bruno Ace SC';
+  src: url('../fonts/bruno-ace/bruno-ace-sc.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* ---------------------------------------- */
+/*  Colors                                  */
+/* ---------------------------------------- */
+
+body {
+  --color-warm-1: #ee9b3a;
+  --color-warm-2: #c9593f;
+  --color-warm-3: #5d142b;
+
+  --color-cool-3: #584a75;
+  --color-cool-4: #302831;
+  --color-cool-5: #0b0a13;
+
+  --color-cool-5-25: rgb(11 10 19 / 25%);
+  --color-cool-5-50: rgb(11 10 19 / 50%);
+  --color-cool-5-75: rgb(11 10 19 / 75%);
+  --color-cool-5-90: rgb(11 10 19 / 90%);
+
+  --color-light-1: #f7f3e8;
+  --color-light-2: #efe6d8;
+  --color-light-3: #e7d1b1;
+  --color-light-4: #d0b8a3;
+  --color-light-5: #9f8475;
+  --color-light-6: #816b66;
+
+  // Notification Levels
+  --color-level-error: #ce0707;
+  --color-level-error-bg: rgb(105 0 8 / 80%);
+  --color-level-error-border: #750003;
+
+  --color-level-info: #59a1f6;
+  --color-level-info-bg: rgb(47 80 132 / 80%);
+  --color-level-info-border: #5c87b9;
+
+  --color-level-success: #26b231;
+  --color-level-success-bg: rgba(26, 107, 34, 0.8);
+  --color-level-success-border: #1b8f23;
+
+  --color-level-warning: #ee9b3a;
+  --color-level-warning-bg: rgb(214 150 0 / 80%);
+  --color-level-warning-border: #b18404;
+
+
+  --color-scrollbar: #5d142b;
+  --color-scrollbar-border: #8d151b;
+}
+
+/* ---------------------------------------- */
+/*  Typography                              */
+/* ---------------------------------------- */
+
+body {
+
+  // Font Families
+  --font-body: "Signika", "Palatino Linotype", sans-serif;
+  --font-awesome: "Font Awesome 6 Pro";
+  --font-mono: monospace;
+
+  // Font Sizing
+  --font-size-10: .625rem;    // 10px
+  --font-size-11: .6875rem;   // 11px
+  --font-size-12: .75rem;     // 12px
+  --font-size-13: .8125rem;   // 13px
+  --font-size-14: .875rem;    // 14px
+  --font-size-15: .9375rem;   // 15px
+  --font-size-16: 1rem;       // 16px
+  --font-size-18: 1.125rem;   // 18px
+  --font-size-20: 1.25rem;    // 20px
+  --font-size-24: 1.5rem;     // 24px
+  --font-size-28: 1.75rem;    // 28px
+  --font-size-32: 2rem;       // 32px
+  --font-size-36: 2.25rem;    // 36px
+  --font-size-48: 3rem;       // 48px
+  --font-size-64: 4rem;       // 64px
+  --font-size-80: 5rem;       // 80px
+
+  // Header Fonts
+  --font-h1: "Modesto Condensed", serif;
+  --font-h2: "Amiri", serif;
+  --font-h3: "Signika", "Palatino Linotype", sans-serif;
+  --font-h4: "Amiri", serif;
+  --font-h5: "Signika", "Palatino Linotype", sans-serif;
+  --font-h6: "Modesto Condensed", serif;
+
+  // Header Sizing
+  --font-h1-size: var(--font-size-48);
+  --font-h2-size: var(--font-size-32);
+  --font-h3-size: var(--font-size-24);
+  --font-h4-size: var(--font-size-24);
+  --font-h5-size: var(--font-size-20);
+  --font-h6-size: var(--font-size-24);
+}
+
+/* ---------------------------------------- */
+/*  Layout                                  */
+/* ---------------------------------------- */
+
+body {
+  --input-height: 2rem;
+
+  // Z-indices
+  --z-index-background: -1;
+  --z-index-main: 0;
+  --z-index-app: 30;
+  --z-index-ui: 60;
+  --z-index-window: 100;
+  --z-index-tooltip: 9999;
+}
+
+/* ---------------------------------------- */
+/*  Aesthetics                              */
+/* ---------------------------------------- */
+
+body {
+  --background-url: url("../ui/backgrounds/setup.webp");
+  --main-logo: url("../icons/vtt-512.png");
+}
+
+
+/* ---------------------------------------- */
+/*  Applications                            */
+/* ---------------------------------------- */
+
+body {
+  --app-background: var(--color-cool-5-90);
+  --app-border-color: var(--color-cool-4);
+}
+
+/* ---------------------------------------- */
+/*  Forms and Form Elements                 */
+/* ---------------------------------------- */
+
+input,
+select {
+  --input-background-color: var(--color-cool-4);
+  --input-border-color: transparent;
+  --input-text-color: var(--color-light-3);
+  --input-focus-outline-color: var(--color-cool-3);
+  --input-text-selection-color: var(--color-cool-3);
+
+  // Focused
+  &:focus {
+    --input-text-color: var(--color-light-1);
+  }
+
+  // Disabled
+  &:disabled {
+    --input-background-color: var(--color-cool-5);
+    --input-border-color: var(--color-cool-4);
+    --input-text-color: var(--color-light-4);
+  }
+}
+
+// Readonly Text Input
+input[readonly] {
+  --input-background-color: var(--color-cool-5);
+  --input-border-color: var(--color-cool-4);
+  --input-text-color: var(--color-light-4);
+}
+
+// Checkboxes Specifically
+input[type="checkbox"] {
+  --checkbox-checked-color: var(--color-warm-1);
+  --checkbox-disabled-color: var(--color-cool-4);
+  --checkbox-background-color: var(--color-cool-4);
+}
+
+// Buttons
+a.button,
+button {
+  --button-background-color: var(--color-cool-5-50);
+  --button-border-color: var(--color-light-5);
+  --button-text-color: var(--color-light-3);
+  --button-focus-outline-color: var(--color-warm-2);
+  --button-hover-background-color: var(--color-warm-2);
+  --button-hover-border-color: var(--color-light-3);
+  --button-hover-text-color: var(--color-light-1);
+
+  // Disabled
+  &:disabled {
+    --button-background-color: var(--color-cool-5);
+    --button-border-color: var(--color-cool-4);
+    --button-hover-background-color: var(--color-cool-5);
+    --button-text-color: var(--color-light-5);
+  }
+}
+
+// Bright buttons
+a.button.bright,
+button.bright {
+  --button-background-color: var(--color-warm-1);
+  --button-border-color: var(--color-cool-5);
+  --button-text-color: var(--color-cool-5);
+  --button-hover-background-color: #fda948;
+  --button-hover-border-color: var(--color-warm-3);;
+  --button-hover-text-color: #000000;
+
+  // Disabled Bright Buttons
+  &:disabled {
+    --button-background-color: var(--color-cool-4);
+    --button-hover-background-color: var(--color-cool-4);
+    --button-text-color: var(--color-light-5);
+    --button-hover-text-color: var(--color-light-5);
+    --button-hover-border-color: transparent;
+  }
+}
+
+/* ---------------------------------------- */
+/*  Setup Views Specifically                */
+/* ---------------------------------------- */
+
+body.auth {
+  --headerSize: 160px;
+  --header-font-size: var(--font-size-80);
+  --formPadding: 1.5rem;
+  --maxWidth: 600px;
+}

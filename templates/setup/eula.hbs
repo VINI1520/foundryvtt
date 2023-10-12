@@ -1,0 +1,26 @@
+<article id="eula-content">
+    {{{html}}}
+</article>
+
+<form id="eula-sign" class="standard-form" autocomplete="off" method="post">
+    <h2 class="border">{{localize "EULA.Acknowledge"}}</h2>
+    <div class="form-group">
+        <div class="form-fields">
+            <label class="checkbox after">
+                {{localize "EULA.AgreeHint"}}
+                <input id="eula-agree" type="checkbox" name="agree" required>
+            </label>
+            <p class="hint">By selecting the above checkbox you indicate that you have read and agree to the terms of the Foundry Virtual Tabletop End User License Agreement.</p>
+        </div>
+    </div>
+    <footer class="form-footer">
+        <button type="submit" id="sign" class="bright" name="accept">
+            <i class="fa fa-check"></i>
+            <label>{{localize "EULA.Agree"}}</label>
+        </button>
+        <button type="submit" id="decline" name="decline">
+            <i class="fa fa-times"></i>
+            <label>{{localize "EULA.Decline"}}</label>
+        </button>
+    </footer>
+</form>

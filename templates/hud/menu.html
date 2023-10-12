@@ -1,0 +1,12 @@
+<nav id="menu" aria-label="{{localize 'MENU.NavLabel'}}">
+    <ol id="menu-items">
+    {{#each items as |item id|}}
+        {{#if item.enabled}}
+        <li class="menu-{{id}}">
+            {{{item.icon}}}
+            <h4>{{localize item.label}}</h4>
+        </li>
+        {{/if}}
+    {{/each}}
+    </ol>
+</nav>

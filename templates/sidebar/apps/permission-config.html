@@ -1,0 +1,34 @@
+<form autocomplete="off" onsubmit="event.preventDefault();">
+    <p class="notes">{{localize 'PERMISSION.Instructions'}}</p>
+
+    <header class="table-header flexrow">
+        <label class="index">{{ localize "PERMISSION.Permission" }}</label>
+        {{#each roles as |rl r|}}
+        <label>{{ localize rl}}</label>
+        {{/each}}
+    </header>
+
+    <ul class="permissions-list">
+        {{#each permissions as |p|}}
+        <li class="permission form-group">
+            <label class="index">{{ localize p.label }}</label>
+            <div class="form-fields">
+                {{#each p.roles as |r|}}
+                <input type="checkbox" name="{{r.name}}" {{checked r.value}} {{#if r.disabled}}disabled{{/if}}/>
+                {{/each}}
+            </div>
+            <p class="hint">{{ localize p.hint }}</p>
+        </li>
+        {{/each}}
+    </ul>
+
+    <div class="form-group">
+        <button type="submit">
+            <i class="fas fa-save"></i> {{localize 'PERMISSION.Submit'}}
+        </button>
+
+        <button type="reset" name="reset">
+            <i class="fas fa-sync"></i> {{localize 'PERMISSION.Reset'}}
+        </button>
+    </div>
+</form>

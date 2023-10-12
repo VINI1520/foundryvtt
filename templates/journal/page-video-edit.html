@@ -1,0 +1,79 @@
+<form class="{{cssClass}} flexcol" autocomplete="off">
+    {{> journalEntryPageHeader}}
+
+    {{#if document.src}}
+    <figure class="{{#if flexRatio}}flex-ratio{{/if}}">
+        {{#if isYouTube}}
+        <iframe id="{{yt.id}}" src="{{yt.url}}" frameborder="0"
+                {{#if document.video.width}}width="{{document.video.width}}"{{/if}}
+                {{#if document.video.height}}height="{{document.video.height}}"{{/if}}>
+        </iframe>
+        {{else}}
+        <video src="{{document.src}}" controls
+               {{#if document.video.width}}width="{{document.video.width}}" {{/if}}
+               {{#if document.video.height}}height="{{document.video.height}}"{{/if}}>
+        </video>
+        {{/if}}
+    </figure>
+    {{/if}}
+
+    <div class="form-group picker">
+        <label>{{localize "JOURNALENTRYPAGE.VideoSource"}}</label>
+        <div class="form-fields">
+            {{filePicker target="src" type="video"}}
+            <input class="image" type="text" name="src" placeholder="path/video.webm" value="{{document.src}}">
+        </div>
+        <p class="hint">{{localize "JOURNALENTRYPAGE.VideoSourceHint"}}</p>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "JOURNALENTRYPAGE.VideoControls"}}</label>
+        <div class="form-fields">
+            <input type="checkbox" name="video.controls" {{checked document.video.controls}}>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "TILE.VideoAutoplay"}}</label>
+        <div class="form-fields">
+            <input type="checkbox" name="video.autoplay" {{checked document.video.autoplay}}>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "TILE.VideoLoop"}}</label>
+        <div class="form-fields">
+            <input type="checkbox" name="video.loop" {{checked document.video.loop}}>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "TILE.VideoVolume"}}</label>
+        <div class="form-fields">
+            {{rangePicker name="video.volume" min=0 max=1 step=0.1 value=document.video.volume}}
+        </div>
+    </div>
+
+    <div class="form-group video-time">
+        <label>{{localize "JOURNALENTRYPAGE.VideoStartTime"}}</label>
+        <div class="form-fields">
+            {{numberInput timestamp.h name="timestamp.h" min=0 step=1 placeholder=(localize "TIME.Hours")}}
+            <span class="sep">:</span>
+            {{numberInput timestamp.m name="timestamp.m" min=0 max=59 step=1 placeholder=(localize "TIME.Minutes")}}
+            <span class="sep">:</span>
+            {{numberInput timestamp.s name="timestamp.s" min=0 max=59 step=1 placeholder=(localize "TIME.Seconds")}}
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "JOURNALENTRYPAGE.VideoDimensions"}}</label>
+        <div class="form-fields">
+            <label>{{localize "Width"}}</label>
+            {{numberInput document.video.width name="video.width" min=0 step=1}}
+            <label>{{localize "Height"}}</label>
+            {{numberInput document.video.height name="video.height" min=0 step=1}}
+        </div>
+    </div>
+
+    {{> journalEntryPageFooter}}
+</form>

@@ -1,0 +1,28 @@
+<form id="permission-control">
+    <p class="notes">{{ instructions }}</p>
+
+    <div class="form-group">
+        <label>{{ localize "OWNERSHIP.AllPlayers" }}</label>
+        <select name="default" data-dtype="Number">
+            {{selectOptions defaultLevels selected=currentDefault nameAttr="level" labelAttr="label"}}
+        </select>
+    </div>
+    <hr/>
+
+    {{#each users}}
+    <div class="form-group {{#if this.user.isGM}}hidden{{/if}}">
+        <label>{{this.user.name}}</label>
+        {{#if isAuthor}}
+        <div class="author">{{localize "Author"}}</div>
+        {{else}}
+        <select name="{{this.user.id}}" data-dtype="Number">
+            {{selectOptions ../playerLevels selected=this.level nameAttr="level" labelAttr="label"}}
+        </select>
+        {{/if}}
+    </div>
+    {{/each}}
+
+    <button type="submit">
+        <i class="far fa-save"></i> {{ localize "Save Changes" }}
+    </button>
+</form>

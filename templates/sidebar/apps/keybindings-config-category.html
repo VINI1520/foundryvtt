@@ -1,0 +1,48 @@
+<h2 class="category-title">{{this.title}}</h2>
+
+{{#each this.actions as |action| }}
+<div class="form-group action {{action.cssClass}}" data-action-id="{{action.id}}">
+    <label class="action-title">{{action.name}}</label>
+    <ol class="action-bindings flexcol">
+        {{#if action.noBindings}}
+        <li class="binding flexrow" data-binding-id="empty">
+            <span></span>
+            <div class="binding-controls flexrow">
+                <a class="control" title="{{localize 'KEYBINDINGS.AddBinding'}}" data-action="add"><i class="fas fa-plus"></i></a>
+            </div>
+        </li>
+        {{/if}}
+        {{#each action.bindings as |binding|}}
+        <li class="binding flexrow" data-binding-id="{{binding.id}}">
+            {{#if binding.isEditable}}
+            <span class="key editable-binding {{binding.cssClasses}}">{{binding.display}}</span>
+            <div class="editable-binding hidden">
+                <div class="form-fields binding-fields">
+                    <input type="text" class="binding-input" name="{{binding.id}}" id="{{binding.id}}" value="{{binding.display}}" readonly>
+                    <i class="far fa-keyboard binding-input-icon"></i>
+                </div>
+            </div>
+            {{else}}
+            <span class="key {{binding.cssClasses}}">{{binding.display}}</span>
+            {{/if}}
+            <div class="binding-controls flexrow">
+                {{#if binding.hasConflicts}}
+                <div class="control conflicts" title="{{binding.conflicts}}"><i class="fas fa-exclamation-triangle"></i></div>
+                {{/if}}
+                {{#if binding.isFirst}}
+                <a class="control" title="{{localize 'KEYBINDINGS.AddBinding'}}" data-action="add"><i class="fas fa-plus"></i></a>
+                {{/if}}
+                {{#if binding.isEditable}}
+                <a class="control save-edit hidden" title="{{localize 'KEYBINDINGS.SaveBinding'}}" data-action="save"><i class="fas fa-save"></i></a>
+                <a class="control save-edit" title="{{localize 'KEYBINDINGS.EditBinding'}}" data-action="edit"><i class="fas fa-edit"></i></a>
+                <a class="control" title="{{localize 'KEYBINDINGS.DeleteBinding'}}" data-action="delete"><i class="fas fa-trash-alt"></i></a>
+                {{else}}
+                <div class="control uneditable" title="{{localize 'KEYBINDINGS.Uneditable'}}"><i class="fas fa-lock"></i></div>
+                {{/if}}
+            </div>
+        </li>
+        {{/each}}
+    </ol>
+    {{#if action.notes}}<p class="notes">{{{action.notes}}}</p>{{/if}}
+</div>
+{{/each}}

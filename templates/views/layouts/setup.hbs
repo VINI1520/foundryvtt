@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <!-- Page Metadata -->
+    <title>{{{pageTitle}}}</title>
+    <meta name="description" content="{{{pageDescription}}}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="icon" href="icons/vtt.png">
+
+    <!-- Included Stylesheets -->
+    {{#each styles}}
+    <link href="{{this.src}}" rel="stylesheet" type="text/css" media="all">
+    {{/each}}
+
+    <!-- Included Scripts -->
+    {{#each scripts}}
+    <script defer src="{{this.src}}"{{#if this.isModule}} type="{{this.type}}"{{/if}}></script>
+    {{/each}}
+
+    <!-- Inline Scripts -->
+    <script>
+    const SIGNED_EULA={{eula}};
+    const ROUTE_PREFIX="{{routePrefix}}";
+    const MESSAGES={{#if messages}}{{{messages}}}{{else}}null{{/if}};
+    </script>
+
+    <!-- Inline Styles -->
+    {{#if inlineStyles}}
+    <style>{{{inlineStyles}}}</style>
+    {{/if}}
+</head>
+
+<body class="{{ bodyClass }}">
+    <div id="main-background"></div>
+    <template id="notifications"></template>
+
+    <!-- Page Header -->
+    <header id="main-header" class="flexcol">
+        <h1>{{pageTitle}}</h1>
+    </header>
+
+    <!-- Body Content -->
+    {{{body}}}
+
+    <!-- Footer Watermark -->
+    {{#if watermark}}
+    <footer id="watermark" class="flexcol">
+        <p id="software-version">{{watermark}}</p>
+    </footer>
+    {{/if}}
+
+    <!-- Global Tooltip Element -->
+    <aside id="tooltip" role="tooltip"></aside>
+</body>
+</html>

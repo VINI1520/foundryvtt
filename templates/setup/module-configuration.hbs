@@ -1,0 +1,218 @@
+<form class="standard-form" autocomplete="off">
+    <nav class="tabs">
+        <a class="item" data-tab="basics">
+            <i class="fas fa-user"></i> {{localize "PACKAGE.TabBasics"}}
+        </a>
+        <a class="item" data-tab="authors">
+            <i class="fas fa-user"></i> {{localize "PACKAGE.TabAuthors"}}
+        </a>
+        <a class="item" data-tab="packs">
+            <i class="fa-solid fa-book-atlas"></i> {{localize "PACKAGE.TabPacks"}}
+        </a>
+        <a class="item" data-tab="relationships">
+            <i class="fa-solid fa-circle-nodes"></i> {{localize "PACKAGE.TabRelationships"}}
+        </a>
+    </nav>
+
+    <div class="tab" data-tab="basics">
+        {{#if isCreation}}<p class="hint">{{localize "PACKAGE.ModuleCreateHint"}}</p>
+        {{else if module.manifest}}<p class="notification warning">{{localize "PACKAGE.ModuleEditWarning"}}</p>
+        {{else}}<p class="hint">{{localize "PACKAGE.ModuleEditHint"}}</p>{{/if}}
+
+        <div class="form-group">
+            <label>{{localize "PACKAGE.Title"}}</label>
+            <div class="form-fields">
+                <input type="text" name="title" value="{{module.title}}" data-slugify="id">
+            </div>
+            <p class="hint">{{localize "PACKAGE.TitleHint"}}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize "PACKAGE.Id"}}</label>
+            <div class="form-fields">
+                <input type="text" name="id" value="{{moduleId}}" placeholder="{{module.id}}"
+                       {{#unless isCreation}}disabled{{/unless}}>
+            </div>
+            <p class="hint">{{localize "PACKAGE.IdHint"}}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize "PACKAGE.Version"}}</label>
+            <div class="form-fields">
+                <input type="text" name="version" value="{{module.version}}">
+            </div>
+            <p class="hint">{{localize "PACKAGE.VersionHint"}}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize "PACKAGE.URL"}}</label>
+            <div class="form-fields">
+                <input type="text" name="url" value="{{module.url}}">
+            </div>
+            <p class="hint">{{localize "PACKAGE.URLHint"}}</p>
+        </div>
+
+        <div class="form-group stacked">
+            <label>{{localize "PACKAGE.Description"}}</label>
+            <textarea name="description">{{{module.description}}}</textarea>
+            <p class="hint">{{localize "PACKAGE.DescriptionHint"}}</p>
+        </div>
+
+        <fieldset>
+            <legend>Compatibility</legend>
+            <div class="form-group">
+                <label>{{localize "PACKAGE.Compatibility.Minimum"}}</label>
+                <div class="form-fields">
+                    <input type="text" name="compatibility.minimum" value="{{module.compatibility.minimum}}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>{{localize "PACKAGE.Compatibility.Verified"}}</label>
+                <div class="form-fields">
+                    <input type="text" name="compatibility.verified" value="{{module.compatibility.verified}}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>{{localize "PACKAGE.Compatibility.Maximum"}}</label>
+                <div class="form-fields">
+                    <input type="text" name="compatibility.maximum" value="{{module.compatibility.maximum}}">
+                </div>
+            </div>
+            <p class="hint">{{localize "PACKAGE.CompatibilityHint"}}</p>
+        </fieldset>
+    </div>
+
+    <div class="tab" data-tab="authors">
+        {{#each module.authors as |author i|}}
+        <fieldset class="author">
+            <div class="form-group">
+                <label>{{localize "PACKAGE.Author.Name"}}</label>
+                <div class="form-fields">
+                    <input type="text" name="authors.{{i}}.name" value="{{author.name}}">
+                    <button type="button" class="icon" data-action="authorDelete" data-index={{i}} data-tooltip="PACKAGE.Author.Remove">
+                        <i class="fa-solid fa-user-minus"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>{{localize "PACKAGE.Author.Discord"}}</label>
+                <div class="form-fields">
+                    <input type="text" name="authors.{{i}}.discord" value="{{author.discord}}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>{{localize "PACKAGE.Author.Email"}}</label>
+                <div class="form-fields">
+                    <input type="text" name="authors.{{i}}.email" value="{{author.email}}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>{{localize "PACKAGE.Author.URL"}}</label>
+                <div class="form-fields">
+                    <input type="text" name="authors.{{i}}.url" value="{{author.url}}">
+                </div>
+            </div>
+        </fieldset>
+        {{/each}}
+
+        <button type="button" data-action="authorAdd">
+            <i class="fa-solid fa-user-plus"></i>
+            <label>{{localize "PACKAGE.Author.Add"}}</label>
+        </button>
+    </div>
+
+    <div class="tab" data-tab="packs">
+        {{#each packs as |pack i|}}
+            <fieldset class="pack">
+                <div class="form-group">
+                    <label>{{localize "PACKAGE.Compendium.Label"}}</label>
+                    <div class="form-fields">
+                        <input type="text" name="packs.{{i}}.label" value="{{pack.label}}" data-slugify="packs.{{i}}.name">
+                        <button type="button" class="icon"  data-action="packDelete" data-index={{i}} data-tooltip="PACKAGE.Compendium.Remove">
+                            <i class="fa-solid fa-minus"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>{{localize "PACKAGE.Compendium.Name"}}</label>
+                    <div class="form-fields">
+                        <input type="text" name="packs.{{i}}.name" value="{{ifThen pack.creating "" pack.name}}"
+                               placeholder="{{pack.name}}" {{#if pack.existing}}disabled{{/if}}>
+                    </div>
+                    <p class="hint">{{localize (ifThen pack.existing "PACKAGE.Compendium.NameDisabledHint" "PACKAGE.Compendium.NameHint")}}</p>
+                </div>
+
+                <div class="form-group">
+                    <label>{{localize "PACKAGE.Compendium.Type"}}</label>
+                    <div class="form-fields">
+                        <select name="packs.{{i}}.type">
+                            {{selectOptions @root.compendiumTypes selected=pack.type blank="" nameAttr="value"
+                                            labelAttr="label"}}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>{{localize "PACKAGE.Compendium.System"}}</label>
+                    <div class="form-fields">
+                        <select name="packs.{{i}}.system">
+                            {{selectOptions @root.relatedPackages.systems selected=pack.system blank=""}}
+                        </select>
+                    </div>
+                    <p class="hint">{{localize "PACKAGE.Compendium.SystemHint"}}</p>
+                </div>
+            </fieldset>
+        {{/each}}
+
+        <button type="button" data-action="packAdd">
+            <i class="fa-solid fa-plus"></i>
+            <label>{{localize "PACKAGE.Compendium.Add"}}</label>
+        </button>
+    </div>
+
+    <div class="tab" data-tab="relationships">
+        {{#each relationships as |relationship i|}}
+        <input type="hidden" data-dtype="String" name="relationships.{{i}}._category" value="{{relationship.category}}">
+        <input type="hidden" data-dtype="Number" name="relationships.{{i}}._index" value="{{relationship.index}}">
+        <fieldset class="pack">
+            <div class="form-group">
+                <label>{{localize "PACKAGE.Relationship.Package"}}</label>
+                <div class="form-fields">
+                    <select class="relationship" name="relationships.{{i}}.id" {{#if relationship.id}}disabled{{/if}}>
+                        <option value=""></option>
+                        <optgroup label="{{localize "PACKAGE.Type.systemPl"}}" data-category="system">
+                            {{selectOptions @root.relatedPackages.systems selected=relationship.id}}
+                        </optgroup>
+                        <optgroup label="{{localize "PACKAGE.Type.modulePl"}}" data-category="module">
+                            {{selectOptions @root.relatedPackages.modules selected=relationship.id}}
+                        </optgroup>
+                    </select>
+                    <button type="button" class="icon" data-category="{{relationship.category}}" data-index="{{relationship.index}}"
+                            data-action="relationshipDelete" data-tooltip="PACKAGE.Relationship.Remove">
+                        <i class="fa-solid fa-minus"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>{{localize "PACKAGE.Relationship.Category"}}</label>
+                <div class="form-fields">
+                    <select class="category" name="relationships.{{i}}.category">
+                        {{selectOptions @root.relationshipCategories selected=relationship.category blank="" localize=true}}
+                    </select>
+                </div>
+            </div>
+        </fieldset>
+        {{/each}}
+        <button type="button" data-action="relationshipAdd">
+            <i class="fa-solid fa-plus"></i>
+            <label>{{localize "PACKAGE.Relationship.Add"}}</label>
+        </button>
+    </div>
+
+    <footer class="form-footer">
+        <button type="submit" class="bright">
+            <i class="fa-solid fa-gear-code"></i>
+            <label>{{localize submitLabel}}</label>
+        </button>
+    </footer>
+</form>

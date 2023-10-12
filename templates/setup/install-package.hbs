@@ -1,0 +1,95 @@
+{{!----------- Search Header ------------}}
+<header class="search">
+    <label class="search">
+        <input name="filter" type="search" placeholder="{{ localize 'SETUP.PackageName' }}" autofocus
+               autocomplete="off" {{#if loading}}disabled{{/if}}>
+    </label>
+</header>
+
+{{!----------- Main Body ------------}}
+<section class="body flexrow">
+
+    {{!----------- Left Column - Categories ------------}}
+    <nav class="categories flexcol" aria-label="{{localize 'SHEETS.FormNavLabel'}}">
+        <label>{{localize "SETUP.PackageCategories"}}</label>
+        {{#each categories}}
+        <a class="control category {{css}}" data-category="{{id}}">
+            {{label}}
+            <span class="count">[{{ count }}]</span>
+        </a>
+        {{/each}}
+    </nav>
+
+
+    {{!----------- Right Column - Packages ------------}}
+    <section class="entries flexcol">
+
+        {{!----------- Visibility Navigation ------------}}
+        <nav class="visibilities flexrow">
+            <label>{{ localize "SETUP.PackageFilter" }}</label>
+            {{#each visibility}}
+            <a class="button visibility{{ this.css }}" data-visibility="{{ this.id }}">{{ localize this.label }}</a>
+            {{/each}}
+        </nav>
+
+        {{!----------- Packages List ------------}}
+        <div class="entry-list flexcol scrollable {{#if progress}}loading{{/if}}">
+
+            {{#if progress}}
+            <div class="progress">
+                <h3 class="divider">{{ localize progress.label}}</h3>
+                <i class="{{progress.icon}}"></i>
+            </div>
+            {{/if}}
+
+            {{#each entries}}
+            <div class="entry package flexcol {{ this.cssClass }}" data-package-id="{{this.id}}">
+                <header class="entry-title">
+                    <h3 class="ellipsis">{{this.title}}</h3>
+                    <a class="control website-link"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+                    {{#if this.owned}}<i class="fas fa-unlock-alt"></i>{{/if}}
+                    {{#unless this.installable}}<i class="fas fa-lock"></i>{{/unless}}
+                    {{#if this.installed }}
+                    <button class="install" type="button" disabled>
+                        <i class="fas fa-check"></i>
+                        <label>{{localize "SETUP.PackageInstalled"}}</label>
+                    </button>
+                    {{else if this.installable }}
+                    <button class="install" type="button" data-manifest="{{ this.manifest }}">
+                        <i class="fas fa-download"></i>
+                        <label>{{localize "Install"}}</label>
+                    </button>
+                    {{ else }}
+                    <button class="install" type="button" disabled>
+                        <i class="fas fa-lock"></i>
+                        <label>{{localize "SETUP.PackageNotOwned"}}</label>
+                    </button>
+                    {{/if}}
+                </header>
+                <p class="entry-description ellipsis">{{{this.description}}}</p>
+                <div class="entry-metadata tags flexrow">
+                    <a class="entry-url ellipsis" href="{{ this.url }}" title="{{ this.title }}" target="_blank">{{this.url}}</a>
+                    <span class="tag author">{{ this.author }}</span>
+                    <span class="tag version">{{ localize "Version" }} {{ this.version }}</span>
+                </div>
+            </div>
+            {{/each}}
+        </div>
+    </section>
+</section>
+
+{{!----------- Install Footer ------------}}
+<form class="install standard-form">
+    <div class="form-group">
+        <label class="hint">
+            {{~localize "SETUP.ManifestURL"~}}
+            <i class="fas fa-circle-info" data-tooltip="SETUP.InstallHint"></i>
+        </label>
+        <div class="form-fields">
+            <input type="text" name="manifestURL" placeholder="https://path/to/{{ packageType }}.json" required/>
+            <button type="submit" data-action="install-url">
+                <i class="fas fa-download"></i><label>{{ localize "Install" }}</label>
+            </button>
+        </div>
+    </div>
+</form>

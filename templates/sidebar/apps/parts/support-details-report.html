@@ -1,0 +1,19 @@
+{{ localize 'Foundry Virtual Tabletop' }}: {{ report.coreVersion }}
+{{ localize 'WORLD.GameSystem' }}: {{ report.systemVersion }}
+{{ localize 'MODMANAGE.FilterActive' }}: {{ report.activeModuleCount }}
+{{ localize 'SETTINGS.PerformanceModeN' }}: {{ report.performanceMode }}
+
+{{ localize 'SUPPORT.OS' }}: {{ report.os }}
+{{ localize 'SUPPORT.Client' }}: {{ report.client }}
+{{ localize 'SUPPORT.GPU' }}: {{ report.gpu }}
+{{ localize 'SUPPORT.MaxTextureSize' }}: {{ report.maxTextureSize }}
+
+{{#if report.hasViewedScene }}
+{{ localize 'DOCUMENT.Scene' }}: {{ report.sceneDimensions }} | {{ localize 'SCENES.GridSize' }}: {{ report.grid }} | {{ localize 'SCENES.Padding' }}: {{ report.padding }}
+{{ localize 'DOCUMENT.Walls' }}: {{ report.walls }} | {{ localize 'DOCUMENT.AmbientLights' }}: {{ report.lights }} | {{ localize 'DOCUMENT.AmbientSounds' }}: {{ report.sounds }} | {{ localize 'DOCUMENT.Tiles' }}: {{ report.tiles }} | {{ localize 'DOCUMENT.Tokens' }}: {{ report.tokens }}
+{{else}}
+{{ localize 'SUPPORT.NoViewedScene' }}
+{{/if }}
+
+{{ localize 'DOCUMENT.Actors' }}: {{ report.actors }} | {{ localize 'DOCUMENT.Items' }}: {{report.items }} | {{ localize 'DOCUMENT.JournalEntries' }}: {{ report.journal }} | {{ localize 'DOCUMENT.RollTables' }}: {{ report.tables }} |
+{{ localize 'PLAYLIST.VolPlaylist' }}: {{ report.playlists }} | {{ localize 'SIDEBAR.TabCompendium' }}: {{ report.packs }} | {{ localize 'DOCUMENT.ChatMessages' }}: {{ report.messages }}

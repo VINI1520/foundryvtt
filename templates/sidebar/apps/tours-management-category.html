@@ -1,0 +1,18 @@
+<h2 class="category-title">{{this.title}}</h2>
+{{#each this.tours as |tour| }}
+<div class="form-group tour {{tour.cssClass}}" data-tour="{{tour.id}}">
+    <label class="tour-title">{{tour.title}} <span class="status">({{tour.status}})</span></label>
+    <div class="form-fields controls">
+        {{#if tour.canBePlayed}}
+        <a class="control" data-action="play" data-tooltip="{{startOrResume}}">
+            <i class="fas fa-play"></i></a>
+        {{/if}}
+        {{#if tour.canBeReset}}
+        <a class="control" data-action="reset" data-tooltip="{{localize 'TOURS.Reset'}}">
+            <i class="fas fa-arrow-rotate-left"></i>
+        </a>
+        {{/if}}
+    </div>
+    {{#if tour.notes}}<p class="notes">{{{tour.notes}}}</p>{{/if}}
+</div>
+{{/each}}

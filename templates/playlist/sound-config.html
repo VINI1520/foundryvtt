@@ -1,0 +1,38 @@
+<form autocomplete="off">
+    <div class="form-group">
+        <label>{{ localize "PLAYLIST.SoundName" }}</label>
+        <input type="text" name="name" placeholder="{{ localize 'Name' }}" value="{{data.name}}" required/>
+    </div>
+
+    <div class="form-group">
+        <label>{{ localize "PLAYLIST.SoundSrc" }}</label>
+        <div class="form-fields">
+            {{filePicker target="path" type="audio"}}
+            <input class="image" type="text" name="path" placeholder="path/audio.mp3" value="{{data.path}}"/>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>{{ localize "PLAYLIST.SoundVolume" }}</label>
+        <input class="sound-volume" type="range" name="lvolume" title="{{ localize 'PLAYLIST.SoundVolume' }}" value="{{lvolume}}" min="0" max="1" step="0.05" tabindex="-1"/>
+    </div>
+
+    <div class="form-group">
+        <label>{{ localize "PLAYLIST.SoundRepeat" }}</label>
+        <input type="checkbox" name="repeat" {{checked data.repeat}}/>
+    </div>
+
+    <div class="form-group">
+        <label>{{ localize "PLAYLIST.Fade" }}</label>
+        <input name="fade" type="number" value="{{data.fade}}" step="1" min="0"/>
+    </div>
+
+    <div class="form-group form-group-stacked">
+        <label>{{ localize "PLAYLIST.SoundDescription" }}</label>
+        <textarea name="description" style="resize: none;">{{data.description}}</textarea>
+    </div>
+
+    <button type="submit">
+        <i class="far fa-save"></i> {{ localize "PLAYLIST.SoundUpdate" }}
+    </button>
+</form>

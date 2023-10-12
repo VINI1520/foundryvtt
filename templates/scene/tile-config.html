@@ -1,0 +1,158 @@
+<form autocomplete="off">
+
+    <!-- Tile Configuration Tabs -->
+    <nav class="sheet-tabs tabs" aria-role="{{localize 'SHEETS.FormNavLabel'}}">
+        <a class="item" data-tab="basic"><i class="fas fa-cubes"></i> {{localize "TILE.BasicHeader" }}</a>
+        <a class="item" data-tab="overhead"><i class="fas fa-home"></i> {{ localize "TILE.OverheadHeader" }}</a>
+        <a class="item" data-tab="animation"><i class="fas fa-play"></i> {{ localize "TILE.AnimationHeader" }}</a>
+    </nav>
+
+    <!-- Basic Configuration Tab -->
+    <div class="tab" data-tab="basic">
+        <p class="notes">{{ localize "TILE.BasicHint" }}</p>
+
+        <div class="form-group">
+            <label for="texture.src">{{ localize "TILE.Image"}}</label>
+            <div class="form-fields">
+                {{filePicker target="texture.src" type="imagevideo"}}
+                <input class="image" type="text" name="texture.src" placeholder="path/image.png"
+                       value="{{data.texture.src}}"/>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="x">{{ localize "XCoord" }} <span class="units">({{ localize "Pixels" }})</span></label>
+            <div class="form-fields">
+                {{numberInput data.x name="x" step=1}}
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="y">{{ localize "YCoord" }} <span class="units">({{ localize "Pixels" }})</span></label>
+            <div class="form-fields">
+                {{numberInput data.y name="y" step=1}}
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="z">{{ localize "DRAWING.ZIndex" }}</label>
+            <div class="form-fields">
+                {{numberInput data.z name="z" step=1}}
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="width">{{ localize "Width" }} <span class="units">({{ localize "Pixels" }})</span></label>
+            <div class="form-fields">
+                {{numberInput data.width name="width" min=0 step=1}}
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="height">{{ localize "Height" }} <span class="units">({{ localize "Pixels" }})</span></label>
+            <div class="form-fields">
+                {{numberInput data.height name="height" min=0 step=1}}
+            </div>
+        </div>
+
+        <div class="form-group slim">
+            <label>{{ localize "TILE.Scale" }} <span class="units">({{localize "Ratio"}})</span></label>
+            <div class="form-fields">
+                <label>{{ localize "TILE.ScaleX" }}</label>
+                {{numberInput data.texture.scaleX name="texture.scaleX"}}
+                <label>{{ localize "TILE.ScaleY" }}</label>
+                {{numberInput data.texture.scaleY name="texture.scaleY"}}
+            </div>
+            <p class="hint">{{ localize "TILE.ScaleHint" }}</p>
+        </div>
+
+        <div class="form-group">
+            <label for="height">{{ localize "Rotation" }} <span class="units">({{ localize "Degrees" }})</span></label>
+            <div class="form-fields">
+                {{numberInput data.rotation name="rotation"}}
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>{{ localize "TILE.Opacity" }}</label>
+            <div class="form-fields">
+                {{ rangePicker name="alpha" value=data.alpha min="0" max="1" step="0.05" }}
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>{{ localize "TILE.Tint" }}</label>
+            <div class="form-fields">
+                {{ colorPicker name="texture.tint" value=data.texture.tint }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Overhead Tab -->
+    <div class="tab" data-tab="overhead">
+        <p class="notes">{{ localize "TILE.OverheadHint" }}</p>
+
+        <div class="form-group">
+            <label>{{localize "TILE.Overhead"}}</label>
+            <div class="form-fields">
+                <input type="checkbox" name="overhead" {{ checked data.overhead }}>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize "TILE.Roof"}}</label>
+            <div class="form-fields">
+                <input type="checkbox" name="roof" {{ checked data.roof }}>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize "TILE.OcclusionMode"}}</label>
+            <div class="form-fields">
+                <select name="occlusion.mode" data-dtype="Number">
+                    {{ selectOptions occlusionModes selected=data.occlusion.mode }}
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize "TILE.OcclusionAlpha"}}</label>
+            <div class="form-fields">
+                {{ rangePicker name="occlusion.alpha" value=data.occlusion.alpha min="0" max="1" step="0.05" }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Tab -->
+    <div class="tab" data-tab="animation">
+        <p class="notes">{{ localize "TILE.AnimationHint" }}</p>
+
+        <div class="form-group">
+            <label>{{localize "TILE.VideoLoop"}}</label>
+            <div class="form-fields">
+                <input type="checkbox" name="video.loop" {{ checked data.video.loop }}>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize "TILE.VideoAutoplay"}}</label>
+            <div class="form-fields">
+                <input type="checkbox" name="video.autoplay" {{ checked data.video.autoplay }}>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize "TILE.VideoVolume"}}</label>
+            <div class="form-fields">
+                {{ rangePicker name="video.volume" value=data.video.volume min="0" max="1" step="0.05" }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Sheet Footer -->
+    <footer class="sheet-footer flexrow">
+        <button type="submit">
+            <i class="far fa-save"></i> {{submitText}}
+        </button>
+    </footer>
+</form>

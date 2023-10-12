@@ -1,0 +1,8 @@
+<form class="{{cssClass}} flexcol" autocomplete="off">
+    {{> journalEntryPageHeader}}
+    <input type="hidden" name="text.format" value="{{markdownFormat}}" data-dtype="Number">
+    <textarea class="markdown-editor" name="text.markdown" autofocus>
+        {{~data.text.markdown~}}
+    </textarea>
+    {{> journalEntryPageFooter}}
+</form>

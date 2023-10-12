@@ -1,0 +1,124 @@
+{{#*inline "deviceList"}}
+<div class="form-group stacked">
+    <label>{{localize label}}:</label>
+    <select name="{{name}}">
+        {{#if disabledLabel}}
+        <option value="disabled" {{#if disabled}}selected{{/if}}>{{localize disabledLabel}}</option>
+        {{/if}}
+        {{#select device}}
+        <option value="default">{{localize "WEBRTC.DefaultSource"}}</option>
+        {{#each deviceList as |label d|}}
+            <option value="{{d}}">{{label}}</option>
+        {{/each}}
+        {{/select}}
+        {{#if unavailable}}
+            <option value="{{device}}" selected>{{localize "WEBRTC.UnavailableDevice"}}</option>
+        {{/if}}
+    </select>
+    <p class="notes">{{localize notes}}</p>
+</div>
+{{/inline}}
+
+<form>
+    <!-- Sheet Navigation Tabs -->
+    <nav class="sheet-tabs tabs" aria-role="{{localize 'SHEETS.FormNavLabel'}}">
+        <a class="item" data-tab="general">
+            <i class="fas fa-headset"></i> {{localize "WEBRTC.GeneralTab"}}
+        </a>
+        <a class="item" data-tab="devices">
+            <i class="fas fa-headset"></i> {{localize "WEBRTC.DevicesTab"}}
+        </a>
+        {{#if user.isGM}}
+        <a class="item" data-tab="server">
+            <i class="fas fa-server"></i> {{localize "WEBRTC.ServerTab"}}
+        </a>
+        {{/if}}
+    </nav>
+
+    <!-- General Tab -->
+    <div class="tab" data-tab="general">
+        <div class="form-group stacked">
+            <label>{{localize "WEBRTC.AVMode"}}:</label>
+            <select name="world.mode" data-dtype="Number" {{#unless canSelectMode}}disabled{{/unless}}>
+                {{selectOptions modes selected=settings.world.mode localize=true}}
+            </select>
+            <p class="notes">{{ localize "WEBRTC.AVModeNotes" }}</p>
+            {{#if noSSL}}
+            <p class="notification error">{{ localize "WEBRTC.NoSSLError" }}</p>
+            {{/if}}
+        </div>
+
+        <div class="form-group">
+            <label>{{localize "WEBRTC.VoiceMode"}}</label>
+            <select name="client.voice.mode">
+                {{selectOptions voiceModes selected=settings.client.voice.mode localize=true}}
+            </select>
+            <p class="notes">{{ localize "WEBRTC.VoiceModeNotes" }}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize "WEBRTC.DockPosition"}}</label>
+            <select name="client.dockPosition">
+                {{selectOptions dockPositions selected=settings.client.dockPosition}}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize "WEBRTC.Nameplates"}}</label>
+            <select name="client.nameplates" data-dtype="Number">
+                {{selectOptions nameplates selected=nameplateSetting localize=true}}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>{{localize "WEBRTC.BorderColors"}}</label>
+            <input type="checkbox" name="client.borderColors" {{checked settings.client.borderColors}}>
+        </div>
+    </div>
+
+    <!-- Devices Tab -->
+    <div class="tab" data-tab="devices">
+        {{> deviceList label="WEBRTC.VideoDevice" name="client.videoSrc" disabledLabel="WEBRTC.DisableVideoSource"
+                        device=settings.client.videoSrc deviceList=videoSources unavailable=videoSrcUnavailable
+                        notes="WEBRTC.VideoDeviceNotes" disabled=videoDisabled}}
+        {{> deviceList label="WEBRTC.AudioDevice" name="client.audioSrc" disabledLabel="WEBRTC.DisableAudioSource"
+                        device=settings.client.audioSrc deviceList=audioSources unavailable=audioSrcUnavailable
+                        notes="WEBRTC.AudioDeviceNotes" disabled=audioDisabled}}
+        {{#if audioSinks}}
+        {{> deviceList label="WEBRTC.AudioOutput" name="client.audioSink"
+                        device=settings.client.audioSink deviceList=audioSinks unavailable=audioSinkUnavailable
+                        notes="WEBRTC.AudioOutputNotes"}}
+        {{/if}}
+    </div>
+
+    <!-- Server Tab -->
+    {{#if user.isGM}}
+    <div class="tab" data-tab="server">
+        <div class="form-group">
+            <label>{{localize "WEBRTC.WebRTCTurnServer"}}:</label>
+            <select name="world.turn.type">
+                {{selectOptions turnTypes selected=settings.world.turn.type localize=true}}
+            </select>
+        </div>
+
+        <div class="webrtc-custom-turn-config">
+            <div class="form-group">
+                <label>{{localize "WEBRTC.WebRTCTURNURL"}}:</label>
+                <input type="text" name="world.turn.url" value="{{settings.world.turn.url}}"/>
+            </div>
+            <div class="form-group">
+                <label>{{localize "WEBRTC.WebRTCTurnUsername"}}:</label>
+                <input type="text" name="world.turn.username" value="{{settings.world.turn.username}}"/>
+            </div>
+            <div class="form-group">
+                <label>{{localize "WEBRTC.WebRTCTurnPassword"}}:</label>
+                <input type="password" name="world.turn.password" value="{{settings.world.turn.password}}"/>
+            </div>
+        </div>
+    </div>
+    {{/if}}
+
+    <button type="submit" {{#if noSSL}}disabled{{/if}}>
+        <i class="far fa-save"></i> {{localize "Save Changes"}}
+    </button>
+</form>

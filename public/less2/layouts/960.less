@@ -1,0 +1,16 @@
+@media (max-width: 960px) {
+  #setup-packages .tabs h2.divider {
+    &::before, &::after { content: unset; }
+  }
+
+  #setup-sidebar {
+    flex-direction: column;
+  }
+
+  .tour-center-step { top: 1rem; }
+}
+
+@media (max-height: 960px) {
+  #main-header { --headerSize: 80px; }
+  .tour-center-step { top: 1rem; }
+}

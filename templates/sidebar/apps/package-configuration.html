@@ -1,0 +1,37 @@
+<div class="flexrow">
+    <aside class="sidebar flexcol">
+        <div class="entry-filter form-group">
+            <input name="filter" type="search" placeholder="{{localize "PACKAGECONFIG.Filter"}}" value=""/>
+        </div>
+        <nav class="tabs" aria-label="{{localize 'PACKAGECONFIG.NavLabel'}}">
+            <a class="item category-tab category-all" data-tab="all">
+                {{localize "PACKAGECONFIG.All"}}
+                <span class="count">[{{ total }}]</span>
+            </a>
+            {{#each categories as |category|}}
+            <a class="item category-tab" data-tab="{{category.id}}">
+                {{category.title}}
+                <span class="count">[{{ category.count }}]</span>
+            </a>
+            {{/each}}
+        </nav>
+        <button class="reset-all" type="button">
+            <i class="fas fa-undo"></i> {{localize 'PACKAGECONFIG.Reset'}}
+        </button>
+    </aside>
+
+    <form class="categories flexcol" autocomplete="off">
+        <div class="scrollable">
+            {{#each categories as |category|}}
+            <section class="tab category" data-tab="{{category.id}}" data-category="{{category.id}}">
+                {{> (lookup @root "categoryTemplate")}}
+            </section>
+            {{/each}}
+        </div>
+        {{#if submitButton}}
+        <footer>
+            <button type="submit"><i class="fas fa-save"></i> {{localize "SETTINGS.Save"}}</button>
+        </footer>
+        {{/if}}
+    </form>
+</div>

@@ -1,0 +1,304 @@
+
+/* ---------------------------------------- */
+/*  Flexbox                                 */
+/* ---------------------------------------- */
+
+.flexrow {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  > * { flex: 1; }
+}
+
+.flexcol {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  > * { flex: none }
+}
+
+.flexrow, .flexcol {
+  > .flex0 { flex: 0; }
+  > .flex1 { flex: 1; }
+  > .flex2 { flex: 2; }
+  > .flex3 { flex: 3; }
+}
+
+/* ---------------------------------------- */
+/*  Global Classes                          */
+/* ---------------------------------------- */
+
+.disabled {
+  cursor: default;
+  pointer-events: none;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/** Scrollable Containers */
+.scrollable {
+  margin-right: -0.75rem !important;
+  padding-right: 0.75rem !important;
+  overflow: hidden auto;
+
+  // Firefox does not inherit scrollbar styles from the :root style for some reason.
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-scrollbar) black;
+}
+
+/* ---------------------------------------- */
+/*  Global Notifications                    */
+/* ---------------------------------------- */
+
+#notifications {
+  --position-top: 2rem;
+  position: fixed;
+  width: 100%;
+  top: var(--position-top);
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  list-style: none;
+  z-index: calc(var(--z-index-ui) + 100);
+  pointer-events: none;
+
+  .notification {
+    position: relative;
+    width: 95%;
+    max-width: 1200px;
+    pointer-events: all;
+  }
+}
+
+// Single Notification
+.notification {
+  background: rgb(0 0 0 / 50%);
+  padding: 0.5rem 1rem;
+  line-height: 1rem;
+  border-radius: 5px;
+  box-shadow: 0 0 10px black;
+  color: var(--color-light-1);
+  font-size: var(--font-size-14);
+  filter: drop-shadow(0 0 2px black);
+
+  // Close Button
+  .close {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+  }
+
+  // Notification Icons
+  &::before {
+    font-family: var(--font-awesome);
+    font-weight: 900;
+    margin-right: 0.5rem;
+  }
+
+  &.info {
+    background: var(--color-level-info-bg);
+    border: 1px solid var(--color-level-info-border);
+    &::before { content: "\f05a"; }
+  }
+
+  &.warning {
+    background: var(--color-level-warning-bg);
+    border: 1px solid var(--color-level-warning-border);
+    &::before { content: "\f071"; }
+  }
+
+  &.error {
+    background: var(--color-level-error-bg);
+    border: 1px solid var(--color-level-error-border);
+    &::before { content: "\f06a"; }
+  }
+
+  &.stable {
+    background: rgba(138, 211, 4, 0.4);
+    &::before {  content: "\f6d9"; }
+  }
+
+  &.testing {
+    background: rgba(211, 192, 4, 0.4);
+    &::before { content: "\f0ad"; }
+  }
+
+  &.development {
+    background: rgba(211, 119, 4, 0.4);
+    &::before { content: "\f6e3"; }
+  }
+
+  &.prototype {
+    background: rgba(211, 20, 4, 0.4);
+    &::before { content: "\f1e2"; }
+  }
+}
+
+/* ---------------------------------------- */
+/*  Tabbed Navigation                       */
+/* ---------------------------------------- */
+
+nav.tabs {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+
+  .item {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--color-light-3);
+    cursor: pointer;
+    i {
+      font-size: var(--font-size-24);
+    }
+    &.active {
+      color: var(--color-light-1);
+      text-shadow: 0 0 8px var(--color-warm-1);
+    }
+  }
+}
+
+.tab[data-tab] {
+  display: none;
+  &.active { display: initial; }
+}
+
+/* ----------------------------------------- */
+/*  Context Dropdown Menu
+/* ----------------------------------------- */
+
+#context-menu {
+  width: 100%;
+  height: max-content;
+  min-width: 150px;
+  max-width: 360px;
+  position: absolute;
+  left: 0;
+  background: var(--color-cool-5);
+  border: 1px solid var(--color-cool-3);
+  border-radius: 5px;
+  color: var(--color-text-light-1);
+  z-index: calc(var(--z-index-app) + 1);
+
+  &.expand-down {
+    top: calc(100% + 2px);
+  }
+
+  &.expand-up {
+    bottom: calc(100% + 2px);
+  }
+
+  ol.context-items, li.context-group > ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  li.context-group {
+    border-bottom: 1px solid var(--color-cool-4);
+    &:last-child { border: none; }
+  }
+
+  li.context-item {
+    border: 1px solid transparent;
+    padding: 0.25rem 0.5rem;
+    line-height: 32px;
+    cursor: pointer;
+    transition: 0.1s;
+    > i {
+      margin-right: 0.5rem;
+    }
+    &:hover {
+      border: 1px solid var(--color-cool-4);
+      background: black;
+      color: var(--color-light-1);
+    }
+  }
+}
+
+.window-app {
+  #context-menu {
+    z-index: calc(var(--z-index-window) + 1);
+  }
+}
+
+/* ----------------------------------------- */
+/* Dialog Windows
+/* ----------------------------------------- */
+
+.dialog {
+  .dialog-content {
+    font-size: var(--font-size-14);
+  }
+  .dialog-buttons {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+    button {
+      flex: 2;
+      height: 40px;
+      &.default {
+        flex: 3;
+      }
+    }
+  }
+}
+
+
+/* ---------------------------------------- */
+/*  Global Tooltip                          */
+/* ---------------------------------------- */
+
+#tooltip, .locked-tooltip {
+  position: fixed;
+  width: max-content;
+  max-width: 320px;
+  padding: 0.5rem 1rem;
+  background: var(--color-cool-5-90);
+  font-family: var(--font-primary);
+  font-size: var(--font-size-14);
+  line-height: var(--font-size-16);
+  color: var(--color-light-1);
+  border-radius: 4px;
+  box-shadow: 0 0 4px #000;
+  z-index: var(--z-index-tooltip);
+  pointer-events: none;
+  overflow-wrap: break-word;
+  backdrop-filter: blur(4px);
+  &.text-right {
+    text-align: right;
+  }
+
+  // Transition visibility
+  visibility: hidden;
+  opacity: 0;
+  transition: visibility 0s 500ms, opacity 500ms;
+  &.active {
+    visibility: visible;
+    opacity: 1;
+    transition: opacity 500ms;
+  }
+  &.tour {
+    pointer-events: all;
+  }
+}
+
+.locked-tooltip {
+  pointer-events: all;
+  border: 1px solid var(--color-warm-2);
+}

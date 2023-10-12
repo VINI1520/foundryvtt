@@ -1,0 +1,34 @@
+<form>
+    <p class="notes">{{localize 'INVITATIONS.Instructions'}}</p>
+
+    <div class="form-group">
+        <label for="local"><i class="fas fa-ethernet"></i> {{localize 'INVITATIONS.Local'}}</label>
+        {{#if local}}
+        <input type="text" class="invite-link" name="local" value="{{local}}" readonly/>
+        {{else}}
+        <input type="text" class="invite-link" name="local" value="Unknown" disabled/>
+        {{/if}}
+    </div>
+    <div class="form-group">
+        <label for="remote" data-tooltip="{{remoteTitle}}">
+            <i class="fas fa-wifi"></i> {{localize 'INVITATIONS.Internet'}}
+            {{#if remoteClass}}
+                {{#if canConnect}}
+                    <i class="fas fa-check-circle connection open"></i>
+                {{else if failedCheck}}
+                    <i class="fas fa-exclamation-circle connection unknown"></i>
+                {{else}}
+                    <i class="fas fa-times-circle connection closed"></i>
+                {{/if}}
+            {{/if}}
+            <i class="fas fa-sync refresh"></i>
+        </label>
+        {{#if remote}}
+        <input type="password" id="remote-link" class="invite-link" name="remote" value="{{remote}}" readonly/>
+        <i class="far fa-eye show-hide show-link"></i>
+        {{else}}
+        <input type="text" class="invite-link" name="remote" value="{{localize "Unknown"}}" disabled
+               data-tooltip="{{localize "INVITATIONS.DiscoveryFailed"}}">
+        {{/if}}
+    </div>
+</form>

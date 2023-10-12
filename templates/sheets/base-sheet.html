@@ -1,0 +1,17 @@
+<form class="{{cssClass}}" autocomplete="off">
+    {{#if hasName}}
+    <header>
+        <input type="text" name="name" value="{{data.name}}">
+    </header>
+    {{/if}}
+
+    {{#if hasImage}}
+    <figure>
+        <img src="{{data.img}}" data-edit="img">
+    </figure>
+    {{/if}}
+
+    {{#if hasDescription}}
+    {{editor descriptionHTML target="description" editable=editable engine="prosemirror" collaborate=false}}
+    {{/if}}
+</form>

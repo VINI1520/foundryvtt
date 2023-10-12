@@ -1,0 +1,41 @@
+<form autocomplete="off">
+    <div class="form-group">
+        <label>{{ localize "PLAYLIST.Name" }}</label>
+        <input type="text" name="name" placeholder="{{ localize 'PLAYLIST.Name' }}" value="{{data.name}}"/>
+    </div>
+
+    <div class="form-group">
+        <label>{{ localize "PLAYLIST.Mode" }}</label>
+        <select name="mode" data-dtype="Number">
+            {{selectOptions modes selected=data.mode}}
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "PLAYLIST.SortMode"}}</label>
+        <select name="sorting">
+            {{selectOptions sorting selected=data.sorting}}
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>{{ localize "PLAYLIST.Fade" }}</label>
+        <input name="fade" type="number" value="{{data.fade}}" step="1" min="0"/>
+    </div>
+
+    <div class="form-group form-group-stacked">
+        <label>{{ localize "PLAYLIST.Description" }}</label>
+        <textarea name="description" style="resize: none;">{{data.description}}</textarea>
+    </div>
+
+    <div class="form-group">
+        <label>{{ localize "PLAYLIST.BulkImport" }}</label>
+        <div class="form-fields">
+            {{filePicker target="importPath" type="folder"}}
+        </div>
+    </div>
+
+    <button type="submit">
+        <i class="far fa-save"></i> {{ localize "PLAYLIST.Update" }}
+    </button>
+</form>

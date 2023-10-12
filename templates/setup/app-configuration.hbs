@@ -1,0 +1,143 @@
+<form class="standard-form" autocomplete="off">
+    <p>{{localize "SETUP.ConfigurationWarning"}}</p>
+
+    <div class="form-group {{#if noAdminPW}}highlight{{/if}}">
+        <label>{{localize fields.adminPassword.label}}</label>
+        <div class="form-fields">
+            <input type="password" name="adminPassword" value="{{ config.adminPassword }}">
+        </div>
+        <p class="hint">{{localize fields.adminPassword.hint}}</p>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize fields.dataPath.label}}</label>
+        <div class="form-fields">
+            <input type="text" name="dataPath" value="{{ config.dataPath }}">
+        </div>
+        <p class="hint">{{localize fields.dataPath.hint}}</p>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize fields.telemetry.label}}</label>
+        <div class="form-fields">
+            <input type="checkbox" name="telemetry" {{checked config.telemetry}}>
+        </div>
+        <p class="hint">{{{localize fields.telemetry.hint}}}</p>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize fields.cssTheme.label}}</label>
+        <div class="form-fields">
+            <select name="cssTheme">
+                {{selectOptions cssThemes selected=config.cssTheme localize=true}}
+            </select>
+        </div>
+        <p class="hint">{{{localize fields.cssTheme.hint}}}</p>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize fields.world.label}}</label>
+        <div class="form-fields">
+            <select name="world">
+                {{#select config.world}}
+                    <option value=""></option>
+                    {{#each worlds}}
+                        <option value="{{ this.id }}">{{ this.title }}</option>
+                    {{/each}}
+                {{/select}}
+            </select>
+        </div>
+        <p class="hint">{{localize fields.world.hint}}</p>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize fields.language.label}}</label>
+        <div class="form-fields">
+            <select name="language">
+                {{#select config.language}}
+                    {{#each languages as |language|}}
+                        <optgroup label="{{language.label}}">
+                            {{#each language.modules as |module|}}
+                                <option value="{{language.id}}.{{module.id}}">{{ language.label }} - {{module.label}}</option>
+                            {{/each}}
+                        </optgroup>
+                    {{/each}}
+                {{/select}}
+            </select>
+        </div>
+        <p class="hint">{{localize fields.language.hint}}</p>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize fields.port.label}}</label>
+        <div class="form-fields">
+            {{numberInput config.port name="port" step=1}}
+            <label class="checkbox after">
+                {{localize "SETUP.UPNPLabel"}}
+                <input type="checkbox" name="upnp" {{checked config.upnp}}>
+            </label>
+        </div>
+        <p class="hint">{{localize fields.port.hint}}</p>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize fields.compressStatic.label}}</label>
+        <div class="form-fields">
+            <input type="checkbox" name="compressStatic" {{checked config.compressStatic}}>
+        </div>
+        <p class="hint">{{localize fields.compressStatic.hint}}</p>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize fields.compressSocket.label}}</label>
+        <div class="form-fields">
+            <input type="checkbox" name="compressSocket" {{checked config.compressSocket}}>
+        </div>
+        <p class="hint">{{localize fields.compressSocket.hint}}</p>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize fields.deleteNEDB.label}}</label>
+        <div class="form-fields">
+            <input type="checkbox" name="deleteNEDB" {{checked config.deleteNEDB}}>
+        </div>
+        <p class="hint">{{localize fields.deleteNEDB.hint}}</p>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize fields.hotReload.label}}</label>
+        <div class="form-fields">
+            <input type="checkbox" name="hotReload" {{checked config.hotReload}}>
+        </div>
+        <p class="hint">{{localize fields.hotReload.hint}}</p>
+    </div>
+
+    <div class="form-group ssl">
+        <label>{{localize "SETUP.SSLCert"}}</label>
+        <div class="form-fields flexcol">
+            <div class="form-fields">
+                <label>{{localize fields.sslCert.label}}</label>
+                <input type="text" name="sslCert" value="{{ config.sslCert }}">
+            </div>
+            <div class="form-fields">
+                <label>{{localize fields.sslKey.label}}</label>
+                <input type="text" name="sslKey" value="{{ config.sslKey }}">
+            </div>
+        </div>
+        <p class="hint">{{localize fields.sslCert.hint}}</p>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize fields.awsConfig.label}}</label>
+        <div class="form-fields">
+            <input type="text" name="awsConfig" value="{{ config.awsConfig }}">
+        </div>
+        <p class="hint">{{localize fields.awsConfig.hint}}</p>
+    </div>
+
+    <footer class="form-footer">
+        <button type="submit" class="bright">
+            <i class="fas fa-save"></i><label>{{ localize "SETUP.SaveConfiguration" }}</label>
+        </button>
+    </footer>
+</form>

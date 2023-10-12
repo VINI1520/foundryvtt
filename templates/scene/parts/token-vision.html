@@ -1,0 +1,137 @@
+<div class="tab" data-group="main" data-tab="vision">
+    <nav class="tabs sheet-tabs secondary-tabs" data-group="vision" aria-role="{{localize 'TOKEN.SightNavLabel'}}">
+        <a class="item" data-tab="basic" data-group="vision"><i class="fa-solid fa-eye"></i> {{localize "TOKEN.SightHeaderBasic"}}</a>
+        <a class="item" data-tab="detection" data-group="vision"><i class="fa-solid fa-radar"></i> {{localize "TOKEN.SightHeaderDetection"}}</a>
+        <a class="item" data-tab="advanced" data-group="vision"><i class="fa-solid fa-cogs"></i> {{localize "TOKEN.SightHeaderAdvanced"}}</a>
+    </nav>
+
+    <div class="tab" data-group="vision" data-tab="basic">
+        <div class="form-group">
+            <label>{{localize "TOKEN.VisionEnabled"}}</label>
+            <input type="checkbox" name="sight.enabled" {{checked object.sight.enabled}}/>
+            <p class="hint">{{ localize 'TOKEN.VisionEnabledHint' }}</p>
+        </div>
+
+        <div class="form-group slim">
+            <label>{{localize "TOKEN.VisionRange"}} <span class="units">({{gridUnits}})</span></label>
+            <div class="form-fields">
+                {{numberInput object.sight.range name="sight.range" placeholder=gridUnits min="0" step="any"}}
+            </div>
+            <p class="hint">{{ localize 'TOKEN.VisionRangeHint' }}</p>
+        </div>
+
+        <div class="form-group slim">
+            <label>{{localize "TOKEN.VisionAngle"}} <span class="units">({{localize "Degrees"}})</span></label>
+            <div class="form-fields">
+                {{numberInput object.sight.angle name="sight.angle" placeholder=(localize "Degrees")}}
+            </div>
+            <p class="hint">{{ localize 'TOKEN.VisionAngleHint' }}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{ localize "TOKEN.VisionMode"}}</label>
+            <div class="form-fields">
+                <select name="sight.visionMode">
+                    {{selectOptions visionModes selected=object.sight.visionMode nameAttr="id" labelAttr="label"
+                                    localize=true}}
+                </select>
+            </div>
+            <p class="hint">{{ localize 'TOKEN.VisionModeHint' }}</p>
+        </div>
+    </div>
+
+    <div class="tab detection-modes" data-group="vision" data-tab="detection">
+        <header class="detection-mode">
+            <div class="detection-mode-id">{{localize "TOKEN.DetectionMode"}}</div>
+            <div class="detection-mode-range">{{localize "TOKEN.DetectionRange"}} <span class="units">({{gridUnits}})</span></div>
+            <div class="detection-mode-enabled">{{localize "TOKEN.DetectionEnabled"}}</div>
+            <div class="detection-mode-controls">
+                <a class="action-button" data-action="addDetectionMode" data-tooltip="TOKEN.DetectionAdd">
+                    <i class="fa-solid fa-plus"></i>
+                </a>
+            </div>
+        </header>
+
+        {{#if basicDetection}}
+        <fieldset class="detection-mode" disabled>
+            <div class="detection-mode-id">
+                <select disabled>
+                    {{selectOptions detectionModes selected=basicDetection.id blank=""
+                    nameAttr="id" labelAttr="label" localize=true}}
+                </select>
+            </div>
+            <div class="detection-mode-range">
+                <input type="number" value="{{basicDetection.range}}" min="0" step="any" disabled/>
+            </div>
+            <div class="detection-mode-enabled">
+                <input type="checkbox" checked disabled/>
+            </div>
+            <div class="detection-mode-controls">
+            </div>
+        </fieldset>
+        {{/if}}
+
+        {{#each object.detectionModes as |mode i|}}
+        <fieldset class="detection-mode" data-index="{{i}}">
+            <div class="detection-mode-id">
+                <select name="detectionModes.{{i}}.id">
+                    {{selectOptions ../detectionModes selected=mode.id blank=""
+                    nameAttr="id" labelAttr="label" localize=true}}
+                </select>
+            </div>
+            <div class="detection-mode-range">
+                <input name="detectionModes.{{i}}.range" type="number" value="{{mode.range}}" min="0" step="any"/>
+            </div>
+            <div class="detection-mode-enabled">
+                <input name="detectionModes.{{i}}.enabled" type="checkbox" {{checked mode.enabled}}/>
+            </div>
+            <div class="detection-mode-controls">
+                <a class="action-button" data-action="removeDetectionMode" data-tooltip="TOKEN.DetectionRemove">
+                    <i class="fa-solid fa-times"></i>
+                </a>
+            </div>
+        </fieldset>
+        {{/each}}
+    </div>
+
+    <div class="tab" data-group="vision" data-tab="advanced">
+        <div class="form-group">
+            <label>{{ localize "TOKEN.VisionColor" }}</label>
+            <div class="form-fields">
+                {{colorPicker name="sight.color" value=object.sight.color}}
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>{{ localize 'TOKEN.VisionAttenuation' }}</label>
+            <div class="form-fields">
+                {{rangePicker name="sight.attenuation" value=object.sight.attenuation min="0" max="1" step="0.05"}}
+            </div>
+            <p class="hint">{{ localize 'TOKEN.VisionAttenuationHint' }}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{ localize 'TOKEN.VisionBrightness' }}</label>
+            <div class="form-fields">
+                {{rangePicker name="sight.brightness" value=object.sight.brightness min="-1" max="1" step="0.05"}}
+            </div>
+            <p class="hint">{{ localize 'TOKEN.VisionBrightnessHint' }}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{ localize 'TOKEN.VisionSaturation' }}</label>
+            <div class="form-fields">
+                {{rangePicker name="sight.saturation" value=object.sight.saturation min="-1" max="1" step="0.05"}}
+            </div>
+            <p class="hint">{{ localize 'TOKEN.VisionSaturationHint' }}</p>
+        </div>
+
+        <div class="form-group">
+            <label>{{ localize 'TOKEN.VisionContrast' }}</label>
+            <div class="form-fields">
+                {{rangePicker name="sight.contrast" value=object.sight.contrast min="-1" max="1" step="0.05"}}
+            </div>
+            <p class="hint">{{ localize 'TOKEN.VisionContrastHint' }}</p>
+        </div>
+    </div>
+</div>

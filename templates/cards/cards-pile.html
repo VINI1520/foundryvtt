@@ -1,0 +1,63 @@
+<form class="{{cssClass}}" autocomplete="off">
+    <header class="sheet-header flexrow">
+        <h1 class="name">
+            <input type="text" name="name" value="{{data.name}}" placeholder="{{localize 'Name'}}"/>
+        </h1>
+    </header>
+
+    <div>
+        <header class="cards-header flexrow">
+            <span class="sort-mode"></span>
+            <h4 class="card-name">{{localize "CARD.Name"}}</h4>
+            <span class="card-type">{{localize "CARD.Type"}}</span>
+            <span class="card-suit">{{localize "CARD.Suit"}}</span>
+            <span class="card-value">{{localize "CARD.Value"}}</span>
+            <span class="card-faces">{{localize "CARD.Face"}}</span>
+            <div class="card-controls"></div>
+        </header>
+        <ol class="cards">
+        {{#each cards as |card|}}
+            <li class="card flexrow" data-card-id="{{card.id}}">
+                <img class="card-face" data-src="{{card.img}}" alt="{{card.name}}" height="48">
+                <h4 class="card-name">{{card.name}}</h4>
+                {{#if card.showFace}}
+                <span class="card-type">{{card.type}}</span>
+                <span class="card-suit">{{card.suit}}</span>
+                <span class="card-value">{{card.value}}</span>
+                {{/if}}
+                <div class="card-faces flexcol">
+                    <a class="card-control" title="{{localize 'CARD.FaceNext'}}" data-action="nextFace" {{#unless card.hasNextFace}}disabled{{/unless}}><i class="fas fa-caret-up"></i></a>
+                    <a class="card-control" title="{{localize 'CARD.FacePrevious'}}" data-action="prevFace" {{#unless card.hasPreviousFace}}disabled{{/unless}}><i class="fas fa-caret-down"></i></a>
+                </div>
+                <div class="card-controls">
+                    {{#if (and @root.editable (not @root.inCompendium))}}
+                    <a class="card-control" title="{{localize 'CARD.Play'}}" data-action="play"><i class="fas fa-chevron-circle-right"></i></a>
+                    {{/if}}
+                </div>
+            </li>
+        {{else}}
+            <li>
+                <p class="hint">{{localize "CARDS.NoCards"}}</p>
+            </li>
+        {{/each}}
+        </ol>
+    </div>
+
+    <!-- Sheet Footer -->
+    <footer class="sheet-footer flexrow">
+        {{#if owner}}
+        <button class="card-control" type="button" data-action="shuffle" {{ disabled inCompendium }}>
+            <i class="fas fa-random"></i> {{localize "CARDS.Shuffle"}}
+        </button>
+        <button class="card-control" type="button" data-action="pass" {{ disabled inCompendium }}>
+            <i class="fas fa-share-square"></i> {{localize "CARDS.Pass"}}
+        </button>
+        <button class="card-control" type="button" data-action="reset" {{ disabled inCompendium }}>
+            <i class="fas fa-undo"></i> {{localize "CARDS.Reset"}}
+        </button>
+        <button class="submit" type="submit">
+            <i class="fas fa-save"></i> {{ localize "CARDS.Save" }}
+        </button>
+        {{/if}}
+    </footer>
+</form>

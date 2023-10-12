@@ -1,0 +1,133 @@
+form.standard-form {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 1rem;
+}
+
+.standard-form .tab {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 1rem;
+  &.active {
+    display: flex;
+  }
+}
+
+/** Fieldsets */
+.standard-form fieldset {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 1rem;
+  border-color: var(--color-cool-3);
+  border-radius: 8px;
+}
+
+/** Buttons */
+.standard-form button {
+  height: var(--input-height);
+}
+
+/** Hint Text */
+.standard-form .hint {
+  margin: 0;
+  font-size: var(--font-size-14);
+  color: var(--color-light-5);
+}
+
+/** Form Groups */
+.form-group {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+
+  // Labels
+  > label {
+    flex: 3;
+    font-weight: bold;
+    line-height: var(--input-height);
+    > i {
+      margin-right: 0.25rem;
+    }
+    > input {
+      font-weight: initial;
+    }
+  }
+
+  // Icon-Only Labels
+  > label.icon {
+    flex: 0 0 1rem;
+    > i {
+      margin: 0;
+    }
+  }
+
+  > * {
+    flex: 2;
+  }
+
+  .form-fields {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.5rem;
+    > * {
+      flex: 1;
+    }
+    > input[type="checkbox"],
+    button {
+      flex: none;
+    }
+    > label {
+      flex: none;
+    }
+    &.flexcol {
+      flex-direction: column;
+    }
+  }
+
+  // Stacked form groups, label is on its own line
+  &.stacked {
+    > * {
+      flex: 0 0 100%;
+    }
+  }
+
+  // Hint text inside form group
+  .hint {
+    flex: 0 0 100%;
+  }
+
+  // Form group hover behavior
+  &:hover {
+    > label {
+      color: var(--color-light-2);
+    }
+    .hint {
+      color: var(--color-light-3);
+    }
+  }
+}
+
+/** Form Footers */
+.form-footer {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+
+  > button,
+  a.button {
+    flex: 1;
+    height: calc(1.25 * var(--input-height));
+    min-width: 180px;
+  }
+}

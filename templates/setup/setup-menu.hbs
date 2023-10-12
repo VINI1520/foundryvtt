@@ -1,0 +1,25 @@
+<nav id="setup-menu" class="flexrow">
+    <button type="button" data-action="viewWarnings" data-tooltip="Warnings" aria-label="{{ localize "Warnings" }}">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        {{#if pips.warnings}}<span class="pip {{pips.warnings.type}}">{{pips.warnings.label}}</span>{{/if}}
+    </button>
+    <button type="button" data-action="configure" data-tooltip="Configure" aria-label="{{ localize "Configure" }}">
+        <i class="fa-solid fa-cogs"></i>
+        {{#if pips.config}}<span class="pip {{pips.config.type}}">{{pips.config.label}}</span>{{/if}}
+    </button>
+    <button type="button" data-action="update" data-tooltip="Update" aria-label="{{ localize "Update" }}">
+        <i class="fa-solid fa-download"></i>
+        {{#if pips.update}}<span class="pip {{pips.update.type}}">{{pips.update.label}}</span>{{/if}}
+    </button>
+    {{#if canBackup}}
+    <button type="button" data-action="backups" data-tooltip="SETUP.BACKUPS.ManageBackups"
+            aria-label="{{ localize "SETUP.BACKUPS.ManageBackups" }}">
+        <i class="fa-solid fa-floppy-disks"></i>
+    </button>
+    {{/if}}
+    {{#if canLogOut}}
+    <button type="button" data-action="adminLogout" data-tooltip="Log Out">
+        <i class="fas fa-door-open"></i>
+    </button>
+    {{/if}}
+</nav>

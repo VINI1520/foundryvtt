@@ -1,0 +1,118 @@
+<form autocomplete="off">
+    <p class="notes">{{localize "WALLS.Instructions"}}</p>
+
+    <div class="form-group">
+        <label>{{localize "WALLS.Coordinates"}}</label>
+        <div class="form-fields">
+            <input type="text" value="({{p0.x}}, {{p0.y}}) to ({{p1.x}}, {{p1.y}})" disabled/>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "WALLS.Movement"}}</label>
+        <div class="form-fields">
+            <select name="move" data-dtype="Number">
+                {{#select source.move}}
+                {{#each moveTypes as |name type|}}
+                <option value="{{type}}">{{name}}</option>
+                {{/each}}
+                {{/select}}
+            </select>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "WALLS.Light"}}</label>
+        <div class="form-fields">
+            <select name="light" data-dtype="Number">
+                {{selectOptions senseTypes selected=source.light }}
+            </select>
+            <input class="proximity" type="number" name="threshold.light" placeholder="{{gridUnits}}" min="0"
+                   value="{{source.threshold.light}}" step="any"/>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "WALLS.Sight"}}</label>
+        <div class="form-fields">
+            <select name="sight" data-dtype="Number">
+                {{selectOptions senseTypes selected=source.sight }}
+            </select>
+            <input class="proximity" type="number" name="threshold.sight" placeholder="{{gridUnits}}" min="0"
+                   value="{{source.threshold.sight}}" step="any"/>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "WALLS.Sound"}}</label>
+        <div class="form-fields">
+            <select name="sound" data-dtype="Number">
+                {{selectOptions senseTypes selected=source.sound }}
+            </select>
+            <input class="proximity" type="number" name="threshold.sound" placeholder="{{gridUnits}}" min="0"
+                   value="{{source.threshold.sound}}" step="any"/>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "WALLS.Direction"}}</label>
+        <div class="form-fields">
+            <select name="dir" data-dtype="Number">
+                {{#select source.dir}}
+                {{#each dirTypes as |name type|}}
+                <option value="{{type}}">{{name}}</option>
+                {{/each}}
+                {{/select}}
+            </select>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "WALLS.ThresholdAttenuation"}} <i class="tip fas fa-info-circle" data-tooltip="WALLS.ThresholdAttenuationHint"></i></label>
+        <input type="checkbox" name="threshold.attenuation" {{checked source.threshold.attenuation}}/>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "WALLS.Door"}}</label>
+        <div class="form-fields">
+            <select name="door" data-dtype="Number">
+                {{#select source.door}}
+                {{#each doorTypes as |name type|}}
+                <option value="{{type}}">{{name}}</option>
+                {{/each}}
+                {{/select}}
+            </select>
+        </div>
+    </div>
+
+    <fieldset class="door-options">
+        <legend>{{ localize "WALLS.DoorOptions" }}</legend>
+        <div class="form-group">
+            <label>{{ localize "WALLS.DoorState" }}</label>
+            <div class="form-fields">
+                <select name="ds" data-dtype="Number">
+                    {{#select source.ds}}
+                    {{#each doorStates as |name state|}}
+                    <option value="{{state}}">{{name}}</option>
+                    {{/each}}
+                    {{/select}}
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>{{ localize "WALLS.DoorSoundLabel" }}</label>
+            <div class="form-fields">
+                <select name="doorSound">
+                    {{selectOptions doorSounds selected=source.doorSound labelAttr="label" blank="" localize=true}}
+                </select>
+                <i data-tooltip="{{localize 'Preview'}}" class="fas fa-play audio-preview"></i>
+            </div>
+        </div>
+    </fieldset>
+
+    <footer class="form-footer">
+        <button type="submit">
+            <i class="fa-solid fa-save"></i> {{localize "WALLS.Submit"}}
+        </button>
+    </footer>
+</form>

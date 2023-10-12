@@ -1,0 +1,14 @@
+{{#with (lookup @root.packContext collection)}}
+<li class="directory-item compendium {{@root.documentCls}} {{#if locked}}locked{{/if}} {{#if hidden}}hidden{{/if}}
+    flexcol" data-pack="{{collection}}" data-entry-id="{{collection}}">
+    <img class="compendium-banner" data-src="{{banner}}">
+    <h3 class="entry-name compendium-name"><i class="{{icon}}"></i> {{localize label}}</h3>
+    <div class="status-icons flexrow">
+        {{#if this.customOwnership}}<i class="fa-solid fa-eye"></i>{{/if}}
+        {{#if this.locked}}<i class="fa-solid fa-lock"></i>{{/if}}
+    </div>
+    <footer class="compendium-footer">
+        <span class="source"><i class="fa-solid {{sourceIcon}}"></i> {{name}}</span>
+    </footer>
+</li>
+{{/with}}

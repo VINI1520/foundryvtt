@@ -1,0 +1,17 @@
+<form autocomplete="off">
+    <p class="notes">{{localize "COMPENDIUM.ImportAllHint"}}</p>
+    <div class="form-group">
+        <label>{{ localize "FOLDER.ExportExistingFolder" }}</label>
+        <select name="folder">
+            {{ selectOptions folders nameAttr="id" labelAttr="name" blank="" }}
+        </select>
+    </div>
+    <div class="form-group">
+        <label>{{localize "FOLDER.ExportNewFolder"}}</label>
+        <input type="text" name="folderName" value="{{folderName}}">
+    </div>
+    <div class="form-group">
+        <label>{{localize "FOLDER.ExportKeepId"}}</label>
+        <input type="checkbox" name="keepId" {{ checked keepId }}>
+    </div>
+</form>

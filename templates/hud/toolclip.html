@@ -1,0 +1,19 @@
+<div class="toolclip">
+    <video src="{{ src }}" autoplay muted loop></video>
+    <h4>{{ localize heading }}</h4>
+    {{#each items}}
+    <p>
+        {{#if paragraph}}
+        {{{ localize paragraph }}}
+        {{else}}
+        <strong>{{ localize heading }}:</strong>
+            {{#if content}}
+            {{{ localize content }}}
+            {{else}}
+            <span class="reference">{{ localize reference }}</span>
+            {{/if}}
+        {{/if}}
+    </p>
+    {{/each}}
+    <p class="faint">{{ localize "CONTROLS.DisableToolclips" }}</p>
+</div>

@@ -1,0 +1,42 @@
+{{#*inline "dependencyPartial"}}
+<div class="form-group">
+    <label class="checkbox"><input type="checkbox" name="{{this.id}}" checked="checked" {{ disabled required }} data-tooltip="{{ this.note }}">{{this.title}}</label>
+</div>
+{{#if this.reason}}<p class="notes">{{this.reason}}</p>{{/if}}
+{{/inline}}
+
+<form>
+
+    {{#if upstreamPackages.length}}
+    <p>{{ localize "MODMANAGE.UpstreamPackages" number=upstreamPackages.length }}</p>
+    {{#each upstreamPackages}}
+    <div class="form-group">
+        <label class="checkbox" name="{{this.id}}" data-tooltip="{{ this.note }}">{{this.title}}</label>
+    </div>
+    {{#if this.reason}}<p class="notes">{{this.reason}}</p>{{/if}}
+    {{/each}}
+    {{/if}}
+
+    {{#if dependencies.length}}
+        {{#if enabling}}
+        <p>{{ localize "MODMANAGE.DepRequiredEnable" number=requiredDependencies.length }}</p>
+        {{#each requiredDependencies}}
+            {{> dependencyPartial this}}
+        {{/each}}
+
+        <p>{{ localize "MODMANAGE.DepOptionalEnable" number=optionalDependencies.length }}</p>
+        {{#each optionalDependencies}}
+            {{> dependencyPartial this}}
+        {{/each}}
+
+        <p>{{ localize "MODMANAGE.DepEnableCheck" }}</p>
+
+        {{else}}
+        <p>{{ localize "MODMANAGE.DepDisable" number=dependencies.length }}</p>
+        {{#each dependencies}}
+            {{> dependencyPartial this}}
+        {{/each}}
+        <p>{{ localize "MODMANAGE.DepDisableCheck" }}</p>
+        {{/if}}
+    {{/if}}
+</form>
